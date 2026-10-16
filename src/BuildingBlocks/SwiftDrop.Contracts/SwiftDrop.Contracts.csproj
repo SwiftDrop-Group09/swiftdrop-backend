@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Versioned SwiftDrop integration contract assets; no domain logic.</Description>
+  </PropertyGroup>
+</Project>

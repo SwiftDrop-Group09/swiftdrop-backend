@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>SwiftDrop.Delivery.Api</RootNamespace>
+    <UserSecretsId>swiftdrop-delivery-development</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../BuildingBlocks/SwiftDrop.Contracts/SwiftDrop.Contracts.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>SwiftDrop.Notification.Worker</RootNamespace>
+    <UserSecretsId>swiftdrop-notification-development</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../BuildingBlocks/SwiftDrop.Contracts/SwiftDrop.Contracts.csproj" />
+  </ItemGroup>
+</Project>

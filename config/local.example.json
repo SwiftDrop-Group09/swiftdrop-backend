@@ -1,0 +1,39 @@
+{
+  "_comment": "Reference only; not loaded automatically. Apply only the owning workload's section with user-secrets or environment variables. Supply all credentials privately; empty values are deliberate.",
+  "Identity": {
+    "ConnectionStrings": {
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_identity;Username=identity_app;Password="
+    }
+  },
+  "Delivery": {
+    "ConnectionStrings": {
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_delivery;Username=delivery_app;Password="
+    },
+    "Broker": {
+      "Host": "rabbitmq",
+      "Username": "delivery_bus",
+      "Password": ""
+    },
+    "Operations": {
+      "TimeZone": "Asia/Colombo"
+    }
+  },
+  "Merchant": {
+    "ConnectionStrings": {
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_merchant;Username=merchant_app;Password="
+    },
+    "Delivery": {
+      "GrpcAddress": "http://127.0.0.3:8081"
+    }
+  },
+  "Notification": {
+    "ConnectionStrings": {
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_notifications;Username=notifications_app;Password="
+    },
+    "Broker": {
+      "Host": "rabbitmq",
+      "Username": "worker_bus",
+      "Password": ""
+    }
+  }
+}

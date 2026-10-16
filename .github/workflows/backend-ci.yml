@@ -1,0 +1,36 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, 'chore/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore SwiftDrop.sln
+
+      - name: Build
+        run: dotnet build SwiftDrop.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test SwiftDrop.sln --no-build --configuration Release --logger trx --results-directory artifacts/test-results
+
+      - name: Verify process startup and project boundaries
+        shell: pwsh
+        run: ./scripts/verify-foundation.ps1
