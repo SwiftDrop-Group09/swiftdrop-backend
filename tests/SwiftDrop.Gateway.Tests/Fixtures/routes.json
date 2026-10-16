@@ -1,0 +1,572 @@
+[
+  {
+    "operationId": "Register",
+    "method": "POST",
+    "path": "/api/v1/auth/register",
+    "owner": "Identity",
+    "authorization": "Public; throttled",
+    "request": "RegisterInput",
+    "response": "Profile",
+    "success": "201"
+  },
+  {
+    "operationId": "Login",
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "owner": "Identity",
+    "authorization": "Public; throttled",
+    "request": "LoginInput",
+    "response": "TokenPair",
+    "success": "200"
+  },
+  {
+    "operationId": "GoogleLogin",
+    "method": "POST",
+    "path": "/api/v1/auth/google",
+    "owner": "Identity",
+    "authorization": "Public; throttled",
+    "request": "GoogleInput",
+    "response": "TokenPair",
+    "success": "200"
+  },
+  {
+    "operationId": "LinkGoogle",
+    "method": "POST",
+    "path": "/api/v1/auth/google/link",
+    "owner": "Identity",
+    "authorization": "Human JWT; fresh local reauthentication",
+    "request": "LinkInput",
+    "response": "Profile",
+    "success": "200"
+  },
+  {
+    "operationId": "Refresh",
+    "method": "POST",
+    "path": "/api/v1/auth/refresh",
+    "owner": "Identity",
+    "authorization": "Valid refresh token",
+    "request": "RefreshInput",
+    "response": "TokenPair",
+    "success": "200"
+  },
+  {
+    "operationId": "Logout",
+    "method": "POST",
+    "path": "/api/v1/auth/logout",
+    "owner": "Identity",
+    "authorization": "Human JWT; own refresh family",
+    "request": "RefreshInput",
+    "response": "Empty",
+    "success": "204"
+  },
+  {
+    "operationId": "GetProfile",
+    "method": "GET",
+    "path": "/api/v1/users/me",
+    "owner": "Identity",
+    "authorization": "Human JWT; self",
+    "request": "None",
+    "response": "Profile",
+    "success": "200"
+  },
+  {
+    "operationId": "UpdateProfile",
+    "method": "PUT",
+    "path": "/api/v1/users/me",
+    "owner": "Identity",
+    "authorization": "Human JWT; self",
+    "request": "ProfileInput",
+    "response": "Profile",
+    "success": "200"
+  },
+  {
+    "operationId": "ListUsers",
+    "method": "GET",
+    "path": "/api/v1/users",
+    "owner": "Identity",
+    "authorization": "Human JWT; Admin",
+    "request": "PageQuery",
+    "response": "ProfilePage",
+    "success": "200"
+  },
+  {
+    "operationId": "CreateUser",
+    "method": "POST",
+    "path": "/api/v1/users",
+    "owner": "Identity",
+    "authorization": "Human JWT; Admin",
+    "request": "AdminUserInput",
+    "response": "Profile",
+    "success": "201"
+  },
+  {
+    "operationId": "UpdateUser",
+    "method": "PUT",
+    "path": "/api/v1/users/{id}",
+    "owner": "Identity",
+    "authorization": "Human JWT; Admin",
+    "request": "AdminUserInput",
+    "response": "Profile",
+    "success": "200"
+  },
+  {
+    "operationId": "DeactivateUser",
+    "method": "DELETE",
+    "path": "/api/v1/users/{id}",
+    "owner": "Identity",
+    "authorization": "Human JWT; Admin; soft delete",
+    "request": "None",
+    "response": "Empty",
+    "success": "204"
+  },
+  {
+    "operationId": "SetRoles",
+    "method": "PUT",
+    "path": "/api/v1/users/{id}/roles",
+    "owner": "Identity",
+    "authorization": "Human JWT; Admin",
+    "request": "RolesInput",
+    "response": "Profile",
+    "success": "200"
+  },
+  {
+    "operationId": "ListAudit",
+    "method": "GET",
+    "path": "/api/v1/audit-logs",
+    "owner": "Identity",
+    "authorization": "Human JWT; Admin",
+    "request": "PageQuery",
+    "response": "AuditPage",
+    "success": "200"
+  },
+  {
+    "operationId": "GetJwks",
+    "method": "GET",
+    "path": "/.well-known/jwks.json",
+    "owner": "Identity",
+    "authorization": "Public; trusted issuer origin",
+    "request": "None",
+    "response": "Jwks",
+    "success": "200"
+  },
+  {
+    "operationId": "EstimateFee",
+    "method": "POST",
+    "path": "/api/v1/quotes",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Customer",
+    "request": "QuoteInput",
+    "response": "Quote",
+    "success": "200"
+  },
+  {
+    "operationId": "CreateParcel",
+    "method": "POST",
+    "path": "/api/v1/parcels",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Customer; own quote",
+    "request": "ConfirmInput",
+    "response": "Parcel",
+    "success": "201"
+  },
+  {
+    "operationId": "ListParcels",
+    "method": "GET",
+    "path": "/api/v1/parcels",
+    "owner": "Delivery",
+    "authorization": "Human JWT; own Customer or Dispatcher/Admin",
+    "request": "ParcelQuery",
+    "response": "ParcelPage",
+    "success": "200"
+  },
+  {
+    "operationId": "GetParcel",
+    "method": "GET",
+    "path": "/api/v1/parcels/{id}",
+    "owner": "Delivery",
+    "authorization": "Human JWT; owner, assigned Courier, Dispatcher/Admin",
+    "request": "None",
+    "response": "Parcel",
+    "success": "200"
+  },
+  {
+    "operationId": "PublicTrack",
+    "method": "GET",
+    "path": "/api/v1/parcels/track/{trackingNumber}",
+    "owner": "Delivery",
+    "authorization": "Public; rate limited",
+    "request": "None",
+    "response": "PublicTrackingSummary",
+    "success": "200"
+  },
+  {
+    "operationId": "ParcelEvents",
+    "method": "GET",
+    "path": "/api/v1/parcels/{id}/events",
+    "owner": "Delivery",
+    "authorization": "Human JWT; owner, assigned Courier, Dispatcher/Admin",
+    "request": "None",
+    "response": "SseSnapshot",
+    "success": "200"
+  },
+  {
+    "operationId": "CancelParcel",
+    "method": "PUT",
+    "path": "/api/v1/parcels/{id}/cancel",
+    "owner": "Delivery",
+    "authorization": "Human JWT; own Customer or Dispatcher/Admin",
+    "request": "CancelInput",
+    "response": "Parcel",
+    "success": "200"
+  },
+  {
+    "operationId": "DownloadReceipt",
+    "method": "GET",
+    "path": "/api/v1/parcels/{id}/receipt",
+    "owner": "Delivery",
+    "authorization": "Human JWT; own Customer, Admin; Delivered only",
+    "request": "None",
+    "response": "PdfBytes",
+    "success": "200"
+  },
+  {
+    "operationId": "DownloadProof",
+    "method": "GET",
+    "path": "/api/v1/parcels/{id}/pod",
+    "owner": "Delivery",
+    "authorization": "Human JWT; own Customer, Admin; Delivered only",
+    "request": "None",
+    "response": "ImageBytes",
+    "success": "200"
+  },
+  {
+    "operationId": "AssignCourier",
+    "method": "POST",
+    "path": "/api/v1/deliveries/assign",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Dispatcher/Admin",
+    "request": "AssignInput",
+    "response": "Parcel",
+    "success": "200"
+  },
+  {
+    "operationId": "UpdateDeliveryStatus",
+    "method": "PUT",
+    "path": "/api/v1/deliveries/{id}/status",
+    "owner": "Delivery",
+    "authorization": "Human JWT; currently assigned Courier",
+    "request": "StatusInput",
+    "response": "Parcel",
+    "success": "200"
+  },
+  {
+    "operationId": "CompleteDeliveryWithProof",
+    "method": "POST",
+    "path": "/api/v1/deliveries/{id}/pod",
+    "owner": "Delivery",
+    "authorization": "Human JWT; currently assigned Courier",
+    "request": "ProofInput",
+    "response": "Parcel",
+    "success": "200"
+  },
+  {
+    "operationId": "CourierAssignments",
+    "method": "GET",
+    "path": "/api/v1/couriers/me/assignments",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Courier self",
+    "request": "AssignmentQuery",
+    "response": "ParcelPage",
+    "success": "200"
+  },
+  {
+    "operationId": "CourierHistory",
+    "method": "GET",
+    "path": "/api/v1/couriers/me/history",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Courier self",
+    "request": "PageQuery",
+    "response": "ParcelPage",
+    "success": "200"
+  },
+  {
+    "operationId": "CourierWorkload",
+    "method": "GET",
+    "path": "/api/v1/couriers/workload",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Dispatcher/Admin",
+    "request": "PageQuery",
+    "response": "WorkloadPage",
+    "success": "200"
+  },
+  {
+    "operationId": "ZoneSummary",
+    "method": "GET",
+    "path": "/api/v1/zones/summary",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Dispatcher/Admin",
+    "request": "DateQuery",
+    "response": "ZoneSummary",
+    "success": "200"
+  },
+  {
+    "operationId": "ListZones",
+    "method": "GET",
+    "path": "/api/v1/zones",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Admin",
+    "request": "PageQuery",
+    "response": "ZonePage",
+    "success": "200"
+  },
+  {
+    "operationId": "CreateZone",
+    "method": "POST",
+    "path": "/api/v1/zones",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Admin",
+    "request": "ZoneInput",
+    "response": "Zone",
+    "success": "201"
+  },
+  {
+    "operationId": "UpdateZone",
+    "method": "PUT",
+    "path": "/api/v1/zones/{id}",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Admin",
+    "request": "ZoneInput",
+    "response": "Zone",
+    "success": "200"
+  },
+  {
+    "operationId": "ListPricing",
+    "method": "GET",
+    "path": "/api/v1/pricing-tiers",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Admin",
+    "request": "PageQuery",
+    "response": "PricingPage",
+    "success": "200"
+  },
+  {
+    "operationId": "CreatePricing",
+    "method": "POST",
+    "path": "/api/v1/pricing-tiers",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Admin",
+    "request": "PricingInput",
+    "response": "Pricing",
+    "success": "201"
+  },
+  {
+    "operationId": "UpdatePricing",
+    "method": "PUT",
+    "path": "/api/v1/pricing-tiers/{id}",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Admin",
+    "request": "PricingInput",
+    "response": "Pricing",
+    "success": "200"
+  },
+  {
+    "operationId": "DeliveryReport",
+    "method": "GET",
+    "path": "/api/v1/reports/deliveries",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Admin",
+    "request": "DateQuery",
+    "response": "DeliveryReport",
+    "success": "200"
+  },
+  {
+    "operationId": "RegisterMerchant",
+    "method": "POST",
+    "path": "/api/v1/merchants/register",
+    "owner": "Merchant",
+    "authorization": "Human JWT; self applicant",
+    "request": "MerchantInput",
+    "response": "Business",
+    "success": "201"
+  },
+  {
+    "operationId": "GetMerchant",
+    "method": "GET",
+    "path": "/api/v1/merchants/me",
+    "owner": "Merchant",
+    "authorization": "Human JWT; own applicant/business",
+    "request": "None",
+    "response": "Business",
+    "success": "200"
+  },
+  {
+    "operationId": "ListMerchants",
+    "method": "GET",
+    "path": "/api/v1/merchants",
+    "owner": "Merchant",
+    "authorization": "Human JWT; Admin",
+    "request": "PageQuery",
+    "response": "BusinessPage",
+    "success": "200"
+  },
+  {
+    "operationId": "SetMerchantStatus",
+    "method": "PUT",
+    "path": "/api/v1/merchants/{id}/status",
+    "owner": "Merchant",
+    "authorization": "Human JWT; Admin",
+    "request": "ApprovalInput",
+    "response": "Business",
+    "success": "200"
+  },
+  {
+    "operationId": "CreateApiKey",
+    "method": "POST",
+    "path": "/api/v1/merchants/api-keys",
+    "owner": "Merchant",
+    "authorization": "Human JWT; approved Merchant owner",
+    "request": "ScopesInput",
+    "response": "OneTimeKey",
+    "success": "201"
+  },
+  {
+    "operationId": "ListApiKeys",
+    "method": "GET",
+    "path": "/api/v1/merchants/api-keys",
+    "owner": "Merchant",
+    "authorization": "Human JWT; approved Merchant owner",
+    "request": "PageQuery",
+    "response": "KeyMetadataPage",
+    "success": "200"
+  },
+  {
+    "operationId": "RevokeApiKey",
+    "method": "DELETE",
+    "path": "/api/v1/merchants/api-keys/{keyId}",
+    "owner": "Merchant",
+    "authorization": "Human JWT; own approved Merchant",
+    "request": "None",
+    "response": "Empty",
+    "success": "204"
+  },
+  {
+    "operationId": "SubmitMerchantOrder",
+    "method": "POST",
+    "path": "/api/v1/merchant/orders",
+    "owner": "Merchant",
+    "authorization": "X-API-Key; approved Merchant; orders:write",
+    "request": "MerchantOrderInput",
+    "response": "OrderJob",
+    "success": "202"
+  },
+  {
+    "operationId": "ListMerchantOrders",
+    "method": "GET",
+    "path": "/api/v1/merchant/orders",
+    "owner": "Merchant",
+    "authorization": "Human JWT Merchant owner OR X-API-Key orders:read",
+    "request": "PageQuery",
+    "response": "OrderJobPage",
+    "success": "200"
+  },
+  {
+    "operationId": "GetMerchantOrder",
+    "method": "GET",
+    "path": "/api/v1/merchant/orders/{id}",
+    "owner": "Merchant",
+    "authorization": "Human JWT Merchant owner OR X-API-Key orders:read",
+    "request": "None",
+    "response": "OrderJob",
+    "success": "200"
+  },
+  {
+    "operationId": "MerchantDashboard",
+    "method": "GET",
+    "path": "/api/v1/merchants/me/dashboard",
+    "owner": "Merchant",
+    "authorization": "Human JWT; approved Merchant owner",
+    "request": "DateQuery",
+    "response": "MerchantDashboard",
+    "success": "200"
+  },
+  {
+    "operationId": "CreateWebhook",
+    "method": "POST",
+    "path": "/api/v1/merchant/webhooks",
+    "owner": "Merchant",
+    "authorization": "Human JWT owner OR X-API-Key webhooks:manage; approved",
+    "request": "WebhookInput",
+    "response": "OneTimeWebhook",
+    "success": "201"
+  },
+  {
+    "operationId": "ListWebhooks",
+    "method": "GET",
+    "path": "/api/v1/merchant/webhooks",
+    "owner": "Merchant",
+    "authorization": "Human JWT owner OR X-API-Key webhooks:manage; approved",
+    "request": "PageQuery",
+    "response": "WebhookPage",
+    "success": "200"
+  },
+  {
+    "operationId": "DeleteWebhook",
+    "method": "DELETE",
+    "path": "/api/v1/merchant/webhooks/{id}",
+    "owner": "Merchant",
+    "authorization": "Human JWT owner OR X-API-Key webhooks:manage; approved",
+    "request": "None",
+    "response": "Empty",
+    "success": "204"
+  },
+  {
+    "operationId": "ListWebhookAttempts",
+    "method": "GET",
+    "path": "/api/v1/merchant/webhooks/{id}/attempts",
+    "owner": "Merchant",
+    "authorization": "Human JWT; approved Merchant owner",
+    "request": "PageQuery",
+    "response": "WebhookAttemptPage",
+    "success": "200"
+  },
+  {
+    "operationId": "ReplayWebhook",
+    "method": "POST",
+    "path": "/api/v1/merchant/webhooks/{id}/replays",
+    "owner": "Merchant",
+    "authorization": "Human JWT; approved Merchant owner; audit",
+    "request": "ReplayInput",
+    "response": "WebhookJob",
+    "success": "202"
+  },
+  {
+    "operationId": "DispatchWebhook",
+    "method": "POST",
+    "path": "/internal/v1/webhook-dispatches",
+    "owner": "Merchant",
+    "authorization": "Service JWT; worker; webhooks:dispatch",
+    "request": "StatusChanged",
+    "response": "DispatchResult",
+    "success": "202"
+  },
+  {
+    "operationId": "NotificationContext",
+    "method": "POST",
+    "path": "/internal/v1/notification-context",
+    "owner": "Delivery",
+    "authorization": "Service JWT; worker; notifications:resolve",
+    "request": "EventReference",
+    "response": "NotificationContext",
+    "success": "200"
+  },
+  {
+    "operationId": "CancelMerchantParcel",
+    "method": "PUT",
+    "path": "/internal/v1/parcels/{id}/cancel",
+    "owner": "Delivery",
+    "authorization": "Service JWT; Merchant; parcels:cancel; owning merchant",
+    "request": "MerchantCancelInput",
+    "response": "Parcel",
+    "success": "200"
+  }
+]
