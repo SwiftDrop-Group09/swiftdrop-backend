@@ -60,38 +60,34 @@ GitHub Actions runs restore, Release build, tests and process smoke checks on
 pull requests, main/chore branch pushes, and manual dispatch. A hosted workflow
 run is still required to establish CI execution evidence.
 
-## Run locally without containers
+## Run in the shared development environment
 
-Run each command in its own terminal from this repository root:
+For routine iteration, backend services can run directly on the host or in
+their own Docker containers. Both modes are exposed by the infra runner. Keep
+this repository beside `swiftdrop-infra` and `swiftdrop-frontend`. Host mode:
 
 ```sh
-dotnet run --project src/Services/Identity/SwiftDrop.Identity.Api --launch-profile http
-dotnet run --project src/Services/Delivery/SwiftDrop.Delivery.Api --launch-profile http
-dotnet run --project src/Services/Merchant/SwiftDrop.Merchant.Api --launch-profile http
-dotnet run --project src/Workers/SwiftDrop.Notification.Worker --launch-profile http
-dotnet run --project src/Gateway/SwiftDrop.Gateway --launch-profile http
+./development/run.sh up --mode host
 ```
 
-The Development configuration uses separate loopback addresses so all private
-HTTP hosts can retain port 8080 on one machine:
+For Docker mode, start Docker and run:
 
-| Host | Development liveness |
-|---|---|
-| Gateway | http://127.0.0.1:5000/health |
-| Identity | http://127.0.0.2:8080/health |
-| Delivery | http://127.0.0.3:8080/health |
-| Merchant | http://127.0.0.4:8080/health |
-| Worker | http://127.0.0.5:8080/health |
+```sh
+./development/run.sh up --mode docker --build
+```
 
-Delivery also reserves `127.0.0.3:8081` for internal HTTP/2; no gRPC method is
-mapped. These loopback-only process-development addresses are diagnostics, not
-additional published deployment ports or client entry points. Clients use Gateway.
+The frontend is available at `http://localhost:5173`; clients call the Gateway
+at `http://localhost:5000`. To rebuild a changed service use
+`./development/run.sh up --mode docker --build delivery-service`.
 
-After the Release build, run `./scripts/verify-foundation.ps1` in PowerShell
-(5.1+ on Windows, PowerShell 7 on Linux/macOS). It checks the project reference
-graph, starts all five hosts, verifies health and missing endpoints, checks
-gateway forwarding and the HTTP/2 listener, then stops only the processes it
-started. The listed local ports must be free; stop manually running hosts first.
+Developers may choose host mode for daily coding, but a Docker build/start
+check is required before merging app/container changes. Run the full Docker
+command and verify startup, or use equivalent CI/Docker-enabled teammate
+evidence. See the infra README for exact acceptance steps.
+
+`./scripts/verify-foundation.ps1` remains a backend test utility; it starts
+temporary host processes to verify liveness and routing. It is not the shared
+team development run command.
 
 A successful `GET /health` returns HTTP 200 and `Healthy`, meaning only that the
 process can respond. No dependency readiness is claimed; `/ready` returns 404.
@@ -123,34 +119,29 @@ installed. `config/local.example.json` is a sanitized reference, not a loaded
 configuration file; its empty credentials must be supplied privately when their
 adapters are introduced. Never copy every workload's database secret into one host.
 
-For the shared local dependency stack and the supported local-process connection
-between React and YARP, follow the [infrastructure repository setup guide](../swiftdrop-infra/README.md).
+For the shared containerized development environment, follow the
+[infrastructure repository setup guide](../swiftdrop-infra/README.md).
 The current backend scaffold does not consume the database, broker, or object
 store settings; those adapters and dependency-aware readiness are later work.
 
-Container deployments must merge [deployment/compose.backend.yaml](deployment/compose.backend.yaml)
-after the documentation reference Compose. It explicitly sets
-`Kestrel__Endpoints__Http__Url=http://0.0.0.0:8080` on all five hosts and
-`Kestrel__Endpoints__Grpc__Url=http://0.0.0.0:8081` on Delivery. Port-only
-`ASPNETCORE_HTTP_PORTS` and `Grpc__Port` settings do not replace explicit
-Kestrel endpoints. The override selects Production configuration so base YARP
-destinations use private service DNS; Development retains the loopback addresses
-above. API/Worker HTTP and Delivery gRPC are private; only Gateway is published
-as loopback host port 5000.
+The infra development Compose file sets explicit container Kestrel endpoints
+and Production configuration so YARP uses private service DNS. API/Worker HTTP
+and Delivery gRPC stay on the Compose network; only Gateway is published at
+loopback host port 5000.
 
 The configuration contract uses database logins `identity_app`, `delivery_app`,
 `merchant_app`, and `notifications_app`; broker users `delivery_bus` and
 `worker_bus`; `Broker__Host/Username/Password`; and Merchant's
-`Delivery__GrpcAddress`. See [deployment/README.md](deployment/README.md) for
-exact environment keys, local/container addresses and Compose merge commands.
-The infrastructure implementation must adopt this same contract.
+`Delivery__GrpcAddress`. The Compose file contains future integration
+configuration, but these adapters are not active in the current scaffold.
 
 The planned PostgreSQL deployment has one instance and four privately owned
 logical databases with separate credentials, never a shared schema or cross-service
 query. RabbitMQ/MassTransit belong to later messaging integration. No PostgreSQL,
 RabbitMQ/MassTransit, GraphQL, gRPC or SSE packages/adapters are installed in this
-checkpoint. There are no migrations, generated clients, event publishers or consumers.
-Docker/Compose packaging and dependency-aware readiness remain future work.
+checkpoint. There are no migrations, generated clients, event publishers or
+consumers. Docker packaging exists for the development containers; actual
+database/broker integration and dependency-aware readiness remain future work.
 
 Do not add Redis, SignalR, a separate realtime process or extra capability services.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for review and contribution conventions.

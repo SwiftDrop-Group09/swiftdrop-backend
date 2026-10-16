@@ -1,5 +1,5 @@
-# Merge after the documentation reference Compose; this is not a standalone deployment.
-# Explicit Kestrel endpoints override ASPNETCORE_HTTP_PORTS and Grpc__Port.
+# Optional Kestrel override for Compose deployments using the canonical
+# service names. development/compose.yaml already supplies these settings.
 services:
   gateway:
     environment:
