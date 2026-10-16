@@ -1,7 +1,17 @@
-using SwiftDrop.Notification.Worker;
+namespace SwiftDrop.Notification.Worker;
 
-var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddHostedService<Worker>();
+public partial class Program
+{
+    public static void Main(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder(args);
+        builder.Services.AddHealthChecks();
 
-var host = builder.Build();
-host.Run();
+        var app = builder.Build();
+
+        // Process liveness only; dependency readiness is a later milestone.
+        app.MapHealthChecks("/health");
+
+        app.Run();
+    }
+}
