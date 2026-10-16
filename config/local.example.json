@@ -2,17 +2,16 @@
   "_comment": "Reference only; not loaded automatically. Apply only the owning workload's section with user-secrets or environment variables. Supply all credentials privately; empty values are deliberate.",
   "Identity": {
     "ConnectionStrings": {
-      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_identity;Username=swiftdrop_identity_app;Password="
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_identity;Username=identity_app;Password="
     }
   },
   "Delivery": {
     "ConnectionStrings": {
-      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_delivery;Username=swiftdrop_delivery_app;Password="
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_delivery;Username=delivery_app;Password="
     },
-    "RabbitMq": {
+    "Broker": {
       "Host": "rabbitmq",
-      "Port": 5672,
-      "Username": "delivery-service",
+      "Username": "delivery_bus",
       "Password": ""
     },
     "Operations": {
@@ -21,21 +20,19 @@
   },
   "Merchant": {
     "ConnectionStrings": {
-      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_merchant;Username=swiftdrop_merchant_app;Password="
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_merchant;Username=merchant_app;Password="
     },
-    "DeliveryGrpc": {
-      "Address": "http://127.0.0.3:8081",
-      "Audience": "delivery-internal"
+    "Delivery": {
+      "GrpcAddress": "http://127.0.0.3:8081"
     }
   },
   "Notification": {
     "ConnectionStrings": {
-      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_notifications;Username=swiftdrop_notifications_app;Password="
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_notifications;Username=notifications_app;Password="
     },
-    "RabbitMq": {
+    "Broker": {
       "Host": "rabbitmq",
-      "Port": 5672,
-      "Username": "notification-service",
+      "Username": "worker_bus",
       "Password": ""
     }
   }

@@ -123,15 +123,22 @@ installed. `config/local.example.json` is a sanitized reference, not a loaded
 configuration file; its empty credentials must be supplied privately when their
 adapters are introduced. Never copy every workload's database secret into one host.
 
-Listener overrides use `Kestrel__Endpoints__Http__Url`; Delivery's HTTP/2 listener
-uses `Kestrel__Endpoints__Grpc__Url`. Explicit Kestrel endpoints take precedence
-over `ASPNETCORE_URLS` / `--urls`. For future containers set HTTP to
-`http://0.0.0.0:8080`, Delivery HTTP/2 to `http://0.0.0.0:8081`, and Gateway
-HTTP to `http://0.0.0.0:8080` on the trusted private network. Only Gateway should
-be published as loopback host port 5000. Base YARP destinations use the canonical
-`identity-service`, `delivery-service`, `merchant-service` DNS names on 8080;
-Development overrides them with the loopback addresses above. The Worker health
-listener and Delivery gRPC listener stay private.
+Container deployments must merge [deployment/compose.backend.yaml](deployment/compose.backend.yaml)
+after the documentation reference Compose. It explicitly sets
+`Kestrel__Endpoints__Http__Url=http://0.0.0.0:8080` on all five hosts and
+`Kestrel__Endpoints__Grpc__Url=http://0.0.0.0:8081` on Delivery. Port-only
+`ASPNETCORE_HTTP_PORTS` and `Grpc__Port` settings do not replace explicit
+Kestrel endpoints. The override selects Production configuration so base YARP
+destinations use private service DNS; Development retains the loopback addresses
+above. API/Worker HTTP and Delivery gRPC are private; only Gateway is published
+as loopback host port 5000.
+
+The configuration contract uses database logins `identity_app`, `delivery_app`,
+`merchant_app`, and `notifications_app`; broker users `delivery_bus` and
+`worker_bus`; `Broker__Host/Username/Password`; and Merchant's
+`Delivery__GrpcAddress`. See [deployment/README.md](deployment/README.md) for
+exact environment keys, local/container addresses and Compose merge commands.
+The infrastructure implementation must adopt this same contract.
 
 The planned PostgreSQL deployment has one instance and four privately owned
 logical databases with separate credentials, never a shared schema or cross-service
