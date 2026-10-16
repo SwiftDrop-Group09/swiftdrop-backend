@@ -1,0 +1,42 @@
+{
+  "_comment": "Reference only; not loaded automatically. Apply only the owning workload's section with user-secrets or environment variables. Supply all credentials privately; empty values are deliberate.",
+  "Identity": {
+    "ConnectionStrings": {
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_identity;Username=swiftdrop_identity_app;Password="
+    }
+  },
+  "Delivery": {
+    "ConnectionStrings": {
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_delivery;Username=swiftdrop_delivery_app;Password="
+    },
+    "RabbitMq": {
+      "Host": "rabbitmq",
+      "Port": 5672,
+      "Username": "delivery-service",
+      "Password": ""
+    },
+    "Operations": {
+      "TimeZone": "Asia/Colombo"
+    }
+  },
+  "Merchant": {
+    "ConnectionStrings": {
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_merchant;Username=swiftdrop_merchant_app;Password="
+    },
+    "DeliveryGrpc": {
+      "Address": "http://127.0.0.3:8081",
+      "Audience": "delivery-internal"
+    }
+  },
+  "Notification": {
+    "ConnectionStrings": {
+      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_notifications;Username=swiftdrop_notifications_app;Password="
+    },
+    "RabbitMq": {
+      "Host": "rabbitmq",
+      "Port": 5672,
+      "Username": "notification-service",
+      "Password": ""
+    }
+  }
+}

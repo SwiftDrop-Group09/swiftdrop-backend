@@ -1,0 +1,43 @@
+syntax = "proto3";
+package swiftdrop.delivery.v1;
+
+service DeliveryService {
+  rpc CreateBooking(CreateBookingRequest) returns (BookingResult);
+  rpc GetBookingByExternalOrder(GetBookingByExternalOrderRequest) returns (BookingResult);
+}
+
+message Address {
+  string street = 1;
+  string city = 2;
+  string postal_code = 3;
+  string zone_id = 4;
+}
+message Recipient { string name = 1; string phone_number = 2; }
+message CreateBookingRequest {
+  string merchant_id = 1;
+  string external_order_id = 2;
+  string idempotency_key = 3;
+  string request_fingerprint = 4;
+  Address pickup_address = 5;
+  Address delivery_address = 6;
+  Recipient recipient = 7;
+  string weight_kg = 8;
+  string size = 9;
+  string accepted_price_version = 10;
+}
+message GetBookingByExternalOrderRequest {
+  string merchant_id = 1;
+  string external_order_id = 2;
+}
+message BookingResult {
+  string parcel_id = 1;
+  string tracking_number = 2;
+  string status = 3;
+  int64 version = 4;
+  string total = 5;
+  string currency = 6;
+  string pricing_version = 7;
+  string last_status_changed_at = 8;
+  optional string terminal_at = 9;
+  string created_at = 10;
+}

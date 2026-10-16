@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/status-changed-v1.schema.json",
+  "title": "StatusChanged v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "occurredAt",
+    "parcelId",
+    "parcelVersion",
+    "merchantId",
+    "status",
+    "previousStatus",
+    "correlationId"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "StatusChanged"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "parcelId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parcelVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "merchantId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "enum": [
+        "Created",
+        "Assigned",
+        "PickedUp",
+        "InTransit",
+        "OutForDelivery",
+        "Delivered",
+        "Failed",
+        "Cancelled"
+      ]
+    },
+    "previousStatus": {
+      "enum": [
+        null,
+        "Created",
+        "Assigned",
+        "PickedUp",
+        "InTransit",
+        "OutForDelivery",
+        "Delivered",
+        "Failed",
+        "Cancelled"
+      ]
+    },
+    "correlationId": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
