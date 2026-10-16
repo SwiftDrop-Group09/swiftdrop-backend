@@ -1,13 +1,13 @@
 {
-  "_comment": "Reference only; not loaded automatically. Apply only the owning workload's section with user-secrets or environment variables. Supply all credentials privately; empty values are deliberate.",
+  "_comment": "Reference only; not loaded automatically. Replace the Neon endpoint and password placeholders, then apply only the owning workload's section with user-secrets or environment variables.",
   "Identity": {
     "ConnectionStrings": {
-      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_identity;Username=identity_app;Password="
+      "Database": "Host=ep-your-endpoint.region.aws.neon.tech;Port=5432;Database=swiftdrop_identity;Username=identity_app;Password=REPLACE_WITH_IDENTITY_PASSWORD;SSL Mode=Require;Trust Server Certificate=false"
     }
   },
   "Delivery": {
     "ConnectionStrings": {
-      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_delivery;Username=delivery_app;Password="
+      "Database": "Host=ep-your-endpoint.region.aws.neon.tech;Port=5432;Database=swiftdrop_delivery;Username=delivery_app;Password=REPLACE_WITH_DELIVERY_PASSWORD;SSL Mode=Require;Trust Server Certificate=false"
     },
     "Broker": {
       "Host": "rabbitmq",
@@ -20,7 +20,7 @@
   },
   "Merchant": {
     "ConnectionStrings": {
-      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_merchant;Username=merchant_app;Password="
+      "Database": "Host=ep-your-endpoint.region.aws.neon.tech;Port=5432;Database=swiftdrop_merchant;Username=merchant_app;Password=REPLACE_WITH_MERCHANT_PASSWORD;SSL Mode=Require;Trust Server Certificate=false"
     },
     "Delivery": {
       "GrpcAddress": "http://127.0.0.3:8081"
@@ -28,7 +28,7 @@
   },
   "Notification": {
     "ConnectionStrings": {
-      "Database": "Host=127.0.0.1;Port=5432;Database=swiftdrop_notifications;Username=notifications_app;Password="
+      "Database": "Host=ep-your-endpoint.region.aws.neon.tech;Port=5432;Database=swiftdrop_notifications;Username=notifications_app;Password=REPLACE_WITH_NOTIFICATION_PASSWORD;SSL Mode=Require;Trust Server Certificate=false"
     },
     "Broker": {
       "Host": "rabbitmq",

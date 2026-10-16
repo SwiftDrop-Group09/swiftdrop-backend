@@ -123,6 +123,11 @@ installed. `config/local.example.json` is a sanitized reference, not a loaded
 configuration file; its empty credentials must be supplied privately when their
 adapters are introduced. Never copy every workload's database secret into one host.
 
+For the shared local dependency stack and the supported local-process connection
+between React and YARP, follow the [infrastructure repository setup guide](../swiftdrop-infra/README.md).
+The current backend scaffold does not consume the database, broker, or object
+store settings; those adapters and dependency-aware readiness are later work.
+
 Container deployments must merge [deployment/compose.backend.yaml](deployment/compose.backend.yaml)
 after the documentation reference Compose. It explicitly sets
 `Kestrel__Endpoints__Http__Url=http://0.0.0.0:8080` on all five hosts and

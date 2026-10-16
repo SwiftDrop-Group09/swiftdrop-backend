@@ -58,16 +58,17 @@ Keys below apply within each owning host, not as global workload-prefixed keys.
 The Identity/Delivery/Merchant/Notification groups in
 [local.example.json](../config/local.example.json) are reference groupings only.
 
-| Workload | Database | Database username | Database password input |
+| Workload | Neon database | Neon role | Sample environment variable |
 |---|---|---|---|
-| Identity | swiftdrop_identity | identity_app | IDENTITY_DB_PASSWORD |
-| Delivery | swiftdrop_delivery | delivery_app | DELIVERY_DB_PASSWORD |
-| Merchant | swiftdrop_merchant | merchant_app | MERCHANT_DB_PASSWORD |
-| Notification Worker | swiftdrop_notifications | notifications_app | NOTIFICATIONS_DB_PASSWORD |
+| Identity | swiftdrop_identity | identity_app | IDENTITY_DATABASE_CONNECTION_STRING |
+| Delivery | swiftdrop_delivery | delivery_app | DELIVERY_DATABASE_CONNECTION_STRING |
+| Merchant | swiftdrop_merchant | merchant_app | MERCHANT_DATABASE_CONNECTION_STRING |
+| Notification Worker | swiftdrop_notifications | notifications_app | NOTIFICATIONS_DATABASE_CONNECTION_STRING |
 
-Each host receives only its own `ConnectionStrings__Database`.
-Use PostgreSQL host `127.0.0.1:5432` for a local process or `postgres:5432`
-inside the reference network. Database names and usernames are identical in both.
+Each host receives only its own `ConnectionStrings__Database`. The sample
+connection strings use a placeholder Neon endpoint and require TLS; replace them
+with the actual Neon connection details after databases and roles are created.
+Do not pass all four service credentials to every host.
 
 | Workload | Environment key | Value / private input |
 |---|---|---|
