@@ -1,0 +1,6 @@
+@SwiftDrop.Delivery.Api_HostAddress = http://localhost:5262
+
+GET {{SwiftDrop.Delivery.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
