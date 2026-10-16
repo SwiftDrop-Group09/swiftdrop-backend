@@ -1,8 +1,9 @@
 # Identity Application
 
-Own use cases and ports. Depend on Domain; keep REST, GraphQL and internal gRPC adapters thin and reuse these handlers when implemented.
+Own use cases and ports. `IUserRegistrationStore` is the persistence port used by
+the Customer registration endpoint; keep API handlers thin and put database
+access behind this interface.
 
 Namespace: `SwiftDrop.Identity.Api.Application`.
-This folder reserves the boundary; no business implementation is present.
-These are folders within one project; dependency direction is a review convention,
-not compiler-enforced project isolation.
+These are folders within one project; dependency direction is a review
+convention, not compiler-enforced project isolation.
