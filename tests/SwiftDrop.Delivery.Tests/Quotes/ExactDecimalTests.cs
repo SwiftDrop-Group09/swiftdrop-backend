@@ -2,7 +2,7 @@ using System.Buffers;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using SwiftDrop.Delivery.Api.Presentation;
+using SwiftDrop.Delivery.Api.Application.Serialization;
 
 namespace SwiftDrop.Delivery.Tests.Quotes;
 

@@ -2,12 +2,13 @@
 
 Foundation for the SwiftDrop university Enterprise Application Development project.
 Targets .NET 10. Process liveness, gateway forwarding and Identity registration
-are implemented. Delivery has the Phase 1 persistence foundation and the Phase 2
-fee-estimation/owner-bound quote API, with real PostgreSQL tests. Production
-quote authentication fails closed until verified Identity integration is supplied;
-positive HTTP tests use principals registered only in the test host. Parcel
-confirmation, JWT verification, messaging relay, GraphQL, SSE and gRPC handlers
+are implemented. Delivery provides fee estimates, owner-bound quotes and explicit
+Customer booking confirmation with atomic PostgreSQL persistence. Production
+Customer authentication fails closed until verified Identity integration is supplied;
+positive HTTP tests use principals registered only in the test host. JWT
+verification, messaging relay, tracking reads, GraphQL, SSE and gRPC handlers
 remain later work. See the
+[Phase 3 checkpoint](docs/delivery-phase-3-assessment.md),
 [Phase 2 checkpoint](docs/delivery-phase-2-assessment.md),
 [Phase 1 report](docs/delivery-phase-1-assessment.md) and
 [persistence runbook](src/Services/Delivery/SwiftDrop.Delivery.Api/Infrastructure/README.md).
@@ -17,7 +18,7 @@ Architecture approval is still pending. See its
 [service catalog](https://github.com/SwiftDrop-Group09/swiftdrop-docs/blob/233f7077f54949c0cacc31f11b203bf4a27d02b4/architecture/service-catalog.md)
 and [environment matrix](https://github.com/SwiftDrop-Group09/swiftdrop-docs/blob/233f7077f54949c0cacc31f11b203bf4a27d02b4/deployment/environments.md).
 The current local booking contracts were reconciled in docs commit `2ea9695`;
-Phase 2 follows that checkout, including the user-confirmed delivery-address
+Delivery booking follows that checkout, including the user-confirmed delivery-address
 tariff zone and Neon deployment, while other design decisions remain Proposed.
 
 ## Projects and ownership
@@ -33,7 +34,7 @@ tariff zone and Neon deployment, while other design decisions remain Proposed.
 | SwiftDrop.Notification.Worker | src/Workers/SwiftDrop.Notification.Worker | Future consumers/provider jobs; private health host only today / swiftdrop_notifications |
 | SwiftDrop.Contracts | src/BuildingBlocks/SwiftDrop.Contracts | Dependency-free, versioned integration contract assets |
 | SwiftDrop.Identity.Tests | tests/SwiftDrop.Identity.Tests | Identity host foundation |
-| SwiftDrop.Delivery.Tests | tests/SwiftDrop.Delivery.Tests | Delivery domain, fee quotes, PostgreSQL persistence and host foundation |
+| SwiftDrop.Delivery.Tests | tests/SwiftDrop.Delivery.Tests | Delivery domain, quotes, confirmation, PostgreSQL persistence and host foundation |
 | SwiftDrop.Merchant.Tests | tests/SwiftDrop.Merchant.Tests | Merchant host foundation |
 | SwiftDrop.Notification.Tests | tests/SwiftDrop.Notification.Tests | Worker host foundation |
 | SwiftDrop.Gateway.Tests | tests/SwiftDrop.Gateway.Tests | Documented route ownership and internal-path isolation |
@@ -63,10 +64,18 @@ dotnet build SwiftDrop.sln --no-restore --configuration Release
 dotnet test SwiftDrop.sln --no-build --configuration Release
 ```
 
+Packages restore into the ignored `.nuget/packages/` directory under this
+repository. This keeps generated assembly references readable by the editor
+and command-line builds when they run under different accounts. After changing
+the package cache location, run restore again to refresh every project's
+generated assets. If VS Code retains old NETSDK1064/MSB3106 diagnostics, reload
+its window after restore completes.
+
 HTTP tests use ASP.NET Core TestServer. Delivery persistence tests additionally
 start a private loopback PostgreSQL process and clean up only their own data;
 see the persistence runbook for binary/temp-root environment settings. Tests
-check liveness, quote validation/pricing/ownership, absent later-phase endpoints, and the real YARP routing
+check liveness, quote validation/pricing/ownership, atomic booking and replay,
+absent later-phase endpoints, and the real YARP routing
 pipeline using a test-only transport. The route fixture is copied from baseline
 233f707; update it deliberately when the canonical route inventory changes.
 

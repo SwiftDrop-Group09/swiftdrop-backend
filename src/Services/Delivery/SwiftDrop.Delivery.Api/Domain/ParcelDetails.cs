@@ -1,6 +1,6 @@
 namespace SwiftDrop.Delivery.Api.Domain;
 
-// Persistence values supplied by validated application adapters in later phases.
+// Persistence values supplied by validated booking application adapters.
 // Address/contact text preserves structured data. Application adapters must select
 // ZoneId from deliveryAddress.zoneId for parcel, tariff, and snapshot consistency.
 public sealed record ParcelDetails(ParcelSize Size, decimal WeightKg, Guid ZoneId,

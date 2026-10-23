@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace SwiftDrop.Delivery.Api.Presentation;
+namespace SwiftDrop.Delivery.Api.Application.Serialization;
 
 /// <summary>Rejects JSON numbers that decimal parsing would silently round or underflow.</summary>
 public sealed class ExactDecimalConverter : JsonConverter<decimal>

@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application;
+using SwiftDrop.Delivery.Api.Application.Bookings;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Infrastructure.Authentication;
+using SwiftDrop.Delivery.Api.Infrastructure.Bookings;
 using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 using SwiftDrop.Delivery.Api.Infrastructure.Quotes;
 using SwiftDrop.Delivery.Api.Presentation;
@@ -20,10 +22,14 @@ public partial class Program
         builder.Services.AddScoped<ICurrentCustomer, ClaimsCurrentCustomer>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<QuoteEstimator>();
+        builder.Services.AddScoped<CustomerBookingHandler>();
+        builder.Services.AddSingleton<ITrackingNumberGenerator, CryptographicTrackingNumberGenerator>();
         // Storage is resolved only after use-case authorization and validation.
         // Invalid requests still have their proper response when DB settings are absent.
         builder.Services.AddScoped<IQuoteStore>(services =>
             new PostgresQuoteStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<IBookingStore>(services =>
+            new PostgresBookingStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddAuthentication(UnconfiguredIdentityHandler.SchemeName)
             .AddScheme<AuthenticationSchemeOptions, UnconfiguredIdentityHandler>(
                 UnconfiguredIdentityHandler.SchemeName, _ => { });
@@ -67,6 +73,7 @@ public partial class Program
         // Process liveness only; dependency readiness is a later milestone.
         app.MapHealthChecks("/health");
         app.MapCustomerQuotes();
+        app.MapCustomerBookings();
 
         app.Run();
     }

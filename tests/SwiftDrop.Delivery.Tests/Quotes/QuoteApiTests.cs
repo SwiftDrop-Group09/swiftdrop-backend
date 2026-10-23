@@ -445,14 +445,14 @@ public sealed class QuoteApiTests(PostgresFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task QuoteDependencyFailureIsSafeAndDoesNotImplementParcelCreation()
+    public async Task QuoteDependencyFailureIsSafeAndMalformedConfirmationIsRejected()
     {
         using var factory = new QuoteApiFactory(null, QuoteApiFactory.Customer(Guid.NewGuid()));
         using var client = factory.CreateClient();
         using var quote = await PostAsync(client, Input(Guid.NewGuid(), Guid.NewGuid()));
         await AssertProblemAsync(quote, HttpStatusCode.ServiceUnavailable);
         using var parcel = await client.PostAsync("/api/v1/parcels", new StringContent("{}", Encoding.UTF8, "application/json"));
-        Assert.Equal(HttpStatusCode.NotFound, parcel.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, parcel.StatusCode);
     }
 
     [Theory]
