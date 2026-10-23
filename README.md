@@ -64,6 +64,13 @@ dotnet build SwiftDrop.sln --no-restore --configuration Release
 dotnet test SwiftDrop.sln --no-build --configuration Release
 ```
 
+Packages restore into the ignored `.nuget/packages/` directory under this
+repository. This keeps generated assembly references readable by the editor
+and command-line builds when they run under different accounts. After changing
+the package cache location, run restore again to refresh every project's
+generated assets. If VS Code retains old NETSDK1064/MSB3106 diagnostics, reload
+its window after restore completes.
+
 HTTP tests use ASP.NET Core TestServer. Delivery persistence tests additionally
 start a private loopback PostgreSQL process and clean up only their own data;
 see the persistence runbook for binary/temp-root environment settings. Tests
