@@ -1,9 +1,13 @@
 # SwiftDrop Backend
 
 Foundation for the SwiftDrop university Enterprise Application Development project.
-Targets .NET 10. Only process liveness and gateway forwarding are implemented.
-Business routes, authentication, persistence, messaging, GraphQL, SSE and gRPC
-handlers are not implemented.
+Targets .NET 10. Process liveness, gateway forwarding and Identity registration
+are implemented. Delivery now has the Phase 1 booking domain/persistence
+foundation, an explicit EF migration task, and real PostgreSQL persistence tests.
+Delivery quote/booking endpoints, JWT verification, messaging relay, GraphQL,
+SSE and gRPC handlers remain later work. See the
+[Delivery checkpoint report](docs/delivery-phase-1-assessment.md) and
+[persistence runbook](src/Services/Delivery/SwiftDrop.Delivery.Api/Infrastructure/README.md).
 
 Architecture follows the proposed [documentation baseline at 233f707](https://github.com/SwiftDrop-Group09/swiftdrop-docs/tree/233f7077f54949c0cacc31f11b203bf4a27d02b4).
 Architecture approval is still pending. See its
@@ -23,7 +27,7 @@ and [environment matrix](https://github.com/SwiftDrop-Group09/swiftdrop-docs/blo
 | SwiftDrop.Notification.Worker | src/Workers/SwiftDrop.Notification.Worker | Future consumers/provider jobs; private health host only today / swiftdrop_notifications |
 | SwiftDrop.Contracts | src/BuildingBlocks/SwiftDrop.Contracts | Dependency-free, versioned integration contract assets |
 | SwiftDrop.Identity.Tests | tests/SwiftDrop.Identity.Tests | Identity host foundation |
-| SwiftDrop.Delivery.Tests | tests/SwiftDrop.Delivery.Tests | Delivery host foundation |
+| SwiftDrop.Delivery.Tests | tests/SwiftDrop.Delivery.Tests | Delivery domain, PostgreSQL persistence and host foundation |
 | SwiftDrop.Merchant.Tests | tests/SwiftDrop.Merchant.Tests | Merchant host foundation |
 | SwiftDrop.Notification.Tests | tests/SwiftDrop.Notification.Tests | Worker host foundation |
 | SwiftDrop.Gateway.Tests | tests/SwiftDrop.Gateway.Tests | Documented route ownership and internal-path isolation |
@@ -41,8 +45,10 @@ domain rules. No code generation or transport package is enabled yet.
 
 ## Build and test
 
-Install SDK **10.0.301**, pinned exactly in `global.json`, and Git. No database,
-broker, object store or credentials are needed for this scaffold.
+Install SDK **10.0.301**, pinned exactly in `global.json`, and Git. Delivery
+persistence tests require installed PostgreSQL binaries for a disposable cluster
+or an explicitly configured test database with temporary-schema permission.
+They fail when PostgreSQL is unavailable. No broker/object store is required.
 
 ```sh
 dotnet --version
@@ -51,8 +57,10 @@ dotnet build SwiftDrop.sln --no-restore --configuration Release
 dotnet test SwiftDrop.sln --no-build --configuration Release
 ```
 
-The xUnit integration tests use ASP.NET Core TestServer and do not bind TCP
-ports. They check liveness, absent feature endpoints, and the real YARP routing
+HTTP tests use ASP.NET Core TestServer. Delivery persistence tests additionally
+start a private loopback PostgreSQL process and clean up only their own data;
+see the persistence runbook for binary/temp-root environment settings. Tests
+check liveness, absent feature endpoints, and the real YARP routing
 pipeline using a test-only transport. The route fixture is copied from baseline
 233f707; update it deliberately when the canonical route inventory changes.
 
@@ -90,7 +98,9 @@ temporary host processes to verify liveness and routing. It is not the shared
 team development run command.
 
 A successful `GET /health` returns HTTP 200 and `Healthy`, meaning only that the
-process can respond. No dependency readiness is claimed; `/ready` returns 404.
+process can respond. Delivery, Merchant, Worker and Gateway `/ready` return 404.
+Identity implements `/ready` and returns 503 until its database is configured
+and migrated; it returns 200 only when its registration store reports ready.
 Unimplemented public operations forwarded to a running API return 404.
 If the destination is unavailable, YARP returns a proxy error rather than a
 successful placeholder response.
@@ -121,27 +131,35 @@ adapters are introduced. Never copy every workload's database secret into one ho
 
 For the shared containerized development environment, follow the
 [infrastructure repository setup guide](../swiftdrop-infra/README.md).
-The current backend scaffold does not consume the database, broker, or object
-store settings; those adapters and dependency-aware readiness are later work.
+Delivery consumes its database setting when persistence is requested or the
+explicit `--migrate` task runs. Normal startup applies no migrations and health
+remains process liveness only. Broker/object-store adapters remain later work.
 
 The infra development Compose file sets explicit container Kestrel endpoints
 and Production configuration so YARP uses private service DNS. API/Worker HTTP
 and Delivery gRPC stay on the Compose network; only Gateway is published at
 loopback host port 5000.
 
-The configuration contract uses database logins `identity_app`, `delivery_app`,
-`merchant_app`, and `notifications_app`; broker users `delivery_bus` and
-`worker_bus`; `Broker__Host/Username/Password`; and Merchant's
-`Delivery__GrpcAddress`. The Compose file contains future integration
-configuration, but these adapters are not active in the current scaffold.
+The current private inputs are `RABBITMQ_DEFAULT_PASS`,
+`IDENTITY_DATABASE_CONNECTION_STRING`, `DELIVERY_DATABASE_CONNECTION_STRING`,
+`MERCHANT_DATABASE_CONNECTION_STRING`,
+`NOTIFICATIONS_DATABASE_CONNECTION_STRING`, and
+`IDENTITY_MIGRATION_CONNECTION_STRING`. The shared runner/Compose maps each
+database secret only to its owning process. Delivery also accepts its named
+secret directly, with `ConnectionStrings:Database` taking precedence when set.
+RabbitMQ's default password belongs only to the broker; application messaging
+credentials remain separate future integration work. Merchant's
+`Delivery__GrpcAddress` is a nonsecret internal endpoint.
 
-The planned PostgreSQL deployment has one instance and four privately owned
-logical databases with separate credentials, never a shared schema or cross-service
-query. RabbitMQ/MassTransit belong to later messaging integration. No PostgreSQL,
-RabbitMQ/MassTransit, GraphQL, gRPC or SSE packages/adapters are installed in this
-checkpoint. There are no migrations, generated clients, event publishers or
-consumers. Docker packaging exists for the development containers; actual
-database/broker integration and dependency-aware readiness remain future work.
+Neon is the selected PostgreSQL deployment: four privately owned logical
+databases with separate connection secrets, never a shared schema or cross-service
+query. Use the actual provisioned Neon endpoints/roles and TLS settings; do not
+start a second shared PostgreSQL stack. Disposable PostgreSQL remains test-only.
+Delivery uses EF Core/Npgsql with one initial migration; Identity retains
+its independent SQL migration. RabbitMQ/MassTransit, GraphQL, gRPC and SSE
+adapters, generated clients, publishers and consumers remain future work.
+Docker packaging exists for the development containers. Delivery's complete
+booking transaction/HTTP handlers and dependency-aware readiness are later phases.
 
 Do not add Redis, SignalR, a separate realtime process or extra capability services.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for review and contribution conventions.

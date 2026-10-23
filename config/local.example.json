@@ -1,18 +1,25 @@
 {
-  "_comment": "Reference only; not loaded automatically. Replace the Neon endpoint and password placeholders, then apply only the owning workload's section with user-secrets or environment variables.",
+  "_comment": "Reference only; not loaded automatically. Database values come from private Neon connection-string secrets through the infra runner/Compose. Empty values below are not credentials and no JSON environment-variable substitution is performed.",
+  "_secretInputs": [
+    "RABBITMQ_DEFAULT_PASS",
+    "IDENTITY_DATABASE_CONNECTION_STRING",
+    "DELIVERY_DATABASE_CONNECTION_STRING",
+    "MERCHANT_DATABASE_CONNECTION_STRING",
+    "NOTIFICATIONS_DATABASE_CONNECTION_STRING",
+    "IDENTITY_MIGRATION_CONNECTION_STRING"
+  ],
   "Identity": {
     "ConnectionStrings": {
-      "Database": "Host=ep-your-endpoint.region.aws.neon.tech;Port=5432;Database=swiftdrop_identity;Username=identity_app;Password=REPLACE_WITH_IDENTITY_PASSWORD;SSL Mode=Require;Trust Server Certificate=false"
+      "Database": "",
+      "MigrationDatabase": ""
     }
   },
   "Delivery": {
     "ConnectionStrings": {
-      "Database": "Host=ep-your-endpoint.region.aws.neon.tech;Port=5432;Database=swiftdrop_delivery;Username=delivery_app;Password=REPLACE_WITH_DELIVERY_PASSWORD;SSL Mode=Require;Trust Server Certificate=false"
+      "Database": ""
     },
     "Broker": {
-      "Host": "rabbitmq",
-      "Username": "delivery_bus",
-      "Password": ""
+      "Host": "rabbitmq"
     },
     "Operations": {
       "TimeZone": "Asia/Colombo"
@@ -20,7 +27,7 @@
   },
   "Merchant": {
     "ConnectionStrings": {
-      "Database": "Host=ep-your-endpoint.region.aws.neon.tech;Port=5432;Database=swiftdrop_merchant;Username=merchant_app;Password=REPLACE_WITH_MERCHANT_PASSWORD;SSL Mode=Require;Trust Server Certificate=false"
+      "Database": ""
     },
     "Delivery": {
       "GrpcAddress": "http://127.0.0.3:8081"
@@ -28,12 +35,10 @@
   },
   "Notification": {
     "ConnectionStrings": {
-      "Database": "Host=ep-your-endpoint.region.aws.neon.tech;Port=5432;Database=swiftdrop_notifications;Username=notifications_app;Password=REPLACE_WITH_NOTIFICATION_PASSWORD;SSL Mode=Require;Trust Server Certificate=false"
+      "Database": ""
     },
     "Broker": {
-      "Host": "rabbitmq",
-      "Username": "worker_bus",
-      "Password": ""
+      "Host": "rabbitmq"
     }
   }
 }
