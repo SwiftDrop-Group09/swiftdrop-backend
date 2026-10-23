@@ -36,5 +36,17 @@ public sealed class FoundationTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("/api/v1/quotes")]
+    [InlineData("/api/v1/parcels")]
+    public async Task PersistenceFoundationDoesNotExposeAnonymousFeatureWrites(string path)
+    {
+        using var client = _factory.CreateClient();
+        using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(path, content);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     public void Dispose() => _factory.Dispose();
 }

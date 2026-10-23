@@ -43,34 +43,53 @@ Keys below apply within each owning host, not as global workload-prefixed keys.
 The Identity/Delivery/Merchant/Notification groups in
 [local.example.json](../config/local.example.json) are reference groupings only.
 
-| Workload | Neon database | Neon role | Sample environment variable |
+| Owner/task | Neon database | Private secret name | Owning process key |
 |---|---|---|---|
-| Identity | swiftdrop_identity | identity_app | IDENTITY_DATABASE_CONNECTION_STRING |
-| Delivery | swiftdrop_delivery | delivery_app | DELIVERY_DATABASE_CONNECTION_STRING |
-| Merchant | swiftdrop_merchant | merchant_app | MERCHANT_DATABASE_CONNECTION_STRING |
-| Notification Worker | swiftdrop_notifications | notifications_app | NOTIFICATIONS_DATABASE_CONNECTION_STRING |
+| Identity runtime | swiftdrop_identity | IDENTITY_DATABASE_CONNECTION_STRING | ConnectionStrings__Database |
+| Delivery runtime/migration | swiftdrop_delivery | DELIVERY_DATABASE_CONNECTION_STRING | ConnectionStrings__Database |
+| Merchant runtime | swiftdrop_merchant | MERCHANT_DATABASE_CONNECTION_STRING | ConnectionStrings__Database |
+| Notification Worker | swiftdrop_notifications | NOTIFICATIONS_DATABASE_CONNECTION_STRING | ConnectionStrings__Database |
+| Explicit Identity migration | swiftdrop_identity | IDENTITY_MIGRATION_CONNECTION_STRING | ConnectionStrings__MigrationDatabase |
+| RabbitMQ container | none | RABBITMQ_DEFAULT_PASS | RABBITMQ_DEFAULT_PASS |
 
-Each host receives only its own `ConnectionStrings__Database`. The sample
-connection strings use a placeholder Neon endpoint and require TLS; replace them
-with the actual Neon connection details after databases and roles are created.
-Do not pass all four service credentials to every host.
+Neon is the selected database provider. Supply actual provisioned TLS connection
+strings through private environment inputs or the ignored infra
+`development/.env`, never committed JSON, source or build arguments. Each host
+receives only its own mapped database setting. Use provisioned least-privilege
+roles rather than assuming sample login names exist. Identity's migration login
+is separate from runtime. Delivery's explicit migration task currently uses its
+listed connection secret, whose login must have Delivery schema DDL rights.
+No additional Delivery migration secret is required by this setup.
+
+Normal `up` does not migrate either database. Run the owning explicit task:
+
+```sh
+./development/run.sh migrate --mode host identity-service
+./development/run.sh migrate --mode host delivery-service
+# Or use --mode docker for the same selected migration task.
+```
+
+These commands run from the sibling infra repository. They perform DDL only when
+explicitly invoked. The connection must target the owning service database and
+support the migration's required privileges and transactions. No live Neon
+provisioning, role grant or connectivity is claimed by a local build/test result.
+The EF design-time factory and Delivery runtime also recognize
+DELIVERY_DATABASE_CONNECTION_STRING directly; an explicit
+ConnectionStrings:Database overrides that alias.
 
 | Workload | Environment key | Value / private input |
 |---|---|---|
 | Delivery, Worker | Broker__Host | rabbitmq |
-| Delivery | Broker__Username | delivery_bus |
-| Delivery | Broker__Password | DELIVERY_BROKER_PASSWORD |
-| Worker | Broker__Username | worker_bus |
-| Worker | Broker__Password | WORKER_BROKER_PASSWORD |
 | Merchant | Delivery__GrpcAddress | http://delivery-service:8081 in containers; http://127.0.0.3:8081 for local processes |
 | Delivery | Operations__TimeZone | Asia/Colombo |
 
 AMQP uses port 5672 and is not published to the host in the development stack.
-Broker and database settings are reserved for future adapters and do not claim
-live connectivity today.
+Database configuration is consumed by Identity/Delivery persistence. Broker
+application adapters remain unimplemented. RABBITMQ_DEFAULT_PASS configures
+RabbitMQ's own default administrative login only; it is not passed to Delivery
+or Worker. Separate restricted application broker credentials/topology must be
+agreed with the messaging owner when that integration starts.
 
 Use the `Broker` section and `Delivery:GrpcAddress` consistently when adding
-adapters. The earlier `RabbitMq` and `DeliveryGrpc:Address` names are superseded;
-no runtime compatibility alias or credential fallback is installed. Keep each
-database and broker password private and distinct. The example deliberately
-leaves passwords empty and is not loaded automatically.
+adapters. The earlier `RabbitMq` and `DeliveryGrpc:Address` names are superseded.
+The JSON example leaves credentials empty and is not loaded automatically.
