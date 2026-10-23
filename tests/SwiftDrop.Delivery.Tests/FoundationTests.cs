@@ -1,4 +1,5 @@
 using System.Net;
+
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -37,15 +38,15 @@ public sealed class FoundationTests : IDisposable
     }
 
     [Theory]
-    [InlineData("/api/v1/quotes")]
-    [InlineData("/api/v1/parcels")]
-    public async Task PersistenceFoundationDoesNotExposeAnonymousFeatureWrites(string path)
+    [InlineData("/api/v1/quotes", HttpStatusCode.Unauthorized)]
+    [InlineData("/api/v1/parcels", HttpStatusCode.NotFound)]
+    public async Task FeatureWritesRequireAuthenticationOrRemainUnimplemented(string path, HttpStatusCode expectedStatus)
     {
         using var client = _factory.CreateClient();
         using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(path, content);
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(expectedStatus, response.StatusCode);
     }
 
     public void Dispose() => _factory.Dispose();

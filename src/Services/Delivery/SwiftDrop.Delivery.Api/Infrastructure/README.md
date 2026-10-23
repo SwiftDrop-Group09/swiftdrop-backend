@@ -6,7 +6,7 @@ Namespace: `SwiftDrop.Delivery.Api.Infrastructure`.
 Persistence uses EF Core 10/Npgsql against Neon via
 `ConnectionStrings:Database`, or the named `DELIVERY_DATABASE_CONNECTION_STRING`
 secret when the scoped setting is absent. The scoped setting takes precedence.
-Runtime and EF design-time configuration use the same selection. Startup rejects a
+Runtime and EF design-time configuration use the same selection. Resolving persistence rejects a
 database name other than `swiftdrop_delivery`; no default credentials, fallback
 database, automatic host-startup migration, or Identity DB access exists.
 
@@ -61,10 +61,25 @@ dotnet test tests/SwiftDrop.Delivery.Tests --configuration Release
 ```
 
 `DeliveryDatabaseErrors` classifies provider conflicts/concurrency/dependency
-failures without exposing SQL messages. HTTP mapping/retries are later handler
-work. No publish is claimed for a persisted outbox record. A future relay may
+failures without exposing SQL messages. Phase 2 maps quote dependency failures
+to safe 503 ProblemDetails; booking retry/conflict mapping remains later work.
+No publish is claimed for a persisted outbox record. A future relay may
 update published_at after broker confirmation, retaining stable payload/event ID;
 deletion remains disabled until a provenance-retention policy is implemented.
+
+Phase 2 `Quotes/PostgresQuoteStore` reads both active zones and at most two active
+destination-zone/size tariffs in a repeatable-read configuration snapshot. The
+application requires exactly one tariff, then persists one owner-bound quote
+using its immutable retained tariff reference. No default tariff is seeded or
+chosen from conflicting versions. Quote persistence adds no parcel, snapshot,
+history, idempotency or outbox record and requires no schema change.
+
+`Authentication/ClaimsCurrentCustomer` consumes trusted authenticated claims.
+The registered `UnconfiguredIdentityHandler` always declines authentication;
+caller headers and unverified bearer strings never create a Customer identity.
+Replace this with real Identity token verification in the authentication phase.
+Only the test project registers the fixed-principal authentication handler used
+by HTTP/database tests; no environment switch enables it in deployed hosts.
 
 These are folders within one project; dependency direction is a review convention,
 not compiler-enforced project isolation.
