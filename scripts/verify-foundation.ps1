@@ -145,7 +145,6 @@ try {
 
     $probes = @(
         'http://127.0.0.1:5000/api/v1/auth/login',
-        'http://127.0.0.1:5000/api/v1/parcels',
         'http://127.0.0.1:5000/api/v1/merchant/orders',
         'http://127.0.0.1:5000/graphql',
         'http://127.0.0.1:5000/api/v1/parcels/example/events',
@@ -181,24 +180,33 @@ try {
     finally { $identityReadiness.Dispose() }
     Write-Output 'PASS: Identity /ready returns database-not-configured/503 without database access.'
 
-    $quoteRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Post), 'http://127.0.0.1:5000/api/v1/quotes'
-    $quoteRequest.Content = New-Object Net.Http.StringContent '{}', ([Text.Encoding]::UTF8), 'application/json'
-    $quoteRequest.Headers.Add('X-User-Id', '11111111-1111-4111-8111-111111111111')
-    $quoteRequest.Headers.Add('X-User-Role', 'Customer')
-    $quoteRequest.Headers.Authorization = New-Object Net.Http.Headers.AuthenticationHeaderValue 'Bearer', 'unverified-smoke-token'
-    try {
-        $quoteResponse = $client.SendAsync($quoteRequest).GetAwaiter().GetResult()
+    foreach ($writePath in @('/api/v1/quotes', '/api/v1/parcels')) {
+        $writeRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Post), ('http://127.0.0.1:5000' + $writePath)
+        $writeRequest.Content = New-Object Net.Http.StringContent '{}', ([Text.Encoding]::UTF8), 'application/json'
+        $writeRequest.Headers.Add('X-User-Id', '11111111-1111-4111-8111-111111111111')
+        $writeRequest.Headers.Add('X-User-Role', 'Customer')
+        $writeRequest.Headers.Authorization = New-Object Net.Http.Headers.AuthenticationHeaderValue 'Bearer', 'unverified-smoke-token'
         try {
-            $quoteProblem = ConvertFrom-Json $quoteResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-            if ([int]$quoteResponse.StatusCode -ne 401 -or $quoteProblem.code -ne 'unauthorized' -or
-                [string]::IsNullOrWhiteSpace($quoteProblem.correlationId)) {
-                throw 'Expected the quote route through Gateway to reject unverified identity with safe HTTP 401.'
+            $writeResponse = $client.SendAsync($writeRequest).GetAwaiter().GetResult()
+            try {
+                $writeProblem = ConvertFrom-Json $writeResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if ([int]$writeResponse.StatusCode -ne 401 -or $writeProblem.code -ne 'unauthorized' -or
+                    [string]::IsNullOrWhiteSpace($writeProblem.correlationId)) {
+                    throw "Expected $writePath through Gateway to reject unverified identity with safe HTTP 401."
+                }
             }
+            finally { $writeResponse.Dispose() }
         }
-        finally { $quoteResponse.Dispose() }
+        finally { $writeRequest.Dispose() }
     }
-    finally { $quoteRequest.Dispose() }
-    Write-Output 'PASS: real Gateway quote forwarding fails closed with HTTP 401 despite caller-supplied identity.'
+    Write-Output 'PASS: real Gateway quote and booking POSTs fail closed with HTTP 401 despite caller-supplied identity.'
+
+    $parcelRead = $client.GetAsync('http://127.0.0.1:5000/api/v1/parcels').GetAwaiter().GetResult()
+    try {
+        if ([int]$parcelRead.StatusCode -ne 405) { throw 'Parcel listing remains unimplemented; expected HTTP 405 at the POST-only route.' }
+    }
+    finally { $parcelRead.Dispose() }
+    Write-Output 'PASS: parcel collection GET has no handler (HTTP 405 at the POST-only route).'
 
     $grpcConnection = New-Object Net.Sockets.TcpClient
     try { $grpcConnection.Connect('127.0.0.3', 8081) }

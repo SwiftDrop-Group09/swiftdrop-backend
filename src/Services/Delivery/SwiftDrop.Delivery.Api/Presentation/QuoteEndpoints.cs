@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Quotes;
+using SwiftDrop.Delivery.Api.Application.Serialization;
 
 namespace SwiftDrop.Delivery.Api.Presentation;
 

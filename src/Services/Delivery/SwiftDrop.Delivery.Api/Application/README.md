@@ -12,9 +12,24 @@ with the verified owner and retained tariff identity/version/currency.
 The destination address zone selects pricing; both supplied zones must be active.
 Exactly one active zone/size tariff must exist. Missing or ambiguous pricing
 returns unavailable configuration. No version ordering is assumed. No
-operational tariff seeds are included. Quote creation persists only a quote;
-booking, tracking-number generation, replay orchestration and events are later
-handlers. Application has no EF, HTTP context, broker or Identity DB dependency.
+operational tariff seeds are included. Quote creation persists only a quote.
+
+Phase 3 adds `Bookings/CustomerBookingHandler`. It accepts only quoteId and
+acceptTotal plus an idempotency key, authorizes the Customer before storage,
+reconstructs the retained quote details and verifies its fingerprint and exact
+retained price. Identical committed requests return the stored 201 body and
+Location before quote expiry/consumption checks. New confirmations create a
+parcel, snapshot, initial history and pending outbox row, consume the quote and
+complete the replay record in one transaction through `IBookingStore`.
+
+`BookingAssembler` builds the shared initial booking records from an already
+authorized domain parcel and matching retained pricing. A future Merchant
+adapter must apply its own service/merchant permissions before using it.
+`ITrackingNumberGenerator` supplies the random public code. HTTP adapters and
+persisted quote validation share the exact-decimal converter in
+`Application/Serialization`; input precision is unchanged.
+
+Application has no EF, HTTP context, broker or Identity DB dependency.
 
 `ICurrentCustomer` represents an identity established by a trusted entry adapter.
 Tests provide that identity only in test infrastructure. Production presently

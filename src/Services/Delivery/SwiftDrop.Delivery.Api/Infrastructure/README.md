@@ -81,5 +81,27 @@ Replace this with real Identity token verification in the authentication phase.
 Only the test project registers the fixed-principal authentication handler used
 by HTTP/database tests; no environment switch enables it in deployed hosts.
 
+Phase 3 `Bookings/PostgresBookingStore` owns the confirmation transaction. A
+parameterized INSERT with ON CONFLICT reserves the principal/CreateParcel/key
+scope at READ COMMITTED isolation. A conflicting committed key is read for exact
+replay. An owner-filtered FOR UPDATE locks the quote before freshness checks;
+different keys cannot consume the same quote twice. A transaction-local two-second
+lock timeout maps prolonged contention to operation_in_progress with Retry-After.
+
+The handler saves parcel, immutable snapshot, initial history, pending
+StatusChanged v1 outbox, quote consumption and completed replay response before
+commit. Invalid confirmations and failed writes roll back the reservation and
+all booking changes. Tracking uniqueness collisions retry the whole transaction
+up to three attempts with a fresh cryptographic 128-bit code. No broker call,
+relay, schema change or cross-service database access is introduced. A
+connection failure during commit can leave the outcome unknown to the caller;
+retrying the same key resolves the committed result safely.
+
+Creation timestamps are truncated to PostgreSQL microseconds before constructing
+the response, history and event, keeping occurredAt consistent with timestamptz.
+Stored quote tariffs are honored even after activation changes. Parcel addresses
+and recipient contact are structured JSON text from the retained quote, with
+pickup_contact null because no pickup contact is supplied by QuoteInput.
+
 These are folders within one project; dependency direction is a review convention,
 not compiler-enforced project isolation.

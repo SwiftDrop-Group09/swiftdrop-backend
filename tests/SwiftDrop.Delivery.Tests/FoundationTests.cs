@@ -24,7 +24,6 @@ public sealed class FoundationTests : IDisposable
     [Theory]
     [InlineData("/weatherforecast")]
     [InlineData("/ready")]
-    [InlineData("/api/v1/parcels")]
     [InlineData("/graphql")]
     [InlineData("/api/v1/parcels/example/events")]
     [InlineData("/internal/v1/notification-context")]
@@ -39,7 +38,7 @@ public sealed class FoundationTests : IDisposable
 
     [Theory]
     [InlineData("/api/v1/quotes", HttpStatusCode.Unauthorized)]
-    [InlineData("/api/v1/parcels", HttpStatusCode.NotFound)]
+    [InlineData("/api/v1/parcels", HttpStatusCode.Unauthorized)]
     public async Task FeatureWritesRequireAuthenticationOrRemainUnimplemented(string path, HttpStatusCode expectedStatus)
     {
         using var client = _factory.CreateClient();
@@ -47,6 +46,15 @@ public sealed class FoundationTests : IDisposable
         using var response = await client.PostAsync(path, content);
 
         Assert.Equal(expectedStatus, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ParcelCollectionGetIsNotImplemented()
+    {
+        using var client = _factory.CreateClient();
+        using var response = await client.GetAsync("/api/v1/parcels");
+
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
 
     public void Dispose() => _factory.Dispose();
