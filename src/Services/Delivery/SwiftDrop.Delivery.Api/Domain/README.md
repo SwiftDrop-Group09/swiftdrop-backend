@@ -15,8 +15,8 @@ the ER's text representation; pickup contact is nullable because QuoteInput has
 no sender contact. The selected tariff zone is deliveryAddress.zoneId; later
 application adapters must use it consistently for the parcel and price snapshot,
 while preserving/validating both addresses. No operational tariffs, surcharge or
-tracking generator is introduced here. Application validation and pricing are
-later phases. Monetary values are already rounded to two decimals before being
+tracking generator is introduced here. Phase 2 quote validation and pricing live
+in Application/Quotes. Monetary values are already rounded to two decimals before being
 stored; fee calculation must use the documented half-up rule.
 
 These are folders within one project; dependency direction is a review convention,
