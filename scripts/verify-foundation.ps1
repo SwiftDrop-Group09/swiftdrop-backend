@@ -94,6 +94,25 @@ try {
         $startInfo.RedirectStandardError = $true
         $startInfo.EnvironmentVariables['ASPNETCORE_ENVIRONMENT'] = 'Development'
         $startInfo.EnvironmentVariables['DOTNET_ENVIRONMENT'] = 'Development'
+        # This smoke check is deliberately offline, including when its caller has
+        # configured Neon secrets. Do not pass service/migration secrets to hosts.
+        foreach ($secretName in @(
+            'RABBITMQ_DEFAULT_PASS',
+            'IDENTITY_DATABASE_CONNECTION_STRING',
+            'DELIVERY_DATABASE_CONNECTION_STRING',
+            'MERCHANT_DATABASE_CONNECTION_STRING',
+            'NOTIFICATIONS_DATABASE_CONNECTION_STRING',
+            'IDENTITY_MIGRATION_CONNECTION_STRING',
+            'ConnectionStrings__Database',
+            'ConnectionStrings__MigrationDatabase'
+        )) {
+            $startInfo.EnvironmentVariables.Remove($secretName)
+        }
+        $startInfo.EnvironmentVariables['Logging__EventLog__LogLevel__Default'] = 'None'
+        if ($hostInfo.Name -eq 'SwiftDrop.Identity.Api') {
+            # Command-line configuration also overrides Development user secrets.
+            $startInfo.Arguments += ' --ConnectionStrings:Database='
+        }
         $process = New-Object Diagnostics.Process
         $process.StartInfo = $startInfo
         $null = $process.Start()
@@ -134,7 +153,9 @@ try {
         'http://127.0.0.1:5000/swiftdrop.delivery.v1.DeliveryService/CreateBooking'
     )
     foreach ($hostInfo in $hosts) {
-        $probes += $hostInfo.Address + '/ready'
+        if ($hostInfo.Name -ne 'SwiftDrop.Identity.Api') {
+            $probes += $hostInfo.Address + '/ready'
+        }
         $probes += $hostInfo.Address + '/weatherforecast'
     }
     foreach ($address in $probes) {
@@ -147,6 +168,18 @@ try {
         finally { $response.Dispose() }
     }
     Write-Output "PASS: $($probes.Count) missing-feature/internal/readiness probes; real gateway destinations reachable."
+
+    $identityReadiness = $client.GetAsync('http://127.0.0.2:8080/ready').GetAwaiter().GetResult()
+    try {
+        $readinessBody = $identityReadiness.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        $problem = ConvertFrom-Json $readinessBody
+        if ([int]$identityReadiness.StatusCode -ne 503 -or $problem.status -ne 503 -or
+            $problem.type -ne 'https://example.invalid/problems/database-not-configured') {
+            throw 'Expected Identity readiness to fail closed with database-not-configured and HTTP 503.'
+        }
+    }
+    finally { $identityReadiness.Dispose() }
+    Write-Output 'PASS: Identity /ready returns database-not-configured/503 without database access.'
 
     $grpcConnection = New-Object Net.Sockets.TcpClient
     try { $grpcConnection.Connect('127.0.0.3', 8081) }
