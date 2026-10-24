@@ -8,6 +8,8 @@ Customer authentication fails closed until verified Identity integration is supp
 positive HTTP tests use principals registered only in the test host. JWT
 verification, messaging relay, tracking reads, GraphQL, SSE and gRPC handlers
 remain later work. See the
+[Phase 6 client assessment (blocked)](docs/delivery-phase-6-assessment.md),
+[Customer client integration handoff](docs/delivery-customer-clients-handoff.md),
 [Phase 5 authentication checkpoint](docs/delivery-phase-5-assessment.md),
 [Identity integration handoff](docs/delivery-identity-integration-handoff.md),
 [Phase 4 reliability checkpoint](docs/delivery-phase-4-assessment.md),
