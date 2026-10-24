@@ -8,6 +8,8 @@ Customer authentication fails closed until verified Identity integration is supp
 positive HTTP tests use principals registered only in the test host. JWT
 verification, messaging relay, tracking reads, GraphQL, SSE and gRPC handlers
 remain later work. See the
+[Phase 4 reliability checkpoint](docs/delivery-phase-4-assessment.md),
+[outbox relay handoff](docs/delivery-outbox-relay-handoff.md),
 [Phase 3 checkpoint](docs/delivery-phase-3-assessment.md),
 [Phase 2 checkpoint](docs/delivery-phase-2-assessment.md),
 [Phase 1 report](docs/delivery-phase-1-assessment.md) and
@@ -17,8 +19,8 @@ Architecture follows the proposed [documentation baseline at 233f707](https://gi
 Architecture approval is still pending. See its
 [service catalog](https://github.com/SwiftDrop-Group09/swiftdrop-docs/blob/233f7077f54949c0cacc31f11b203bf4a27d02b4/architecture/service-catalog.md)
 and [environment matrix](https://github.com/SwiftDrop-Group09/swiftdrop-docs/blob/233f7077f54949c0cacc31f11b203bf4a27d02b4/deployment/environments.md).
-The current local booking contracts were reconciled in docs commit `2ea9695`;
-Delivery booking follows that checkout, including the user-confirmed delivery-address
+The current local documentation checkout is docs commit `d97fff4`; Phase 4
+reverified its unchanged booking/idempotency/event wire contracts, including the user-confirmed delivery-address
 tariff zone and Neon deployment, while other design decisions remain Proposed.
 
 ## Projects and ownership
@@ -75,6 +77,7 @@ HTTP tests use ASP.NET Core TestServer. Delivery persistence tests additionally
 start a private loopback PostgreSQL process and clean up only their own data;
 see the persistence runbook for binary/temp-root environment settings. Tests
 check liveness, quote validation/pricing/ownership, atomic booking and replay,
+20-request races, real lock waits/cancellation, response loss and commit failures,
 absent later-phase endpoints, and the real YARP routing
 pipeline using a test-only transport. The route fixture is copied from baseline
 233f707; update it deliberately when the canonical route inventory changes.
