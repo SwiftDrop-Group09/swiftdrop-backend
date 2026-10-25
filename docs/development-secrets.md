@@ -12,19 +12,23 @@ Run PowerShell from the backend root. All four host projects already declare
 UserSecretsId; no user-secrets init or new secret names are needed. This helper
 prompts without placing the secret in command history or process arguments and
 pipes JSON into the SDK's user-secrets command. It does not print the value.
+The explicit UTF-8 pipe encoding preserves Unicode on Windows PowerShell 5.1.
 
 ```powershell
 function Set-SwiftDropProjectSecret {
     param([string]$Project, [string]$Key, [string]$InputName)
     $privateInput = Read-Host $InputName -AsSecureString
     $privatePointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($privateInput)
+    $previousPipeEncoding = $OutputEncoding
     try {
+        $OutputEncoding = [Text.UTF8Encoding]::new($false)
         $privateValue = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($privatePointer)
         @{ $Key = $privateValue } | ConvertTo-Json -Compress |
             dotnet user-secrets set --project $Project
         if ($LASTEXITCODE -ne 0) { throw "Could not store $InputName." }
     }
     finally {
+        $OutputEncoding = $previousPipeEncoding
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($privatePointer)
         $privateValue = $null
         $privateInput.Dispose()

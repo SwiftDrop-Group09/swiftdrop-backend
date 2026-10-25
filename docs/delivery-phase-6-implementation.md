@@ -142,7 +142,8 @@ private server was stopped before its exact owned workspace directory was
 removed. Zero private test directories/listeners remained. This process cleanup
 is separate from the runner's successfully verified interactive `stop` probe.
 Documentation links and the secret guide's two PowerShell blocks passed syntax
-checks without executing secret-storage commands.
+checks without executing secret-storage commands. A synthetic Unicode JSON pipe
+check verified the guide's explicit UTF-8 setting on Windows PowerShell 5.1.
 
 ## Secret storage
 
