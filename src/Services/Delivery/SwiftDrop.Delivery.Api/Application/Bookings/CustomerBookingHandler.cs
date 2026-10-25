@@ -1,5 +1,3 @@
-using SwiftDrop.Delivery.Api.Domain;
-
 namespace SwiftDrop.Delivery.Api.Application.Bookings;
 
 public sealed class CustomerBookingHandler(
@@ -99,8 +97,9 @@ public sealed class CustomerBookingHandler(
                     return new(null, BookingFailure.QuoteConflict);
                 }
 
-                var parcel = Parcel.ForCustomer(Guid.NewGuid(), ownerId, trackingNumbers.Generate(), details!, now);
-                var write = BookingAssembler.Create(parcel, bookingQuote.Tier, price, ownerId, correlationId);
+                var write = BookingAssembler.CreateCustomer(ownerId, details!, bookingQuote.Tier,
+                    price, trackingNumbers, now, correlationId);
+                var parcel = write.Parcel;
                 var response = BookingResponseCodec.Create(write);
                 quote.Consume(parcel, now);
                 record.Complete(parcel.Id, response.StatusCode, response.Body, response.Location);
