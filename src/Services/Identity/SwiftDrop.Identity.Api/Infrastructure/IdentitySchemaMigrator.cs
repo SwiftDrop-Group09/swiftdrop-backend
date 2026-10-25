@@ -1,16 +1,22 @@
 using System.Reflection;
+
 using Npgsql;
 
 namespace SwiftDrop.Identity.Api.Infrastructure;
 
 public static class IdentitySchemaMigrator
 {
-    private const string MigrationVersion = "001_identity_initial";
-    private const string MigrationResource =
-        "SwiftDrop.Identity.Api.Infrastructure.Migrations.001_identity_initial.sql";
+    public const string CurrentVersion = "002_identity_sessions";
+    private static readonly string[] MigrationVersions = ["001_identity_initial", CurrentVersion];
 
     public static async Task ApplyAsync(string connectionString, CancellationToken cancellationToken = default)
     {
+        var settings = new NpgsqlConnectionStringBuilder(connectionString);
+        if (!string.Equals(settings.Database, "swiftdrop_identity", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Identity migrations require the swiftdrop_identity database.");
+        }
+
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -36,37 +42,40 @@ public static class IdentitySchemaMigrator
             await versionTable.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await using (var versionCheck = new NpgsqlCommand(
-            "SELECT EXISTS (SELECT 1 FROM public.schema_migrations WHERE version = @version)",
-            connection,
-            transaction))
+        foreach (var version in MigrationVersions)
         {
-            versionCheck.Parameters.AddWithValue("version", MigrationVersion);
-            if ((bool)(await versionCheck.ExecuteScalarAsync(cancellationToken) ?? false))
+            await using (var versionCheck = new NpgsqlCommand(
+                "SELECT EXISTS (SELECT 1 FROM public.schema_migrations WHERE version = @version)",
+                connection,
+                transaction))
             {
-                await transaction.CommitAsync(cancellationToken);
-                return;
+                versionCheck.Parameters.AddWithValue("version", version);
+                if ((bool)(await versionCheck.ExecuteScalarAsync(cancellationToken) ?? false))
+                {
+                    continue;
+                }
             }
-        }
 
-        await using var migrationStream =
-            Assembly.GetExecutingAssembly().GetManifestResourceStream(MigrationResource)
-            ?? throw new InvalidOperationException($"Embedded migration {MigrationVersion} was not found.");
-        using var reader = new StreamReader(migrationStream);
-        var migrationSql = await reader.ReadToEndAsync(cancellationToken);
+            var resource = $"SwiftDrop.Identity.Api.Infrastructure.Migrations.{version}.sql";
+            await using var migrationStream =
+                Assembly.GetExecutingAssembly().GetManifestResourceStream(resource)
+                ?? throw new InvalidOperationException($"Embedded migration {version} was not found.");
+            using var reader = new StreamReader(migrationStream);
+            var migrationSql = await reader.ReadToEndAsync(cancellationToken);
 
-        await using (var migration = new NpgsqlCommand(migrationSql, connection, transaction))
-        {
-            await migration.ExecuteNonQueryAsync(cancellationToken);
-        }
+            await using (var migration = new NpgsqlCommand(migrationSql, connection, transaction))
+            {
+                await migration.ExecuteNonQueryAsync(cancellationToken);
+            }
 
-        await using (var recordMigration = new NpgsqlCommand(
-            "INSERT INTO public.schema_migrations (version) VALUES (@version)",
-            connection,
-            transaction))
-        {
-            recordMigration.Parameters.AddWithValue("version", MigrationVersion);
-            await recordMigration.ExecuteNonQueryAsync(cancellationToken);
+            await using (var recordMigration = new NpgsqlCommand(
+                "INSERT INTO public.schema_migrations (version) VALUES (@version)",
+                connection,
+                transaction))
+            {
+                recordMigration.Parameters.AddWithValue("version", version);
+                await recordMigration.ExecuteNonQueryAsync(cancellationToken);
+            }
         }
 
         await transaction.CommitAsync(cancellationToken);

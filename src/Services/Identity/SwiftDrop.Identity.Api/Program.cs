@@ -1,10 +1,12 @@
 using System.ComponentModel.DataAnnotations;
-using System.Net;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Npgsql;
 using SwiftDrop.Identity.Api.Application;
 using SwiftDrop.Identity.Api.Infrastructure;
+using SwiftDrop.Identity.Api.Infrastructure.Authentication;
+using SwiftDrop.Identity.Api.Infrastructure.Google;
+using SwiftDrop.Identity.Api.Presentation;
 
 namespace SwiftDrop.Identity.Api;
 
@@ -13,8 +15,16 @@ public partial class Program
     public static async Task Main(string[] args)
     {
         var applyMigrations = args.Contains("--migrate", StringComparer.Ordinal);
-        var builderArgs = args.Where(argument => argument != "--migrate").ToArray();
+        var generateDevelopmentKey = args.Contains("--generate-development-key", StringComparer.Ordinal);
+        var builderArgs = args.Where(argument => argument is not ("--migrate" or "--generate-development-key")).ToArray();
         var builder = WebApplication.CreateBuilder(builderArgs);
+
+        if (generateDevelopmentKey)
+        {
+            if (applyMigrations) throw new InvalidOperationException("Select only one Identity provisioning operation.");
+            DevelopmentSigningKey.Create(builder.Configuration, builder.Environment);
+            return;
+        }
 
         if (applyMigrations)
         {
@@ -39,13 +49,50 @@ public partial class Program
                     "ConnectionStrings:Database must be configured before using Identity data.");
             }
 
+            if (new NpgsqlConnectionStringBuilder(connectionString).Database != "swiftdrop_identity")
+            {
+                throw new InvalidOperationException("Identity may connect only to its swiftdrop_identity database.");
+            }
+
             return NpgsqlDataSource.Create(connectionString);
         });
         builder.Services.AddScoped<IUserRegistrationStore, PostgresUserRegistrationStore>();
         builder.Services.AddSingleton<Argon2PasswordHasher>();
+        builder.Services.AddSingleton<IIdentityPasswordVerifier>(services => services.GetRequiredService<Argon2PasswordHasher>());
+        builder.Services.AddSingleton<IGoogleIdentityVerifier, GoogleIdentityVerifier>();
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddScoped<IIdentityAuthenticationStore, PostgresIdentityAuthenticationStore>();
+        builder.Services.AddScoped(services => new IdentityAuthenticationService(
+            () => services.GetRequiredService<IIdentityAuthenticationStore>(),
+            services.GetRequiredService<IIdentityPasswordVerifier>(), services.GetRequiredService<IIdentityAccessTokens>(),
+            services.GetRequiredService<IGoogleIdentityVerifier>(), services.GetRequiredService<TimeProvider>()));
+        builder.Services.AddIdentityTokenAuthentication(builder.Configuration);
+        builder.Services.AddDataProtection();
+        builder.Services.AddAntiforgery(options =>
+        {
+            options.HeaderName = "X-CSRF-Token";
+            options.Cookie.Name = BrowserAuthentication.CsrfCookie;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+            options.Cookie.Path = "/";
+        });
+        builder.Services.AddScoped<BrowserAuthentication>();
+        builder.Services.AddCors(options => options.AddPolicy("identity-browser", policy =>
+        {
+            var origins = builder.Configuration.GetSection("Identity:Browser:AllowedOrigins").Get<string[]>() ?? [];
+            policy.WithOrigins(origins.Where(BrowserAuthentication.ValidOrigin).ToArray())
+                .WithMethods("GET", "POST").WithHeaders("Content-Type", "Authorization", "X-CSRF-Token")
+                .AllowCredentials();
+        }));
         builder.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddPolicy("identity-auth", context => RateLimitPartition.GetFixedWindowLimiter(
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true
+                }));
             options.AddPolicy("registration", context =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     GetClientIpAddress(context),
@@ -61,7 +108,22 @@ public partial class Program
         var app = builder.Build();
 
         app.MapHealthChecks("/health");
+        app.UseIdentityProxyForwarding(builder.Configuration);
+        app.UseCors("identity-browser");
+        app.UseStatusCodePages(async status =>
+        {
+            if (status.HttpContext.Response.StatusCode is 401 or 403)
+            {
+                await IdentityEndpoints.Problem(status.HttpContext.Response.StatusCode,
+                    "invalid_credentials", "The supplied credentials are invalid.").ExecuteAsync(status.HttpContext);
+            }
+        });
+        app.UseAuthentication();
+        app.UseAuthorization();
         app.UseRateLimiter();
+        app.MapIdentityAuthentication();
+        app.MapGet("/api/v1/auth/csrf", (HttpContext context, BrowserAuthentication browser) => browser.Bootstrap(context))
+            .RequireRateLimiting("identity-auth");
         app.MapGet("/ready", async (
             IServiceProvider services,
             IConfiguration configuration,
@@ -75,8 +137,7 @@ public partial class Program
                     statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 
-            var store = services.GetRequiredService<IUserRegistrationStore>();
-            if (!await store.IsReadyAsync(cancellationToken))
+            if (!await IsReadyAsync(services, cancellationToken))
             {
                 return Results.Problem(
                     type: "https://example.invalid/problems/database-not-ready",
@@ -111,8 +172,7 @@ public partial class Program
                     statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 
-            var store = services.GetRequiredService<IUserRegistrationStore>();
-            if (!await store.IsReadyAsync(cancellationToken))
+            if (!await IsReadyAsync(services, cancellationToken))
             {
                 return Results.Problem(
                     type: "https://example.invalid/problems/database-not-ready",
@@ -121,6 +181,7 @@ public partial class Program
             }
 
             var email = input.Email.Trim();
+            var store = services.GetRequiredService<IUserRegistrationStore>();
             var profile = await store.RegisterAsync(
                 email,
                 email.ToUpperInvariant(),
@@ -167,16 +228,21 @@ public partial class Program
 
     private static string GetClientIpAddress(HttpContext context)
     {
-        var forwardedAddresses = context.Request.Headers["X-Forwarded-For"]
-            .ToString()
-            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (forwardedAddresses.Length > 0
-            && IPAddress.TryParse(forwardedAddresses[^1], out var forwardedAddress))
-        {
-            return forwardedAddress.ToString();
-        }
-
+        // Forwarded headers are processed only for explicitly trusted proxies.
+        // Never let an arbitrary caller choose its limiter partition with XFF.
         return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    }
+
+    private static async Task<bool> IsReadyAsync(IServiceProvider services, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await services.GetRequiredService<IUserRegistrationStore>().IsReadyAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is NpgsqlException or TimeoutException or InvalidOperationException or ArgumentException)
+        {
+            return false;
+        }
     }
 
     private sealed record RegisterRequest(string Email, string Password, string FullName);

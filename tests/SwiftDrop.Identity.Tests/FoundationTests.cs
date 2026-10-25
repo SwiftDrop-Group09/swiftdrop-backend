@@ -22,9 +22,7 @@ public sealed class FoundationTests : IDisposable
 
     [Theory]
     [InlineData("/weatherforecast")]
-    [InlineData("/api/v1/auth/login")]
     [InlineData("/api/v1/users")]
-    [InlineData("/.well-known/jwks.json")]
     public async Task UnimplementedRoutesReturnNotFound(string path)
     {
         using var client = _factory.CreateClient();

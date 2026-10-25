@@ -9,9 +9,13 @@
   <ItemGroup>
     <EmbeddedResource Include="Infrastructure/Migrations/001_identity_initial.sql"
                       LogicalName="SwiftDrop.Identity.Api.Infrastructure.Migrations.001_identity_initial.sql" />
+    <EmbeddedResource Include="Infrastructure/Migrations/002_identity_sessions.sql"
+                      LogicalName="SwiftDrop.Identity.Api.Infrastructure.Migrations.002_identity_sessions.sql" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
     <PackageReference Include="Npgsql" Version="10.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
+    <PackageReference Include="Google.Apis.Auth" Version="1.77.0" />
   </ItemGroup>
 </Project>

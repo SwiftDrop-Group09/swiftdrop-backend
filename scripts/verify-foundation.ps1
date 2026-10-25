@@ -111,7 +111,7 @@ try {
         $startInfo.EnvironmentVariables['Logging__EventLog__LogLevel__Default'] = 'None'
         if ($hostInfo.Name -eq 'SwiftDrop.Identity.Api') {
             # Command-line configuration also overrides Development user secrets.
-            $startInfo.Arguments += ' --ConnectionStrings:Database='
+            $startInfo.Arguments += ' --ConnectionStrings:Database= --Identity:Tokens:PrivateKeyPath='
         }
         $process = New-Object Diagnostics.Process
         $process.StartInfo = $startInfo
@@ -144,7 +144,6 @@ try {
     }
 
     $probes = @(
-        'http://127.0.0.1:5000/api/v1/auth/login',
         'http://127.0.0.1:5000/api/v1/merchant/orders',
         'http://127.0.0.1:5000/graphql',
         'http://127.0.0.1:5000/api/v1/parcels/example/events',
@@ -179,6 +178,18 @@ try {
     }
     finally { $identityReadiness.Dispose() }
     Write-Output 'PASS: Identity /ready returns database-not-configured/503 without database access.'
+
+    $identityLogin = $client.GetAsync('http://127.0.0.1:5000/api/v1/auth/login').GetAwaiter().GetResult()
+    try {
+        if ([int]$identityLogin.StatusCode -ne 405) { throw 'Expected HTTP 405 for GET at the POST-only Identity login route.' }
+    }
+    finally { $identityLogin.Dispose() }
+    $identityJwks = $client.GetAsync('http://127.0.0.1:5000/.well-known/jwks.json').GetAwaiter().GetResult()
+    try {
+        if ([int]$identityJwks.StatusCode -ne 503) { throw 'Expected Identity JWKS to fail closed without configured signing keys.' }
+    }
+    finally { $identityJwks.Dispose() }
+    Write-Output 'PASS: Identity login is POST-only and unconfigured JWKS fails closed through Gateway.'
 
     foreach ($writePath in @('/api/v1/quotes', '/api/v1/parcels')) {
         $writeRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Post), ('http://127.0.0.1:5000' + $writePath)

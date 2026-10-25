@@ -72,7 +72,7 @@ public sealed class RegistrationTests
     }
 
     [Fact]
-    public async Task RegistrationLimitUsesRightmostForwardedClientAddress()
+    public async Task RegistrationLimitIgnoresUntrustedForwardedAddresses()
     {
         var store = new TestRegistrationStore();
         using var factory = CreateFactory(store);
@@ -94,7 +94,7 @@ public sealed class RegistrationTests
         using var otherClientResponse = await PostInvalidRegistrationAsync(
             client,
             "198.51.100.99, 203.0.113.8");
-        Assert.Equal(HttpStatusCode.BadRequest, otherClientResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, otherClientResponse.StatusCode);
     }
 
     [Fact]
