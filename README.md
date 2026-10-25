@@ -8,7 +8,10 @@ Customer authentication fails closed until verified Identity integration is supp
 positive HTTP tests use principals registered only in the test host. JWT
 verification, messaging relay, tracking reads, GraphQL, SSE and gRPC handlers
 remain later work. See the
-[Phase 6 client assessment (blocked)](docs/delivery-phase-6-assessment.md),
+[Phase 6 client implementation](docs/delivery-phase-6-implementation.md),
+[local Customer booking runbook](docs/customer-booking-local-runbook.md),
+[project secret commands](docs/development-secrets.md),
+[earlier Phase 6 assessment](docs/delivery-phase-6-assessment.md),
 [Customer client integration handoff](docs/delivery-customer-clients-handoff.md),
 [Phase 5 authentication checkpoint](docs/delivery-phase-5-assessment.md),
 [Identity integration handoff](docs/delivery-identity-integration-handoff.md),
@@ -41,6 +44,7 @@ tariff zone and Neon deployment, while other design decisions remain Proposed.
 | SwiftDrop.Contracts | src/BuildingBlocks/SwiftDrop.Contracts | Dependency-free, versioned integration contract assets |
 | SwiftDrop.Identity.Tests | tests/SwiftDrop.Identity.Tests | Identity host foundation |
 | SwiftDrop.Delivery.Tests | tests/SwiftDrop.Delivery.Tests | Delivery domain, quotes, confirmation, PostgreSQL persistence and host foundation |
+| SwiftDrop.Delivery.Harness | tests/SwiftDrop.Delivery.Harness | Test-only loopback runner; fixed fixture actors and disposable database |
 | SwiftDrop.Merchant.Tests | tests/SwiftDrop.Merchant.Tests | Merchant host foundation |
 | SwiftDrop.Notification.Tests | tests/SwiftDrop.Notification.Tests | Worker host foundation |
 | SwiftDrop.Gateway.Tests | tests/SwiftDrop.Gateway.Tests | Documented route ownership and internal-path isolation |

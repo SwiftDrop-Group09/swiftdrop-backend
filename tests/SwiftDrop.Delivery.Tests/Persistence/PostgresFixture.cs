@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+
 using Npgsql;
 
 namespace SwiftDrop.Delivery.Tests.Persistence;
@@ -32,9 +33,15 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public string ConnectionString { get; private set; } = string.Empty;
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync() => InitializeAsync(allowExternalFallback: true);
+
+    // Interactive client fixtures must never read or use shared/external secrets.
+    internal Task InitializePrivateAsync() => InitializeAsync(allowExternalFallback: false);
+
+    private async Task InitializeAsync(bool allowExternalFallback)
     {
-        var externalConnectionString = Environment.GetEnvironmentVariable("SWIFTDROP_TEST_DELIVERY_DATABASE");
+        var externalConnectionString = allowExternalFallback
+            ? Environment.GetEnvironmentVariable("SWIFTDROP_TEST_DELIVERY_DATABASE") : null;
         Exception? localFailure = null;
 
         try
