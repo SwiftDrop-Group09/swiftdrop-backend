@@ -1,6 +1,17 @@
-# Delivery Phase 6: Customer client assessment and blocked integration handoff
+# Delivery Phase 6: original Customer client assessment
 
-## Checkpoint status
+## Current follow-up
+
+The user subsequently approved continuing Phase 6 independently of the IAM
+member, using replaceable client adapters and a separate test-only HTTP harness.
+The booking features and isolated integration harness are implemented; current
+code scope and executed results are in
+[the Phase 6 implementation report](delivery-phase-6-implementation.md).
+The assessment below records the earlier documentation-only checkpoint at
+5ee5420. Its missing-tool and missing-feature observations are historical, not
+the current follow-up's verification result.
+
+## Historical checkpoint status at 5ee5420
 
 **Client implementation is blocked; the Phase 6 completion gate is not met.**
 Both Customer clients must still implement and demonstrate the booking flow.

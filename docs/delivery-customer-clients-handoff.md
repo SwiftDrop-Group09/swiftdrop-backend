@@ -1,12 +1,16 @@
 # Customer quote and booking integration handoff
 
-**Pending implementation for React and Flutter.** This Phase 6 handoff is based
-on backend d814089 and docs d97fff4, reinspected on 24 October 2026. The backend
-checkpoint passed; neither Customer client currently implements the interaction.
-See the [Phase 6 assessment](delivery-phase-6-assessment.md) for exact blockers
-and executed checks. No client feature test or end-to-end success is implied.
+This is the original planning handoff from the documentation-only checkpoint
+5ee5420, based on backend d814089 and docs d97fff4 on 24 October 2026. React and
+Flutter have since implemented the booking feature through injected adapters
+and isolated test entry points. See the current
+[Phase 6 implementation report](delivery-phase-6-implementation.md) for executed
+checks, remaining IAM/device acceptance and the local runbook. The wire contract
+and recovery requirements below remain applicable; descriptions of missing
+client infrastructure and the original acceptance matrix record that earlier
+baseline.
 
-## Required shared dependencies
+## Shared dependencies at the original checkpoint
 
 React c062b11 supplies Router, Query, React Hook Form/Zod, Tailwind and testing
 conventions, but its session, transport and Customer feature directories are
@@ -165,9 +169,9 @@ The Customer price code is **price_mismatch**, not the separate Merchant
 pricing_changed code. A local expiry indication is not a definite server
 rejection of an already submitted confirmation.
 
-## Feature boundaries after prerequisites are supplied
+## Feature boundaries specified by the original handoff
 
-These are proposed feature locations, not newly created infrastructure:
+The original handoff specified these feature locations and boundaries:
 
 - React: app/portals/customer/booking.tsx and its app/routes.ts registration;
   app/features/customer-booking/ contracts, validation, endpoint functions,
@@ -189,11 +193,12 @@ Only fields returned by Delivery may determine displayed price and booking
 success. Merchant ingestion, Courier features, tracking/history/SSE, backend
 zone authorization changes and Identity implementation are separate scopes.
 
-## Pending client acceptance matrix
+## Original client acceptance matrix
 
-**None of the following feature tests has been implemented or executed.** Run
-the equivalent focused unit/component/widget cases in both clients, followed
-by each repository's full checks and real authenticated integration.
+At the original checkpoint none of these feature tests had been implemented.
+The current implementation report records the focused tests and isolated real
+HTTP/browser checks now executed. Real signed-token/Gateway integration and
+Android device acceptance remain separate checks.
 
 | Case | Required observation |
 |---|---|
@@ -216,5 +221,6 @@ by each repository's full checks and real authenticated integration.
 
 React's repository check is npm run check after using the pinned tools and
 npm ci. Flutter requires dart format lib test, flutter analyze and flutter test,
-then the documented Android/device integration checks. No hosted CI, container
-startup, device run or real token interoperability is established by this handoff.
+then the documented Android/device integration checks. This original handoff
+does not establish hosted CI, container startup, device execution or real token
+interoperability; see the current report for subsequent local verification.

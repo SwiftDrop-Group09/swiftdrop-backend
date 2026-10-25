@@ -23,6 +23,8 @@ $allowed = @{
     'SwiftDrop.Notification.Worker' = @('SwiftDrop.Contracts')
     'SwiftDrop.Identity.Tests' = @('SwiftDrop.Identity.Api')
     'SwiftDrop.Delivery.Tests' = @('SwiftDrop.Delivery.Api')
+    # Local client fixture runner; never referenced or published by a service.
+    'SwiftDrop.Delivery.Harness' = @('SwiftDrop.Delivery.Tests')
     'SwiftDrop.Merchant.Tests' = @('SwiftDrop.Merchant.Api')
     'SwiftDrop.Notification.Tests' = @('SwiftDrop.Notification.Worker')
     'SwiftDrop.Gateway.Tests' = @('SwiftDrop.Gateway')
