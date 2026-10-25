@@ -18,7 +18,8 @@ matching quote consumption, immutable booking fields/snapshots/tariffs, retained
 replay results/events, and exactly one snapshot per committed parcel. The
 snapshot-presence check is deferred: insert parcel and snapshot in one explicit
 transaction (or one EF SaveChanges call). All related booking writes must still
-be orchestrated atomically by the later application handler.
+be orchestrated atomically by the application handler. Customer confirmation
+implements that orchestration below.
 
 Tariff economic fields always create new rows/versions; activation may change.
 Quote/snapshot references retain the original tariff ID, version and currency.
@@ -62,7 +63,8 @@ dotnet test tests/SwiftDrop.Delivery.Tests --configuration Release
 
 `DeliveryDatabaseErrors` classifies provider conflicts/concurrency/dependency
 failures without exposing SQL messages. Phase 2 maps quote dependency failures
-to safe 503 ProblemDetails; booking retry/conflict mapping remains later work.
+to safe 503 ProblemDetails; Customer booking retry/conflict mapping is implemented
+by the confirmation store/handler below.
 No publish is claimed for a persisted outbox record. A future relay may
 update published_at after broker confirmation, retaining stable payload/event ID;
 deletion remains disabled until a provenance-retention policy is implemented.
@@ -109,6 +111,17 @@ through deferred COMMIT failure. Event tests read the checked-in schema and
 verify private fields and stable identity. No publisher or broker adapter is
 registered; pending rows await the [relay handoff](../../../../../docs/delivery-outbox-relay-handoff.md).
 An existing outbox row is not evidence of publication or consumer effects.
+
+Phase 7 extracts `Bookings/BookingWritePersistence.SaveAsync` for Customer and
+future authorized Merchant adapters. It requires an existing EF transaction
+before tracking rows and saves the common parcel/snapshot/history/outbox set,
+including pending changes in the same booking-scoped context. It never commits,
+reserves a key, authenticates, consumes a quote or publishes. Customer store
+retains its tracked-quote/reservation guard and transaction/error handling.
+Merchant reservation/fingerprint/result persistence remains the integration
+owner's responsibility; the existing unique external-order index alone is not
+a complete replay implementation. See the
+[Member 7 handoff](../../../../../docs/delivery-merchant-booking-handoff.md).
 
 These are folders within one project; dependency direction is a review convention,
 not compiler-enforced project isolation.

@@ -8,6 +8,8 @@ Customer authentication fails closed until verified Identity integration is supp
 positive HTTP tests use principals registered only in the test host. JWT
 verification, messaging relay, tracking reads, GraphQL, SSE and gRPC handlers
 remain later work. See the
+[Phase 7 compatibility checkpoint](docs/delivery-phase-7-assessment.md),
+[Member 7 booking handoff](docs/delivery-merchant-booking-handoff.md),
 [Phase 6 client implementation](docs/delivery-phase-6-implementation.md),
 [local Customer booking runbook](docs/customer-booking-local-runbook.md),
 [project secret commands](docs/development-secrets.md),
@@ -156,6 +158,13 @@ No gateway route matches `/internal/**`, gRPC service paths or Worker. Delivery
 forwarding explicitly disables response buffering for future SSE support.
 Forwarding configuration does not implement or authorize any feature. Authentication
 and resource ownership checks must be implemented before protected handlers.
+
+Phase 7 exposes separate Customer/Merchant creation methods on Delivery's
+`BookingAssembler` and a common transaction-bound `BookingWritePersistence`.
+Customer confirmation uses them; Member 7 can reuse the same domain, tracking,
+price snapshot, history and pending outbox write from its authorized adapter.
+The Merchant gRPC methods, permanent fingerprint/result reservation and
+reconciliation transport remain with that integration; no RPC was enabled.
 
 ## Configuration and infrastructure boundaries
 
