@@ -103,5 +103,12 @@ Stored quote tariffs are honored even after activation changes. Parcel addresses
 and recipient contact are structured JSON text from the retained quote, with
 pickup_contact null because no pickup contact is supplied by QuoteInput.
 
+Phase 4 adds real PostgreSQL reliability evidence for 20-request contention,
+lock timeout/cancellation, response/commit acknowledgement loss and rollback
+through deferred COMMIT failure. Event tests read the checked-in schema and
+verify private fields and stable identity. No publisher or broker adapter is
+registered; pending rows await the [relay handoff](../../../../../docs/delivery-outbox-relay-handoff.md).
+An existing outbox row is not evidence of publication or consumer effects.
+
 These are folders within one project; dependency direction is a review convention,
 not compiler-enforced project isolation.
