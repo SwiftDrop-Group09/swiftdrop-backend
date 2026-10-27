@@ -19,7 +19,7 @@ internal sealed class IdentityAccessTokens : IIdentityAccessTokens, IDisposable
     public string Issue(RegisteredProfile user, DateTimeOffset now)
     {
         var ring = keys.Value;
-        if (!user.IsActive || user.Id == Guid.Empty || user.Roles.Count == 0 ||
+        if (!user.IsActive || user.Id == Guid.Empty ||
             user.Roles.Any(role => role is not ("Customer" or "Courier" or "Merchant" or "Dispatcher" or "Admin")))
         {
             throw new InvalidOperationException("An active human identity with valid roles is required.");

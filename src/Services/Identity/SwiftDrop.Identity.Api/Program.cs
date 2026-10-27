@@ -16,12 +16,19 @@ public partial class Program
     {
         var applyMigrations = args.Contains("--migrate", StringComparer.Ordinal);
         var generateDevelopmentKey = args.Contains("--generate-development-key", StringComparer.Ordinal);
-        var builderArgs = args.Where(argument => argument is not ("--migrate" or "--generate-development-key")).ToArray();
+        var provisionDevelopmentAdmin = args.Contains("--provision-development-admin", StringComparer.Ordinal);
+        if (new[] { applyMigrations, generateDevelopmentKey, provisionDevelopmentAdmin }.Count(value => value) > 1)
+            throw new InvalidOperationException("Select only one Identity provisioning operation.");
+        var builderArgs = args.Where(argument => argument is not ("--migrate" or "--generate-development-key" or "--provision-development-admin")).ToArray();
         var builder = WebApplication.CreateBuilder(builderArgs);
 
+        if (provisionDevelopmentAdmin)
+        {
+            await DevelopmentAdminProvisioner.ProvisionAsync(builder.Configuration, builder.Environment);
+            return;
+        }
         if (generateDevelopmentKey)
         {
-            if (applyMigrations) throw new InvalidOperationException("Select only one Identity provisioning operation.");
             DevelopmentSigningKey.Create(builder.Configuration, builder.Environment);
             return;
         }
@@ -40,6 +47,8 @@ public partial class Program
         }
 
         builder.Services.AddHealthChecks();
+        builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
+            context.ProblemDetails.Extensions["correlationId"] = context.HttpContext.TraceIdentifier);
         builder.Services.AddSingleton(sp =>
         {
             var connectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("Database");
@@ -62,6 +71,7 @@ public partial class Program
         builder.Services.AddSingleton<IGoogleIdentityVerifier, GoogleIdentityVerifier>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<IIdentityAuthenticationStore, PostgresIdentityAuthenticationStore>();
+        builder.Services.AddScoped<IIdentityAdministrationStore, PostgresIdentityAdministrationStore>();
         builder.Services.AddScoped(services => new IdentityAuthenticationService(
             () => services.GetRequiredService<IIdentityAuthenticationStore>(),
             services.GetRequiredService<IIdentityPasswordVerifier>(), services.GetRequiredService<IIdentityAccessTokens>(),
@@ -82,12 +92,19 @@ public partial class Program
         {
             var origins = builder.Configuration.GetSection("Identity:Browser:AllowedOrigins").Get<string[]>() ?? [];
             policy.WithOrigins(origins.Where(BrowserAuthentication.ValidOrigin).ToArray())
-                .WithMethods("GET", "POST").WithHeaders("Content-Type", "Authorization", "X-CSRF-Token")
+                .WithMethods("GET", "POST", "PUT", "DELETE")
+                .WithHeaders("Content-Type", "Authorization", "X-CSRF-Token", "X-Correlation-ID")
+                .WithExposedHeaders("X-Correlation-ID")
                 .AllowCredentials();
         }));
         builder.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddPolicy("identity-management", context => RateLimitPartition.GetFixedWindowLimiter(
+                context.User.FindFirst("sub")?.Value ?? GetClientIpAddress(context), _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true
+                }));
             options.AddPolicy("identity-auth", context => RateLimitPartition.GetFixedWindowLimiter(
                 context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
                 {
@@ -107,6 +124,18 @@ public partial class Program
 
         var app = builder.Build();
 
+        app.Use(async (context, next) =>
+        {
+            var supplied = context.Request.Headers["X-Correlation-ID"];
+            var value = supplied.Count == 1 ? supplied[0] : null;
+            // Accept only opaque UUIDs. Never persist arbitrary caller text or
+            // a credential accidentally placed in the correlation header.
+            value = Guid.TryParseExact(value, "D", out var correlation) && correlation != Guid.Empty
+                ? correlation.ToString("D") : Guid.NewGuid().ToString("D");
+            context.TraceIdentifier = value;
+            context.Response.Headers["X-Correlation-ID"] = value;
+            await next(context);
+        });
         app.MapHealthChecks("/health");
         app.UseIdentityProxyForwarding(builder.Configuration);
         app.UseCors("identity-browser");
@@ -115,13 +144,16 @@ public partial class Program
             if (status.HttpContext.Response.StatusCode is 401 or 403)
             {
                 await IdentityEndpoints.Problem(status.HttpContext.Response.StatusCode,
-                    "invalid_credentials", "The supplied credentials are invalid.").ExecuteAsync(status.HttpContext);
+                    status.HttpContext.Response.StatusCode == 403 ? "forbidden" : "invalid_credentials",
+                    status.HttpContext.Response.StatusCode == 403 ? "Account access is forbidden."
+                        : "The supplied credentials are invalid.").ExecuteAsync(status.HttpContext);
             }
         });
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseRateLimiter();
         app.MapIdentityAuthentication();
+        app.MapIdentityAdministration();
         app.MapGet("/api/v1/auth/csrf", (HttpContext context, BrowserAuthentication browser) => browser.Bootstrap(context))
             .RequireRateLimiting("identity-auth");
         app.MapGet("/ready", async (

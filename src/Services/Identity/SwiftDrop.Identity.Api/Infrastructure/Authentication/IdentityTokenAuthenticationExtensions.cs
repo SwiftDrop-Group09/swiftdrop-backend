@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using JsonWebToken = Microsoft.IdentityModel.JsonWebTokens.JsonWebToken;
 using Microsoft.IdentityModel.Tokens;
 using SwiftDrop.Identity.Api.Application;
 
@@ -59,7 +61,7 @@ public static class IdentityTokenAuthenticationExtensions
                             !long.TryParse(expiry, NumberStyles.None, CultureInfo.InvariantCulture, out var expires) ||
                             expires <= issued || expires - issued > 900 || validFrom != issued ||
                             issued > DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeSeconds() ||
-                            !principal.FindAll("roles").Any())
+                            !ValidRoles(context.SecurityToken))
                         {
                             context.Fail("Invalid human access token.");
                         }
@@ -70,5 +72,28 @@ public static class IdentityTokenAuthenticationExtensions
             });
         services.AddAuthorization();
         return services;
+    }
+
+    private static bool ValidRoles(SecurityToken token)
+    {
+        var encoded = token switch
+        {
+            JsonWebToken jwt => jwt.EncodedPayload,
+            JwtSecurityToken jwt => jwt.RawPayload,
+            _ => null
+        };
+        if (encoded is null) return false;
+        try
+        {
+            using var payload = JsonDocument.Parse(Base64UrlEncoder.Decode(encoded));
+            return payload.RootElement.TryGetProperty("roles", out var roles)
+                && roles.ValueKind == JsonValueKind.Array
+                && roles.EnumerateArray().All(role => role.ValueKind == JsonValueKind.String
+                    && role.GetString() is "Customer" or "Courier" or "Merchant" or "Dispatcher" or "Admin");
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 }
