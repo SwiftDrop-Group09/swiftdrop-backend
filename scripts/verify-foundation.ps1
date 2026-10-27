@@ -21,7 +21,8 @@ $allowed = @{
     'SwiftDrop.Delivery.Api' = @('SwiftDrop.Contracts')
     'SwiftDrop.Merchant.Api' = @('SwiftDrop.Contracts')
     'SwiftDrop.Notification.Worker' = @('SwiftDrop.Contracts')
-    'SwiftDrop.Identity.Tests' = @('SwiftDrop.Identity.Api')
+    # Cross-service cryptographic contract harness; runtime services stay isolated.
+    'SwiftDrop.Identity.Tests' = @('SwiftDrop.Identity.Api', 'SwiftDrop.Delivery.Api')
     'SwiftDrop.Delivery.Tests' = @('SwiftDrop.Delivery.Api')
     'SwiftDrop.Merchant.Tests' = @('SwiftDrop.Merchant.Api')
     'SwiftDrop.Notification.Tests' = @('SwiftDrop.Notification.Worker')
