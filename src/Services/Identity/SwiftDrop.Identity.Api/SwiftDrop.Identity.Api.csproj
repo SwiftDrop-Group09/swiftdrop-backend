@@ -11,6 +11,8 @@
                       LogicalName="SwiftDrop.Identity.Api.Infrastructure.Migrations.001_identity_initial.sql" />
     <EmbeddedResource Include="Infrastructure/Migrations/002_identity_sessions.sql"
                       LogicalName="SwiftDrop.Identity.Api.Infrastructure.Migrations.002_identity_sessions.sql" />
+    <EmbeddedResource Include="Infrastructure/Migrations/003_identity_administration.sql"
+                      LogicalName="SwiftDrop.Identity.Api.Infrastructure.Migrations.003_identity_administration.sql" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />

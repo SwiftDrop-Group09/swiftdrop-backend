@@ -89,6 +89,8 @@ public sealed class PostgresIdentityAuthenticationStore(NpgsqlDataSource dataSou
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        await InsertAuditAsync(connection, transaction, userId, "LocalReauthenticationRejected", now,
+            cancellationToken, "Rejected");
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -112,6 +114,7 @@ public sealed class PostgresIdentityAuthenticationStore(NpgsqlDataSource dataSou
         {
             var expiresAt = await InsertFamilyAsync(connection, transaction, userId, session, cancellationToken);
             await ResetLoginFailuresAsync(connection, transaction, userId, session.CreatedAt, cancellationToken);
+            await InsertAuditAsync(connection, transaction, userId, "LocalLogin", session.CreatedAt, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new IdentityStoreResult(account! with { LockedUntil = null }, SessionExpiresAt: expiresAt);
         }
@@ -152,6 +155,9 @@ public sealed class PostgresIdentityAuthenticationStore(NpgsqlDataSource dataSou
         if (!account.Profile.IsActive || presented.Value.ConsumedAt is not null)
         {
             await RevokeFamilyAsync(connection, transaction, owner.Value, replacement.CreatedAt, cancellationToken);
+            await InsertAuditAsync(connection, transaction, owner.Value.UserId,
+                presented.Value.ConsumedAt is not null ? "RefreshReuseDetected" : "DisabledRefreshRejected",
+                replacement.CreatedAt, cancellationToken, "Rejected");
             await transaction.CommitAsync(cancellationToken);
             return Invalid();
         }
@@ -182,6 +188,8 @@ public sealed class PostgresIdentityAuthenticationStore(NpgsqlDataSource dataSou
             consume.Parameters.AddWithValue("replacement_id", replacement.Id);
             consume.Parameters.AddWithValue("id", presented.Value.Id);
             await consume.ExecuteNonQueryAsync(cancellationToken);
+            await InsertAuditAsync(connection, transaction, owner.Value.UserId, "SessionRefreshed",
+                replacement.CreatedAt, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new IdentityStoreResult(account, SessionExpiresAt: expiresAt);
         }
@@ -212,6 +220,7 @@ public sealed class PostgresIdentityAuthenticationStore(NpgsqlDataSource dataSou
         }
 
         await RevokeFamilyAsync(connection, transaction, owner.Value, now, cancellationToken);
+        await InsertAuditAsync(connection, transaction, userId, "Logout", now, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
     }
@@ -283,6 +292,7 @@ public sealed class PostgresIdentityAuthenticationStore(NpgsqlDataSource dataSou
 
             var expiresAt = await InsertFamilyAsync(connection, transaction, account!.Profile.Id,
                 session, cancellationToken);
+            await InsertAuditAsync(connection, transaction, account.Profile.Id, "GoogleLogin", session.CreatedAt, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new IdentityStoreResult(account, SessionExpiresAt: expiresAt);
         }
@@ -572,15 +582,17 @@ public sealed class PostgresIdentityAuthenticationStore(NpgsqlDataSource dataSou
         Guid userId,
         string action,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string resultCode = "Success")
     {
         await using var command = new NpgsqlCommand(
             """
-            INSERT INTO public.audit_logs (actor_user_id, action, subject_user_id, created_at)
-            VALUES (@user_id, @action, @user_id, @now)
+            INSERT INTO public.audit_logs (actor_user_id, action, subject_user_id, created_at, result_code)
+            VALUES (@user_id, @action, @user_id, @now, @result)
             """, connection, transaction);
         command.Parameters.AddWithValue("user_id", userId);
         command.Parameters.AddWithValue("action", action);
+        command.Parameters.AddWithValue("result", resultCode);
         command.Parameters.AddWithValue("now", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

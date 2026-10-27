@@ -110,7 +110,13 @@ public sealed class GoogleApiTests(IdentityPostgresFixture database)
             idToken = token, currentPassword = authenticated ? "Wrong Horse Battery 7!" : Password
         });
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Equal(before, await Snapshot());
+        var after = await Snapshot();
+        Assert.Equal(before.Split(':').Take(4), after.Split(':').Take(4));
+        Assert.Equal(long.Parse(before.Split(':')[4]) + (authenticated ? 1 : 0), long.Parse(after.Split(':')[4]));
+        Assert.Equal(authenticated ? 1L : 0L, await Scalar("""
+            SELECT COUNT(*) FROM public.audit_logs WHERE subject_user_id=@id
+                AND action='LocalReauthenticationRejected' AND result_code='Rejected'
+            """, userId));
         Assert.Equal(0L, await Scalar("SELECT COUNT(*) FROM public.external_identities WHERE user_id=@id", userId));
     }
 
