@@ -19,8 +19,9 @@ public static class Program
         Console.CancelKeyPress += cancel;
         try
         {
-            var (actor, port, smoke) = Parse(args);
-            await using var harness = await BookingClientHarness.StartAsync(actor, port);
+            var courierWorkflow = args.Contains("--courier-workflow", StringComparer.Ordinal);
+            var (actor, port, smoke) = Parse(args.Where(x => x != "--courier-workflow").ToArray());
+            await using var harness = await BookingClientHarness.StartAsync(actor, port, courierWorkflow);
             Console.WriteLine(harness.Address);
             if (smoke)
             {
@@ -51,7 +52,7 @@ public static class Program
         }
         catch (ArgumentException)
         {
-            Console.Error.WriteLine("Usage: --port 5088 --actor customer-a|customer-b|courier [--smoke].");
+            Console.Error.WriteLine("Usage: --port 5088 --actor customer-a|customer-b|courier [--smoke] [--courier-workflow].");
             return 2;
         }
         catch (Exception exception)

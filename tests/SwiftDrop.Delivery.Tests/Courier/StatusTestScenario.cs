@@ -24,6 +24,12 @@ internal sealed class StatusTestScenario(PostgresFixture fixture) : IAsyncDispos
     public HttpClient Client { get; private set; } = null!;
     public string Path => $"/api/v1/deliveries/{ParcelId:D}/status";
 
+    internal static async Task SeedClientParcelAsync(PostgresFixture fixture, ParcelStatus source, Guid courierId)
+    {
+        var scenario = new StatusTestScenario(fixture) { CourierId = courierId, OtherCourierId = Guid.NewGuid() };
+        await scenario.SeedAsync(source, false);
+    }
+
     public static async Task<StatusTestScenario> CreateAsync(PostgresFixture fixture,
         ParcelStatus source = ParcelStatus.Assigned, bool merchant = false, Guid? courierId = null,
         Action<IServiceCollection>? configure = null)

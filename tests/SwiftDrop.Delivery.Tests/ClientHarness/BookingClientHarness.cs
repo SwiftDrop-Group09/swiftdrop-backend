@@ -15,6 +15,7 @@ using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 using SwiftDrop.Delivery.Tests.Authentication;
 using SwiftDrop.Delivery.Tests.Persistence;
 using SwiftDrop.Delivery.Tests.Quotes;
+using SwiftDrop.Delivery.Tests.Courier;
 
 namespace SwiftDrop.Delivery.Tests.ClientHarness;
 
@@ -33,6 +34,7 @@ public sealed class BookingClientHarness : IAsyncDisposable
     private readonly PostgresFixture _database = new();
     private readonly List<BookingClientActorHost> _hosts = [];
     private bool _disposed;
+    private MemoryProofStorage? _courierStorage;
     private static readonly BookingHarnessZone[] FixtureZones =
     [
         new(new("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"), "Test North"),
@@ -47,7 +49,7 @@ public sealed class BookingClientHarness : IAsyncDisposable
     internal string ConnectionString => _database.ConnectionString;
 
     public static async Task<BookingClientHarness> StartAsync(
-        BookingHarnessActor actor = BookingHarnessActor.CustomerA, int port = 0)
+        BookingHarnessActor actor = BookingHarnessActor.CustomerA, int port = 0, bool courierWorkflow = false)
     {
         Validate(actor, port);
         var harness = new BookingClientHarness();
@@ -55,6 +57,7 @@ public sealed class BookingClientHarness : IAsyncDisposable
         {
             await harness._database.InitializePrivateAsync();
             await harness.SeedAsync();
+            if (courierWorkflow) await harness.SeedCourierAsync();
             harness.Host = harness.StartActor(actor, port);
             return harness;
         }
@@ -84,6 +87,7 @@ public sealed class BookingClientHarness : IAsyncDisposable
             services.RemoveAll<TimeProvider>();
             services.AddSingleton(TimeProvider.System);
             services.AddSingleton<IStartupFilter>(new HarnessContextFilter(context));
+            if (_courierStorage is not null) ProofTestSupport.UseStorage(services, _courierStorage);
         });
         var factory = rootFactory.WithWebHostBuilder(builder =>
         {
@@ -128,6 +132,17 @@ public sealed class BookingClientHarness : IAsyncDisposable
 
     internal DeliveryDbContext OpenContext() => new(new DbContextOptionsBuilder<DeliveryDbContext>()
         .UseNpgsql(ConnectionString).Options);
+
+    private async Task SeedCourierAsync()
+    {
+        // Explicit fixture mode only; normal hosts never install this storage or principal.
+        _courierStorage = new MemoryProofStorage { Now = DateTimeOffset.UtcNow };
+        foreach (var state in new[] { ParcelStatus.Assigned, ParcelStatus.Assigned,
+                     ParcelStatus.OutForDelivery, ParcelStatus.OutForDelivery, ParcelStatus.Failed })
+        {
+            await StatusTestScenario.SeedClientParcelAsync(_database, state, DeliveryTestAuthentication.NonCustomerId);
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {
