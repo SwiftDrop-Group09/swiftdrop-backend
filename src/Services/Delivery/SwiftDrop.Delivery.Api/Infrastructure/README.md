@@ -125,3 +125,61 @@ a complete replay implementation. See the
 
 These are folders within one project; dependency direction is a review convention,
 not compiler-enforced project isolation.
+
+## Courier persistence foundation (Phase 1)
+
+`20261028110532_CourierPersistenceFoundation` adds `couriers`, `courier_zones`
+and `proof_metadata`. Courier IDs retain the separately verified Identity UUID;
+no account credentials or cross-database FK are introduced. Capacity and version
+are positive, and Courier.Version is an EF concurrency token. Zone memberships
+have a composite primary key and restrictive local Courier/DeliveryZone FKs.
+No profile is seeded or provisioned by the API.
+
+Proof metadata stores Photo/Signature, parcel FK, opaque private storage reference,
+recipient name, actor UUID and UTC upload time. Object references are unique and
+URLs are rejected. The actor is an audit UUID reference, not an Identity SQL FK.
+Metadata is not proof of an actual upload: no storage adapter, upload verification,
+assignment check, completion handler or public proof DTO is enabled here.
+Future upload code must confirm private storage before committing metadata and
+the authorized status/history/outbox transaction; staging and orphan cleanup
+remain Phase 4 work. Do not serialize persistence entities as public responses.
+
+The existing `booking_history` is now append-only through both EF SaveChanges
+and a PostgreSQL UPDATE/DELETE rejection trigger. Its schema/factory and all
+existing Booking writes are reused. The new migration leaves the initial
+migration, Parcel.Version, quote/snapshot/replay rules and event contracts intact.
+Normal startup still performs no DDL. Generate/review migration scripts with the
+existing commands above; do not apply them to a shared database without the
+team's deployment process.
+
+The user confirmed Active/Reassigned/Delivered/Failed/Cancelled assignment
+statuses and at least one photo OR signature (both accepted) for final proof.
+`20261028112000_AssignmentsPersistence` adds `assignments`, with restrictive
+parcel/Courier FKs, service-date/manifest/history indexes, timestamp/lifecycle
+checks and PostgreSQL xmin concurrency. `ux_assignments_current_parcel` uniquely
+indexes parcel_id WHERE status = 'Active'. Always use that predicate, never
+the most recent assignment timestamp, to determine current ownership.
+
+Assignments retain their original Courier, parcel, service date and assigned
+time. A SQL trigger blocks deletion, ownership/schedule rewrites, resurrection
+of a closed row and changes to an already recorded pickup time. Reassignment
+and cancellation are before pickup only; terminal assignments release the
+Active slot and remain available for historical ownership. No new closure-time
+field was invented: authoritative terminal timestamps will remain in parcel
+status history. Rescheduling is represented by the replacement assignment.
+
+The domain operations mutate only assignment records; they do not authorize a
+caller or advance a parcel. Future application handlers must lock/conditionally
+write the parcel version and current assignment, enforce Courier/zone/capacity
+rules, and persist state/history/outbox in one transaction. For replacement,
+flush the old row's Reassigned state before inserting the new Active row, inside
+that same transaction; EF insert/update ordering alone is not sufficient for a
+filtered unique index. A failed replacement must roll back the release. Actual
+dispatcher allocation and status/proof endpoints remain later work.
+
+Proof metadata supports photo alone, signature alone and both; the selected
+policy must be enforced by the future authorized proof-completion handler after
+private object persistence. Phase 1 supplies no successful completion endpoint.
+See the
+[assessment and actual test results](../../../../../docs/courier-phase-1-assessment.md).
+Phase 2 manifest/detail handlers and React/Flutter Courier work have not started.

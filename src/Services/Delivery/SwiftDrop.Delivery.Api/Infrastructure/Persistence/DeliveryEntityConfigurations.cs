@@ -133,6 +133,8 @@ internal static partial class DeliveryEntityConfigurations
         outbox.Property(x => x.Payload).HasColumnType("jsonb");
         outbox.HasIndex(x => new { x.CreatedAt, x.Id }).HasFilter("published_at IS NULL");
 
+        CourierEntityConfigurations.Configure(model);
+
         // One convention, no extra naming package. Explicit ER aliases follow it.
         foreach (var entity in model.Model.GetEntityTypes())
         {

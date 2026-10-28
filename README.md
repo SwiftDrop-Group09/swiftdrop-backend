@@ -7,7 +7,11 @@ Customer booking confirmation with atomic PostgreSQL persistence. Production
 Customer authentication fails closed until verified Identity integration is supplied;
 positive HTTP tests use principals registered only in the test host. JWT
 verification, messaging relay, tracking reads, GraphQL, SSE and gRPC handlers
-remain later work. See the
+remain later work. Courier Phase 1 adds operational profiles, zone memberships,
+retained assignments with one active owner per parcel, private proof metadata
+and append-only status-history persistence. The user confirmed at least one photo
+or signature for final proof; upload/completion enforcement remains a later phase.
+See the [Courier Phase 1 checkpoint](docs/courier-phase-1-assessment.md), the
 [Phase 7 compatibility checkpoint](docs/delivery-phase-7-assessment.md),
 [Member 7 booking handoff](docs/delivery-merchant-booking-handoff.md),
 [Phase 6 client implementation](docs/delivery-phase-6-implementation.md),
@@ -201,7 +205,8 @@ Neon is the selected PostgreSQL deployment: four privately owned logical
 databases with separate connection secrets, never a shared schema or cross-service
 query. Use the actual provisioned Neon endpoints/roles and TLS settings; do not
 start a second shared PostgreSQL stack. Disposable PostgreSQL remains test-only.
-Delivery uses EF Core/Npgsql with one initial migration; Identity retains
+Delivery uses EF Core/Npgsql with the initial Booking migration and an additive
+Courier persistence migration; Identity retains
 its independent SQL migration. RabbitMQ/MassTransit, GraphQL, gRPC and SSE
 adapters, generated clients, publishers and consumers remain future work.
 Docker packaging exists for the development containers. Delivery's quote and
