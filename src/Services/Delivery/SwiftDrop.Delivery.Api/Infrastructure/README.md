@@ -240,7 +240,7 @@ OutForDelivery, with nonblank private notes (1-500 characters) at each stage.
 Failed is permitted from those four active states with RecipientUnavailable,
 AddressUnreachable, Damaged or Other; additional notes are optional. Direct
 Delivered, cancellation, skips, repeats and reverse transitions are rejected.
-Proof completion remains Phase 4.
+Proof completion is implemented separately in Phase 4 below.
 
 `CourierStatus/PostgresCourierStatusStore` locks the parcel then the assignment,
 rechecking ownership after the parcel lock is acquired. It retains EF Version/xmin
@@ -277,3 +277,34 @@ races, reassignment/pickup contention, cancellation, fault rollback through comm
 lost acknowledgements/responses and upgrade compatibility with real Customer
 Booking. See the [Phase 3 report](../../../../../docs/courier-phase-3-assessment.md)
 for actual results and integration dependencies.
+
+## Private proof completion (Courier Phase 4)
+
+`POST /api/v1/deliveries/{id}/pod` accepts the documented multipart photo and/or
+signature, recipientName and expectedVersion, with Idempotency-Key. It requires
+the current Courier and OutForDelivery, fully decodes JPEG/PNG input (<=5 MiB each),
+re-encodes pixels without source metadata, confirms encrypted private MinIO/S3
+storage and rechecks authorization/version before atomically saving proof metadata,
+Delivered parcel/version, closed assignment, history, outbox and exact 200 replay.
+Status PUT remains unable to deliver. No bucket credentials/references or private
+recipient data appear in the response or event.
+
+`20261028175800_CourierProofCompletion` extends the replay constraint to accept
+CompleteDeliveryWithProof 200 and adds an immutable/retained proof metadata trigger.
+All prior 201/status receipts and migrations are preserved. EF also rejects proof
+updates/deletions. Downgrade safely fails if retained proof 200 receipts exist;
+do not remove retained data to force rollback. No shared Neon DDL was run here.
+
+The existing status store's transaction/ownership/reservation machinery is reused
+through a focused proof port. Exact earlier status receipts may now also be replayed
+by their original Courier after a Delivered assignment closure, as can proof
+completion's own receipt. This grants no detail/download or new terminal mutation.
+
+S3ProofStorage requires explicit Delivery credentials and a private encrypted bucket;
+missing configuration has no local filesystem/public fallback. Conditional object
+creation and read-back hashes confirm bytes. Daily reference-aware cleanup takes
+exclusive per-object PostgreSQL advisory locks shared with completion, skipping
+busy or committed references. Unknown commit results are never eagerly deleted.
+See the [storage runbook](../../../../../docs/courier-proof-storage.md) for exact
+configuration, decoding/multipart resource limits, privacy/encryption policy,
+24-hour staging/cleanup rules, deployment and live integration requirements.

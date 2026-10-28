@@ -63,4 +63,11 @@ public sealed class IdempotencyRecord
         ParcelId = DomainGuard.Id(parcelId, nameof(parcelId));
         StoredResponse = JsonSerializer.Serialize(new { statusCode, body, location });
     }
+
+    public void CompleteDeliveryWithProof(Guid parcelId, string body)
+    {
+        if (Operation != "CompleteDeliveryWithProof")
+            throw new InvalidOperationException("Only proof completion stores this result.");
+        CompleteResult(parcelId, 200, body, "/api/v1/parcels/" + parcelId.ToString("D"));
+    }
 }

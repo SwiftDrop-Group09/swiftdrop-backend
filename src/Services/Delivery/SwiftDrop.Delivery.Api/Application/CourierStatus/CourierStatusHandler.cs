@@ -20,7 +20,8 @@ public sealed class CourierStatusHandler(ICurrentDeliveryUser currentUser, ICour
             var state = await transaction.LoadAuthorizedAsync(actor, id, cancellationToken);
             if (state is null || state.Parcel.Id != id || state.Assignment.ParcelId != id || state.Assignment.CourierId != actor
                 || (state.Assignment.Status != AssignmentStatus.Active
-                    && !(state.Parcel.Status == ParcelStatus.Failed && state.Assignment.Status == AssignmentStatus.Failed)))
+                    && !(state.Parcel.Status == ParcelStatus.Failed && state.Assignment.Status == AssignmentStatus.Failed)
+                    && !(state.Parcel.Status == ParcelStatus.Delivered && state.Assignment.Status == AssignmentStatus.Delivered)))
                 return new(null, CourierStatusFailure.NotFound);
             if (state.Snapshot.ParcelId != id) return new(null, CourierStatusFailure.Unavailable);
             var reservation = await transaction.ReserveAsync(actor, command, UtcNow(), cancellationToken);

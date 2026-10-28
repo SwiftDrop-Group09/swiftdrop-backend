@@ -73,4 +73,17 @@ public sealed class Parcel
         Version = nextVersion;
         UpdatedAt = changedAt.ToUniversalTime();
     }
+
+    public void CompleteWithProof(long expectedVersion, IReadOnlyList<ProofMetadata> proofs, DateTimeOffset changedAt)
+    {
+        if (Version != expectedVersion)
+            throw new CourierTransitionException(CourierTransitionFailure.StaleVersion, Version);
+        if (Status != ParcelStatus.OutForDelivery)
+            throw new CourierTransitionException(CourierTransitionFailure.InvalidTransition, Version);
+        ProofCompletionPolicy.Validate(proofs, Id);
+        var nextVersion = checked(Version + 1);
+        Status = ParcelStatus.Delivered;
+        Version = nextVersion;
+        UpdatedAt = changedAt.ToUniversalTime();
+    }
 }

@@ -18,8 +18,14 @@ use isolated principals. Courier Phase 3 adds the versioned, idempotent
 `PUT /api/v1/deliveries/{id}/status` with current-assignment checks and atomic
 status/history/outbox/replay persistence. It guards the documented pickup/transit/
 out-for-delivery and reason-required Failed transitions; direct Delivered writes
-are rejected until proof completion is implemented. Production writes also fail
-closed pending Identity integration. See the
+are rejected. Courier Phase 4 adds the documented multipart
+`POST /api/v1/deliveries/{id}/pod`: photo or signature (both accepted), decoded
+JPEG/PNG validation, encrypted private S3/MinIO staging and guarded atomic Delivered
+completion. Reference-aware daily cleanup removes old orphan uploads. Production
+writes fail closed pending Identity integration; proof storage also requires
+explicit private configuration. See the
+[Courier Phase 4 checkpoint](docs/courier-phase-4-assessment.md),
+[proof storage runbook](docs/courier-proof-storage.md),
 [Courier Phase 3 checkpoint](docs/courier-phase-3-assessment.md),
 the [Courier Phase 2 checkpoint](docs/courier-phase-2-assessment.md),
 the [Courier Phase 1 checkpoint](docs/courier-phase-1-assessment.md), the

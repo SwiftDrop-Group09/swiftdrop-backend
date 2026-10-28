@@ -175,7 +175,7 @@ public sealed class CourierStatusReliabilityTests(PostgresFixture fixture)
         }
     }
 
-    private sealed class LoseResponse : DelegatingHandler
+    internal sealed class LoseResponse : DelegatingHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -189,7 +189,7 @@ public sealed class CourierStatusReliabilityTests(PostgresFixture fixture)
         }
     }
 
-    private sealed class WriteFault(StatusTestScenario scenario, string name, string table) : IAsyncDisposable
+    internal sealed class WriteFault(StatusTestScenario scenario, string name, string table) : IAsyncDisposable
     {
         public static async Task<WriteFault> InstallAsync(StatusTestScenario scenario, string key, string stage)
         {

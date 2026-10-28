@@ -106,7 +106,13 @@ try {
             'NOTIFICATIONS_DATABASE_CONNECTION_STRING',
             'IDENTITY_MIGRATION_CONNECTION_STRING',
             'ConnectionStrings__Database',
-            'ConnectionStrings__MigrationDatabase'
+            'ConnectionStrings__MigrationDatabase',
+            'ProofStorage__Endpoint',
+            'ProofStorage__Bucket',
+            'ProofStorage__Region',
+            'ProofStorage__AccessKey',
+            'ProofStorage__SecretKey',
+            'ProofStorage__SessionToken'
         )) {
             $startInfo.EnvironmentVariables.Remove($secretName)
         }
@@ -114,6 +120,11 @@ try {
         if ($hostInfo.Name -eq 'SwiftDrop.Identity.Api') {
             # Command-line configuration also overrides Development user secrets.
             $startInfo.Arguments += ' --ConnectionStrings:Database='
+        }
+        if ($hostInfo.Name -eq 'SwiftDrop.Delivery.Api') {
+            # Keep the proof cleanup worker offline even if Development user secrets
+            # configure a real bucket; this script is a fail-closed host smoke only.
+            $startInfo.Arguments += ' --ProofStorage:Bucket= --ProofStorage:Endpoint='
         }
         $process = New-Object Diagnostics.Process
         $process.StartInfo = $startInfo
@@ -243,6 +254,27 @@ try {
     }
     finally { $statusRequest.Dispose() }
     Write-Output 'PASS: real Gateway status PUT requires verified authentication and returns private/no-store HTTP 401.'
+
+    $proofRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Post), 'http://127.0.0.1:5000/api/v1/deliveries/11111111-1111-4111-8111-111111111111/pod'
+    $proofRequest.Content = New-Object Net.Http.StringContent '{}', ([Text.Encoding]::UTF8), 'application/json'
+    $proofRequest.Headers.Add('Idempotency-Key', 'gateway-proof-smoke')
+    $proofRequest.Headers.Add('X-User-Id', '11111111-1111-4111-8111-111111111111')
+    $proofRequest.Headers.Add('X-User-Role', 'Courier')
+    $proofRequest.Headers.Authorization = New-Object Net.Http.Headers.AuthenticationHeaderValue 'Bearer', 'unverified-proof-token'
+    try {
+        $proofResponse = $client.SendAsync($proofRequest).GetAwaiter().GetResult()
+        try {
+            $proofProblem = ConvertFrom-Json $proofResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            if ([int]$proofResponse.StatusCode -ne 401 -or $proofProblem.code -ne 'unauthorized' -or
+                [string]::IsNullOrWhiteSpace($proofProblem.correlationId) -or
+                -not $proofResponse.Headers.CacheControl.NoStore -or -not $proofResponse.Headers.CacheControl.Private) {
+                throw 'Expected proof POST through Gateway to reject unverified identity with private/no-store HTTP 401.'
+            }
+        }
+        finally { $proofResponse.Dispose() }
+    }
+    finally { $proofRequest.Dispose() }
+    Write-Output 'PASS: real Gateway proof POST requires verified authentication and returns private/no-store HTTP 401.'
 
     $parcelRead = $client.GetAsync('http://127.0.0.1:5000/api/v1/parcels').GetAwaiter().GetResult()
     try {

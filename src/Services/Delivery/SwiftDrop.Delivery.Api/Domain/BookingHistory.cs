@@ -35,6 +35,18 @@ public sealed class BookingHistory
         };
     }
     public Guid ParcelId { get; private set; }
+
+    public static BookingHistory ProofCompleted(Guid id, Parcel parcel, Guid actor)
+    {
+        if (parcel.Status != ParcelStatus.Delivered || parcel.Version < 2)
+            throw new InvalidOperationException("Completion history requires Delivered.");
+        return new BookingHistory
+        {
+            Id = DomainGuard.Id(id, nameof(id)), ParcelId = parcel.Id,
+            FromStatus = ParcelStatus.OutForDelivery, ToStatus = ParcelStatus.Delivered,
+            ChangedBy = DomainGuard.Id(actor, nameof(actor)), Timestamp = parcel.UpdatedAt
+        };
+    }
     public ParcelStatus? FromStatus { get; private set; }
     public ParcelStatus ToStatus { get; private set; }
     public Guid ChangedBy { get; private set; }

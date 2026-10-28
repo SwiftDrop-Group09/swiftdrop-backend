@@ -48,5 +48,11 @@ public sealed class DeliveryDbContext(DbContextOptions<DeliveryDbContext> option
         {
             throw new InvalidOperationException("Parcel status history is append-only.");
         }
+
+        if (ChangeTracker.Entries<ProofMetadata>().Any(entry =>
+            entry.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("Committed proof metadata is retained and immutable.");
+        }
     }
 }

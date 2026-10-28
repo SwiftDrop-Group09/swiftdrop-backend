@@ -2,6 +2,7 @@ using System.Net;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 
 namespace SwiftDrop.Delivery.Tests;
 
@@ -9,7 +10,12 @@ public sealed class FoundationTests : IDisposable
 {
     private readonly WebApplicationFactory<SwiftDrop.Delivery.Api.Program> _factory =
         new WebApplicationFactory<SwiftDrop.Delivery.Api.Program>()
-            .WithWebHostBuilder(builder => builder.UseEnvironment("Testing"));
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                    new Dictionary<string, string?> { ["ProofStorage:Bucket"] = "", ["ProofStorage:Endpoint"] = "" }));
+            });
 
     [Fact]
     public async Task LivenessDoesNotRequireExternalInfrastructure()
@@ -81,6 +87,21 @@ public sealed class FoundationTests : IDisposable
         client.DefaultRequestHeaders.Add("Authorization", "Bearer unverified-status-token");
         using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
         using var response = await client.PutAsync("/api/v1/deliveries/11111111-1111-4111-8111-111111111111/status", content);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        Assert.True(response.Headers.CacheControl?.Private);
+    }
+
+    [Fact]
+    public async Task CourierProofCompletionRequiresVerifiedAuthentication()
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Id", Guid.NewGuid().ToString());
+        client.DefaultRequestHeaders.Add("X-User-Role", "Courier");
+        client.DefaultRequestHeaders.Add("Authorization", "Bearer unverified-proof-token");
+        using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/api/v1/deliveries/11111111-1111-4111-8111-111111111111/pod", content);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.True(response.Headers.CacheControl?.NoStore);

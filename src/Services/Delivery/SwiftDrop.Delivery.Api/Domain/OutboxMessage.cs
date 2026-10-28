@@ -42,6 +42,13 @@ public sealed class OutboxMessage
         };
     }
 
+    public static OutboxMessage ProofCompleted(Guid eventId, Parcel parcel, string correlationId)
+    {
+        if (parcel.Status != ParcelStatus.Delivered || parcel.Version < 2)
+            throw new InvalidOperationException("Completion event requires Delivered.");
+        return Create(eventId, parcel, "Delivered", "OutForDelivery", parcel.UpdatedAt, correlationId);
+    }
+
     public Guid Id { get; private set; }
     public string EventType { get; private set; } = null!;
     public string Payload { get; private set; } = null!;
