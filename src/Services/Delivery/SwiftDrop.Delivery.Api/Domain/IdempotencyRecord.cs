@@ -37,14 +37,26 @@ public sealed class IdempotencyRecord
     public void Complete(Guid parcelId, int statusCode, string body, string location)
     {
         if (StoredResponse is not null)
-        {
             throw new InvalidOperationException("The idempotency result is already complete.");
-        }
-
         if (statusCode != 201)
         {
             throw new ArgumentOutOfRangeException(nameof(statusCode), "Booking stores the original 201 result.");
         }
+
+        CompleteResult(parcelId, statusCode, body, location);
+    }
+
+    public void CompleteStatusUpdate(Guid parcelId, string body)
+    {
+        if (Operation != "UpdateDeliveryStatus")
+            throw new InvalidOperationException("Only UpdateDeliveryStatus stores a 200 status result.");
+        CompleteResult(parcelId, 200, body, "/api/v1/parcels/" + parcelId.ToString("D"));
+    }
+
+    private void CompleteResult(Guid parcelId, int statusCode, string body, string location)
+    {
+        if (StoredResponse is not null)
+            throw new InvalidOperationException("The idempotency result is already complete.");
 
         DomainGuard.JsonObject(body, nameof(body));
         DomainGuard.Text(location, nameof(location));

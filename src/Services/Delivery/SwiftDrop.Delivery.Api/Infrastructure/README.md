@@ -175,7 +175,8 @@ rules, and persist state/history/outbox in one transaction. For replacement,
 flush the old row's Reassigned state before inserting the new Active row, inside
 that same transaction; EF insert/update ordering alone is not sufficient for a
 filtered unique index. A failed replacement must roll back the release. Actual
-dispatcher allocation and status/proof endpoints remain later work.
+dispatcher allocation and proof endpoints remain later work; the Phase 3 status
+handler now applies the parcel/assignment guard described below.
 
 Proof metadata supports photo alone, signature alone and both; the selected
 policy must be enforced by the future authorized proof-completion handler after
@@ -229,3 +230,50 @@ Production still registers UnconfiguredIdentityHandler. Only tests replace it wi
 the established fixed-principal fixture. Real JWT/JWKS integration is a separate
 Identity dependency; no development identity switch or alternate login was added.
 No migrations, version/history/outbox writes or storage/broker calls are introduced.
+
+## Courier status writes (Phase 3)
+
+`PUT /api/v1/deliveries/{id}/status` requires a trusted Courier, current assignment,
+`Idempotency-Key` and JSON `status`, `expectedVersion`, optional `notes` and
+`failureReason`. The central policy permits Assigned -> PickedUp -> InTransit ->
+OutForDelivery, with nonblank private notes (1-500 characters) at each stage.
+Failed is permitted from those four active states with RecipientUnavailable,
+AddressUnreachable, Damaged or Other; additional notes are optional. Direct
+Delivered, cancellation, skips, repeats and reverse transitions are rejected.
+Proof completion remains Phase 4.
+
+`CourierStatus/PostgresCourierStatusStore` locks the parcel then the assignment,
+rechecking ownership after the parcel lock is acquired. It retains EF Version/xmin
+concurrency predicates and the transaction-local two-second lock timeout. The
+handler saves the incremented parcel, pickup/Failed assignment change, appended
+private history, one unchanged StatusChanged v1 payload and the exact replay
+response in one READ COMMITTED transaction. No broker or object-store call occurs.
+Dispatcher writers must use the same parcel-first locking/version contract;
+reassignment is still before pickup, with release/replacement in one transaction.
+
+Replay is scoped to principal/UpdateDeliveryStatus/key with a canonical fingerprint
+of parcel, status, expected version, notes and reason. Same-key replay precedes
+version/state checks, still requires related assignment authorization, and adds no
+event. A former Reassigned Courier gets 404; the original Failed Courier can replay
+their own terminal result through the retained Failed assignment, without gaining
+detail access or another state mutation. Results expire after 30 days with retained
+tombstones. Changed input, expired key, invalid transition or stale version returns
+409; currentVersion is disclosed only for an authorized stale write. Lock contention
+returns operation_in_progress/409 with Retry-After: 1; retry the same key after an
+unknown commit or lost response. Every response is private/no-store.
+
+`20261028170439_CourierStatusIdempotency` extends only the replay completion check:
+existing 201 envelopes remain valid, and 200 is additionally permitted only for
+UpdateDeliveryStatus. Existing migrations, immutable event/history/replay triggers,
+Booking behavior and quote consumption are preserved. Generate and review the new
+migration using the existing commands; no shared Neon migration was applied here.
+Downgrade to the previous 201-only schema fails safely if retained 200 receipts
+exist. Do not delete replay records to force a downgrade; use a reviewed forward
+migration or retain the compatible schema while rolling back application code.
+
+Production authentication remains fail-closed; positive HTTP/database tests use
+the existing test-only principals. Actual PostgreSQL tests cover same/different-key
+races, reassignment/pickup contention, cancellation, fault rollback through commit,
+lost acknowledgements/responses and upgrade compatibility with real Customer
+Booking. See the [Phase 3 report](../../../../../docs/courier-phase-3-assessment.md)
+for actual results and integration dependencies.

@@ -14,7 +14,14 @@ or signature for final proof; upload/completion enforcement remains a later phas
 Courier Phase 2 adds the self-scoped service-day manifest and private parcel
 details using current assignments and documented owner/operations access. These
 reads fail closed until Identity authentication is integrated; positive tests
-use isolated principals. See the [Courier Phase 2 checkpoint](docs/courier-phase-2-assessment.md),
+use isolated principals. Courier Phase 3 adds the versioned, idempotent
+`PUT /api/v1/deliveries/{id}/status` with current-assignment checks and atomic
+status/history/outbox/replay persistence. It guards the documented pickup/transit/
+out-for-delivery and reason-required Failed transitions; direct Delivered writes
+are rejected until proof completion is implemented. Production writes also fail
+closed pending Identity integration. See the
+[Courier Phase 3 checkpoint](docs/courier-phase-3-assessment.md),
+the [Courier Phase 2 checkpoint](docs/courier-phase-2-assessment.md),
 the [Courier Phase 1 checkpoint](docs/courier-phase-1-assessment.md), the
 [Phase 7 compatibility checkpoint](docs/delivery-phase-7-assessment.md),
 [Member 7 booking handoff](docs/delivery-merchant-booking-handoff.md),
@@ -209,8 +216,9 @@ Neon is the selected PostgreSQL deployment: four privately owned logical
 databases with separate connection secrets, never a shared schema or cross-service
 query. Use the actual provisioned Neon endpoints/roles and TLS settings; do not
 start a second shared PostgreSQL stack. Disposable PostgreSQL remains test-only.
-Delivery uses EF Core/Npgsql with the initial Booking migration and an additive
-Courier persistence migration; Identity retains
+Delivery uses EF Core/Npgsql with the initial Booking migration, additive Courier
+profile/proof/assignment migrations and the status replay-constraint migration;
+Identity retains
 its independent SQL migration. RabbitMQ/MassTransit, GraphQL, gRPC and SSE
 adapters, generated clients, publishers and consumers remain future work.
 Docker packaging exists for the development containers. Delivery's quote and

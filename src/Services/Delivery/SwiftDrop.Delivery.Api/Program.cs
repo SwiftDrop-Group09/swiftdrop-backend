@@ -2,10 +2,12 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Bookings;
+using SwiftDrop.Delivery.Api.Application.CourierStatus;
 using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Infrastructure.Authentication;
 using SwiftDrop.Delivery.Api.Infrastructure.Bookings;
+using SwiftDrop.Delivery.Api.Infrastructure.CourierStatus;
 using SwiftDrop.Delivery.Api.Infrastructure.DeliveryReads;
 using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 using SwiftDrop.Delivery.Api.Infrastructure.Quotes;
@@ -25,6 +27,9 @@ public partial class Program
         builder.Services.AddScoped<ICurrentDeliveryUser, ClaimsCurrentDeliveryUser>();
         builder.Services.AddScoped<OperationsClock>();
         builder.Services.AddScoped<DeliveryReadHandler>();
+        builder.Services.AddScoped<CourierStatusHandler>();
+        builder.Services.AddScoped<ICourierStatusStore>(services =>
+            new PostgresCourierStatusStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IDeliveryReadStore>(services =>
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddSingleton(TimeProvider.System);
@@ -67,7 +72,8 @@ public partial class Program
         app.UseExceptionHandler(handler => handler.Run(context => QuoteProblems.Unexpected(context).ExecuteAsync(context)));
         app.Use(async (context, next) =>
         {
-            if (context.GetEndpoint()?.Metadata.GetMetadata<DeliveryReadEndpointMetadata>() is not null)
+            if (context.GetEndpoint()?.Metadata.GetMetadata<DeliveryReadEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<CourierStatusEndpointMetadata>() is not null)
                 context.Response.Headers.CacheControl = "private, no-store";
             await next(context);
         });
@@ -76,6 +82,12 @@ public partial class Program
             var context = status.HttpContext;
             if (context.Response.StatusCode is 401 or 403)
             {
+                if (context.GetEndpoint()?.Metadata.GetMetadata<CourierStatusEndpointMetadata>() is not null)
+                {
+                    await CourierStatusProblems.Failure(context, context.Response.StatusCode == 401
+                        ? CourierStatusFailure.Unauthenticated : CourierStatusFailure.Forbidden).ExecuteAsync(context);
+                    return;
+                }
                 if (context.GetEndpoint()?.Metadata.GetMetadata<DeliveryReadEndpointMetadata>() is not null)
                 {
                     await DeliveryReadProblems.Failure(context, context.Response.StatusCode == 401
@@ -94,6 +106,7 @@ public partial class Program
         app.MapCustomerQuotes();
         app.MapCustomerBookings();
         app.MapDeliveryReads();
+        app.MapCourierStatus();
 
         app.Run();
     }

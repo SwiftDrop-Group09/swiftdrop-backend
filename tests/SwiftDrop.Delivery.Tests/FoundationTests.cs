@@ -72,6 +72,21 @@ public sealed class FoundationTests : IDisposable
         Assert.True(response.Headers.CacheControl?.NoStore);
     }
 
+    [Fact]
+    public async Task CourierStatusWriteRequiresVerifiedAuthentication()
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Id", Guid.NewGuid().ToString());
+        client.DefaultRequestHeaders.Add("X-User-Role", "Courier");
+        client.DefaultRequestHeaders.Add("Authorization", "Bearer unverified-status-token");
+        using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        using var response = await client.PutAsync("/api/v1/deliveries/11111111-1111-4111-8111-111111111111/status", content);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        Assert.True(response.Headers.CacheControl?.Private);
+    }
+
     [Theory]
     [InlineData("CreateBooking")]
     [InlineData("GetBookingByExternalOrder")]
