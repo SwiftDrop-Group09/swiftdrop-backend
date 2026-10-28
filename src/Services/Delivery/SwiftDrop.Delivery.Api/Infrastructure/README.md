@@ -308,3 +308,25 @@ busy or committed references. Unknown commit results are never eagerly deleted.
 See the [storage runbook](../../../../../docs/courier-proof-storage.md) for exact
 configuration, decoding/multipart resource limits, privacy/encryption policy,
 24-hour staging/cleanup rules, deployment and live integration requirements.
+
+## Failed delivery reporting (Courier Phase 5)
+
+The existing PUT /api/v1/deliveries/{id}/status handles Failed through the same
+Courier identity, current-assignment, version, reservation and transaction guards.
+failureReason is required: RecipientUnavailable, AddressUnreachable, Damaged or
+Other. Additional notes are optional/private, including for Other. Failed is allowed
+from Assigned/PickedUp/InTransit/OutForDelivery and is terminal; no photo/signature,
+automatic reassignment, redelivery state or specialized DeliveryFailed event is added.
+
+The accepted request closes the retained assignment as Failed, increments parcel
+version and appends the private history reason/note, canonical StatusChanged v1
+outbox and exact replay in one commit. No storage or broker call is required.
+Identical original-key retries work after assignment closure without another event.
+History remains available only through documented private resource authorization;
+the closed Courier's replay permission does not grant parcel detail access.
+
+Phase 5 adds failure-specific HTTP/PostgreSQL acceptance and rollback/race tests;
+the production implementation and all migrations remain unchanged. See the
+[failure handoff](../../../../../docs/courier-failure-reporting.md) for client fields,
+terminal behavior and safe retry, and the
+[Phase 5 report](../../../../../docs/courier-phase-5-assessment.md) for actual results.

@@ -10,7 +10,7 @@ verification, messaging relay, public tracking, GraphQL, SSE and gRPC handlers
 remain later work. Courier Phase 1 adds operational profiles, zone memberships,
 retained assignments with one active owner per parcel, private proof metadata
 and append-only status-history persistence. The user confirmed at least one photo
-or signature for final proof; upload/completion enforcement remains a later phase.
+or signature for final proof; Phase 4 below enforces that completion policy.
 Courier Phase 2 adds the self-scoped service-day manifest and private parcel
 details using current assignments and documented owner/operations access. These
 reads fail closed until Identity authentication is integrated; positive tests
@@ -23,7 +23,11 @@ are rejected. Courier Phase 4 adds the documented multipart
 JPEG/PNG validation, encrypted private S3/MinIO staging and guarded atomic Delivered
 completion. Reference-aware daily cleanup removes old orphan uploads. Production
 writes fail closed pending Identity integration; proof storage also requires
-explicit private configuration. See the
+explicit private configuration. Phase 5 verifies failed-delivery acceptance through
+the existing status operation: a required reason, optional private notes, atomic
+terminal assignment/history/outbox/replay and no automatic reassignment. See the
+[Courier Phase 5 checkpoint](docs/courier-phase-5-assessment.md),
+[failure reporting handoff](docs/courier-failure-reporting.md),
 [Courier Phase 4 checkpoint](docs/courier-phase-4-assessment.md),
 [proof storage runbook](docs/courier-proof-storage.md),
 [Courier Phase 3 checkpoint](docs/courier-phase-3-assessment.md),

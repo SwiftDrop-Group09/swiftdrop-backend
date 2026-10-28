@@ -234,26 +234,31 @@ try {
     }
     Write-Output 'PASS: real Gateway manifest/detail GETs require verified authentication and return private/no-store HTTP 401.'
 
-    $statusRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Put), 'http://127.0.0.1:5000/api/v1/deliveries/11111111-1111-4111-8111-111111111111/status'
-    $statusRequest.Content = New-Object Net.Http.StringContent '{"status":"PickedUp","expectedVersion":2,"notes":"Gateway smoke"}', ([Text.Encoding]::UTF8), 'application/json'
-    $statusRequest.Headers.Add('Idempotency-Key', 'gateway-status-smoke')
-    $statusRequest.Headers.Add('X-User-Id', '11111111-1111-4111-8111-111111111111')
-    $statusRequest.Headers.Add('X-User-Role', 'Courier')
-    $statusRequest.Headers.Authorization = New-Object Net.Http.Headers.AuthenticationHeaderValue 'Bearer', 'unverified-status-token'
-    try {
-        $statusResponse = $client.SendAsync($statusRequest).GetAwaiter().GetResult()
+    foreach ($statusBody in @(
+        '{"status":"PickedUp","expectedVersion":2,"notes":"Gateway smoke"}',
+        '{"status":"Failed","expectedVersion":2,"failureReason":"RecipientUnavailable"}'
+    )) {
+        $statusRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Put), 'http://127.0.0.1:5000/api/v1/deliveries/11111111-1111-4111-8111-111111111111/status'
+        $statusRequest.Content = New-Object Net.Http.StringContent $statusBody, ([Text.Encoding]::UTF8), 'application/json'
+        $statusRequest.Headers.Add('Idempotency-Key', 'gateway-status-smoke')
+        $statusRequest.Headers.Add('X-User-Id', '11111111-1111-4111-8111-111111111111')
+        $statusRequest.Headers.Add('X-User-Role', 'Courier')
+        $statusRequest.Headers.Authorization = New-Object Net.Http.Headers.AuthenticationHeaderValue 'Bearer', 'unverified-status-token'
         try {
-            $statusProblem = ConvertFrom-Json $statusResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-            if ([int]$statusResponse.StatusCode -ne 401 -or $statusProblem.code -ne 'unauthorized' -or
-                [string]::IsNullOrWhiteSpace($statusProblem.correlationId) -or
-                -not $statusResponse.Headers.CacheControl.NoStore -or -not $statusResponse.Headers.CacheControl.Private) {
-                throw 'Expected status PUT through Gateway to reject unverified identity with private/no-store HTTP 401.'
+            $statusResponse = $client.SendAsync($statusRequest).GetAwaiter().GetResult()
+            try {
+                $statusProblem = ConvertFrom-Json $statusResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if ([int]$statusResponse.StatusCode -ne 401 -or $statusProblem.code -ne 'unauthorized' -or
+                    [string]::IsNullOrWhiteSpace($statusProblem.correlationId) -or
+                    -not $statusResponse.Headers.CacheControl.NoStore -or -not $statusResponse.Headers.CacheControl.Private) {
+                    throw 'Expected status PUT through Gateway to reject unverified identity with private/no-store HTTP 401.'
+                }
             }
+            finally { $statusResponse.Dispose() }
         }
-        finally { $statusResponse.Dispose() }
+        finally { $statusRequest.Dispose() }
     }
-    finally { $statusRequest.Dispose() }
-    Write-Output 'PASS: real Gateway status PUT requires verified authentication and returns private/no-store HTTP 401.'
+    Write-Output 'PASS: real Gateway pickup and failure PUTs require verified authentication and return private/no-store HTTP 401.'
 
     $proofRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Post), 'http://127.0.0.1:5000/api/v1/deliveries/11111111-1111-4111-8111-111111111111/pod'
     $proofRequest.Content = New-Object Net.Http.StringContent '{}', ([Text.Encoding]::UTF8), 'application/json'
