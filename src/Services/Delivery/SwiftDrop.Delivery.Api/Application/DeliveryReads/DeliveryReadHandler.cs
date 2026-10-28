@@ -23,15 +23,13 @@ public sealed class DeliveryReadHandler(ICurrentDeliveryUser currentUser, IDeliv
         var includeOverdue = true;
         if (input.IncludeOverdue is not null && !bool.TryParse(input.IncludeOverdue, out includeOverdue))
             errors["includeOverdue"] = ["Use true or false."];
-        var page = ParsePage(input.Page, "page", 1, int.MaxValue, errors);
-        var pageSize = ParsePage(input.PageSize, "pageSize", 20, 100, errors);
-        if ((long)(page - 1) * pageSize > int.MaxValue) errors["page"] = ["The requested page offset is too large."];
+        var pagination = DeliveryPagination.Parse(input.Page, input.PageSize, errors);
         if (errors.Count != 0) return new(null, DeliveryReadFailure.InvalidInput, errors);
 
         try
         {
             return new(await store.GetAssignmentsAsync(courierId,
-                new AssignmentQuery(date ?? clock.Today(), includeOverdue, page, pageSize), cancellationToken), null);
+                new AssignmentQuery(date ?? clock.Today(), includeOverdue, pagination.Page, pagination.PageSize), cancellationToken), null);
         }
         catch (DeliveryReadUnavailableException) { return new(null, DeliveryReadFailure.Unavailable); }
     }
@@ -56,13 +54,4 @@ public sealed class DeliveryReadHandler(ICurrentDeliveryUser currentUser, IDeliv
         catch (DeliveryReadUnavailableException) { return new(null, DeliveryReadFailure.Unavailable); }
     }
 
-    private static int ParsePage(string? input, string field, int defaultValue, int maximum,
-        Dictionary<string, string[]> errors)
-    {
-        if (input is null) return defaultValue;
-        if (int.TryParse(input, NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value >= 1 && value <= maximum)
-            return value;
-        errors[field] = ["Supply a positive integer within the documented range."];
-        return defaultValue;
-    }
 }

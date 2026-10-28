@@ -330,3 +330,27 @@ the production implementation and all migrations remain unchanged. See the
 [failure handoff](../../../../../docs/courier-failure-reporting.md) for client fields,
 terminal behavior and safe retry, and the
 [Phase 5 report](../../../../../docs/courier-phase-5-assessment.md) for actual results.
+
+## Courier historical deliveries (Phase 6)
+
+`GET /api/v1/couriers/me/history` is Courier-self only and accepts PageQuery
+(page default 1; pageSize default 20, maximum 100). The PostgreSQL predicate uses
+the caller's retained Delivered/Failed assignment matching the terminal parcel
+state. It never depends on an Active assignment or the most recent assignment
+timestamp, and Reassigned rows cannot grant a replacement's later result. EXISTS
+returns one parcel even when the same Courier was assigned, released and assigned
+back. Cancelled/active parcels remain excluded.
+
+The existing read adapter implements a focused history port. Count and minimal
+page projection share an explicit read-only REPEATABLE READ transaction, ordered
+by parcel createdAt/id descending. SQL reads only common Parcel/price columns
+and authorization predicates; it does not load contacts, private history or proofs.
+The response has the existing six Parcel fields and page envelope. Shared private
+GET access remains unchanged; historical summary access does not grant details.
+
+Manifest/history reuse the existing pagination rule through DeliveryPagination.
+No model, migration, event, mutation or credential change is introduced. All
+history responses use the established safe read problems and private/no-store
+metadata. Production still fails closed pending verified Identity integration.
+See the [history handoff](../../../../../docs/courier-history.md) and
+[Phase 6 report](../../../../../docs/courier-phase-6-assessment.md).

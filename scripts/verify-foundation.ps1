@@ -214,7 +214,7 @@ try {
     }
     Write-Output 'PASS: real Gateway quote and booking POSTs fail closed with HTTP 401 despite caller-supplied identity.'
 
-    foreach ($readPath in @('/api/v1/couriers/me/assignments', '/api/v1/parcels/11111111-1111-4111-8111-111111111111')) {
+    foreach ($readPath in @('/api/v1/couriers/me/assignments', '/api/v1/couriers/me/history', '/api/v1/parcels/11111111-1111-4111-8111-111111111111')) {
         $readRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Get), ('http://127.0.0.1:5000' + $readPath)
         $readRequest.Headers.Add('X-User-Id', '11111111-1111-4111-8111-111111111111')
         $readRequest.Headers.Add('X-User-Role', 'Courier')
@@ -232,7 +232,7 @@ try {
         }
         finally { $readRequest.Dispose() }
     }
-    Write-Output 'PASS: real Gateway manifest/detail GETs require verified authentication and return private/no-store HTTP 401.'
+    Write-Output 'PASS: real Gateway manifest/history/detail GETs require verified authentication and return private/no-store HTTP 401.'
 
     foreach ($statusBody in @(
         '{"status":"PickedUp","expectedVersion":2,"notes":"Gateway smoke"}',

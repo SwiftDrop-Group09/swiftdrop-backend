@@ -8,6 +8,18 @@ public static class DeliveryReadEndpoints
 {
     public static void MapDeliveryReads(this WebApplication app)
     {
+        app.MapGet("/api/v1/couriers/me/history", async (HttpContext context, CourierHistoryHandler handler,
+            CancellationToken cancellationToken) =>
+        {
+            var query = context.Request.Query;
+            var invalid = query.Any(pair => pair.Value.Count != 1 || pair.Key is not ("page" or "pageSize"));
+            string? Value(string name) => query.TryGetValue(name, out var values) && values.Count == 1 ? values[0] : null;
+            var result = await handler.ExecuteAsync(new(Value("page"), Value("pageSize"), invalid), cancellationToken);
+            return result.Response is { } response ? Results.Ok(response)
+                : DeliveryReadProblems.Failure(context, result.Failure!.Value, result.Errors);
+        }).RequireAuthorization().WithName("CourierHistory").WithMetadata(new DeliveryReadEndpointMetadata())
+            .Produces<CourierHistoryPage>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403).ProducesProblem(503);
+
         app.MapGet("/api/v1/couriers/me/assignments", async (HttpContext context, DeliveryReadHandler handler,
             CancellationToken cancellationToken) =>
         {

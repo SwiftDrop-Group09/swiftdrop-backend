@@ -10,7 +10,7 @@ using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 
 namespace SwiftDrop.Delivery.Api.Infrastructure.DeliveryReads;
 
-public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFactory) : IDeliveryReadStore
+public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFactory) : IDeliveryReadStore, ICourierHistoryStore
 {
     private static readonly ParcelStatus[] ActiveStatuses =
         [ParcelStatus.Assigned, ParcelStatus.PickedUp, ParcelStatus.InTransit, ParcelStatus.OutForDelivery];
@@ -113,6 +113,39 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
             PickedUpAt = assignment.PickedUpAt,
             DeliveredAt = assignment.DeliveredAt
         };
+
+    public async Task<CourierHistoryPage> GetHistoryAsync(Guid courierId, DeliveryPageQuery query, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var database = contextFactory();
+            await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
+            await database.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
+            // Historical terminal ownership is distinct from the current Active slot.
+            // A Reassigned row cannot disclose its replacement's subsequent outcome.
+            // EXISTS also avoids duplicates when a Courier was assigned more than once.
+            var authorized = database.Parcels.AsNoTracking().Where(parcel => database.Assignments.Any(assignment =>
+                assignment.ParcelId == parcel.Id && assignment.CourierId == courierId
+                && ((assignment.Status == AssignmentStatus.Delivered && parcel.Status == ParcelStatus.Delivered)
+                    || (assignment.Status == AssignmentStatus.Failed && parcel.Status == ParcelStatus.Failed))));
+            var count = await authorized.CountAsync(cancellationToken);
+            var page = from parcel in authorized
+                       join snapshot in database.PriceSnapshots.AsNoTracking() on parcel.Id equals snapshot.ParcelId
+                       orderby parcel.CreatedAt descending, parcel.Id descending
+                       select new
+                       {
+                           parcel.Id, parcel.TrackingNumber, parcel.Status, parcel.Version, parcel.CreatedAt,
+                           snapshot.Total, snapshot.Currency, snapshot.PricingVersion
+                       };
+            var rows = await page.Skip(checked((query.Page - 1) * query.PageSize)).Take(query.PageSize).ToArrayAsync(cancellationToken);
+            var items = rows.Select(row => new ParcelBookingResponse(row.Id, row.TrackingNumber, row.Status.ToString(), row.Version,
+                new BookingPriceSnapshotResponse(row.Total, row.Currency, row.PricingVersion), row.CreatedAt)).ToArray();
+            await transaction.CommitAsync(cancellationToken);
+            return new(items, count, query.Page, query.PageSize);
+        }
+        catch (Exception exception) when (IsReadFailure(exception))
+        { throw new DeliveryReadUnavailableException("Courier history is unavailable.", exception); }
+    }
 
     private static BookingPriceSnapshotResponse Price(ParcelRow row) => new(row.Total, row.Currency, row.PricingVersion);
 

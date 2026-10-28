@@ -66,7 +66,7 @@ internal sealed class StatusTestScenario(PostgresFixture fixture) : IAsyncDispos
 
     // A test-only dispatcher writer honoring the documented parcel/version/assignment
     // lock contract. This is not a production allocation API or algorithm.
-    public async Task<bool> ReassignAsync(long expectedVersion)
+    public async Task<bool> ReassignAsync(long expectedVersion, Guid? replacement = null)
     {
         await using var context = Context();
         await using var transaction = await context.Database.BeginTransactionAsync();
@@ -80,7 +80,7 @@ internal sealed class StatusTestScenario(PostgresFixture fixture) : IAsyncDispos
         context.Entry(parcel).Property(x => x.Version).CurrentValue = checked(parcel.Version + 1);
         context.Entry(parcel).Property(x => x.UpdatedAt).CurrentValue = Clock.UtcNow;
         await context.SaveChangesAsync();
-        context.Assignments.Add(new CourierAssignment(Guid.NewGuid(), ParcelId, OtherCourierId,
+        context.Assignments.Add(new CourierAssignment(Guid.NewGuid(), ParcelId, replacement ?? OtherCourierId,
             new DateOnly(2026, 10, 28), Clock.UtcNow));
         AddDispatchAudit(context, parcel, ParcelStatus.Assigned, Clock.UtcNow);
         await context.SaveChangesAsync();

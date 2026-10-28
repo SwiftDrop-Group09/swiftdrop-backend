@@ -66,6 +66,7 @@ public sealed class FoundationTests : IDisposable
 
     [Theory]
     [InlineData("/api/v1/couriers/me/assignments")]
+    [InlineData("/api/v1/couriers/me/history")]
     [InlineData("/api/v1/parcels/11111111-1111-4111-8111-111111111111")]
     public async Task PrivateDeliveryReadsRequireVerifiedAuthentication(string path)
     {

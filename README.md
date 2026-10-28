@@ -25,7 +25,12 @@ completion. Reference-aware daily cleanup removes old orphan uploads. Production
 writes fail closed pending Identity integration; proof storage also requires
 explicit private configuration. Phase 5 verifies failed-delivery acceptance through
 the existing status operation: a required reason, optional private notes, atomic
-terminal assignment/history/outbox/replay and no automatic reassignment. See the
+terminal assignment/history/outbox/replay and no automatic reassignment. Phase 6
+adds `GET /api/v1/couriers/me/history` for the caller's historical Delivered/Failed
+assignments, with stable pages and a minimal Parcel summary. Reassigned-away work
+and private recipient/proof data are excluded. See the
+[Courier Phase 6 checkpoint](docs/courier-phase-6-assessment.md),
+[Courier history handoff](docs/courier-history.md),
 [Courier Phase 5 checkpoint](docs/courier-phase-5-assessment.md),
 [failure reporting handoff](docs/courier-failure-reporting.md),
 [Courier Phase 4 checkpoint](docs/courier-phase-4-assessment.md),

@@ -29,6 +29,9 @@ public partial class Program
         builder.Services.AddScoped<ICurrentDeliveryUser, ClaimsCurrentDeliveryUser>();
         builder.Services.AddScoped<OperationsClock>();
         builder.Services.AddScoped<DeliveryReadHandler>();
+        builder.Services.AddScoped<CourierHistoryHandler>();
+        builder.Services.AddScoped<ICourierHistoryStore>(services =>
+            new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<CourierStatusHandler>();
         builder.Services.AddScoped<CourierProofHandler>();
         builder.Services.AddSingleton<IProofImageValidator, SkiaProofImageValidator>();
