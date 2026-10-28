@@ -6,12 +6,16 @@ are implemented. Delivery provides fee estimates, owner-bound quotes and explici
 Customer booking confirmation with atomic PostgreSQL persistence. Production
 Customer authentication fails closed until verified Identity integration is supplied;
 positive HTTP tests use principals registered only in the test host. JWT
-verification, messaging relay, tracking reads, GraphQL, SSE and gRPC handlers
+verification, messaging relay, public tracking, GraphQL, SSE and gRPC handlers
 remain later work. Courier Phase 1 adds operational profiles, zone memberships,
 retained assignments with one active owner per parcel, private proof metadata
 and append-only status-history persistence. The user confirmed at least one photo
 or signature for final proof; upload/completion enforcement remains a later phase.
-See the [Courier Phase 1 checkpoint](docs/courier-phase-1-assessment.md), the
+Courier Phase 2 adds the self-scoped service-day manifest and private parcel
+details using current assignments and documented owner/operations access. These
+reads fail closed until Identity authentication is integrated; positive tests
+use isolated principals. See the [Courier Phase 2 checkpoint](docs/courier-phase-2-assessment.md),
+the [Courier Phase 1 checkpoint](docs/courier-phase-1-assessment.md), the
 [Phase 7 compatibility checkpoint](docs/delivery-phase-7-assessment.md),
 [Member 7 booking handoff](docs/delivery-merchant-booking-handoff.md),
 [Phase 6 client implementation](docs/delivery-phase-6-implementation.md),

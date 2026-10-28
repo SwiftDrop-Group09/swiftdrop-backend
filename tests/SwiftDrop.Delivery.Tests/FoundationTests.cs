@@ -59,6 +59,20 @@ public sealed class FoundationTests : IDisposable
     }
 
     [Theory]
+    [InlineData("/api/v1/couriers/me/assignments")]
+    [InlineData("/api/v1/parcels/11111111-1111-4111-8111-111111111111")]
+    public async Task PrivateDeliveryReadsRequireVerifiedAuthentication(string path)
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Id", Guid.NewGuid().ToString());
+        client.DefaultRequestHeaders.Add("X-User-Role", "Courier");
+        client.DefaultRequestHeaders.Add("Authorization", "Bearer unverified-read-token");
+        using var response = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+    }
+
+    [Theory]
     [InlineData("CreateBooking")]
     [InlineData("GetBookingByExternalOrder")]
     public async Task MerchantRpcPostsRemainUnimplementedDespiteCallerSuppliedCredentials(string method)

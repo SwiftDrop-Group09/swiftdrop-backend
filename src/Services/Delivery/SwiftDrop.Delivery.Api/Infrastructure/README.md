@@ -182,4 +182,50 @@ policy must be enforced by the future authorized proof-completion handler after
 private object persistence. Phase 1 supplies no successful completion endpoint.
 See the
 [assessment and actual test results](../../../../../docs/courier-phase-1-assessment.md).
-Phase 2 manifest/detail handlers and React/Flutter Courier work have not started.
+Phase 2 supplies manifest/detail handlers below; React/Flutter Courier screens
+remain Phase 7 work.
+
+## Courier reads (Phase 2)
+
+`GET /api/v1/couriers/me/assignments` accepts date (YYYY-MM-DD), includeOverdue
+(default true), page (default 1) and pageSize (default 20, max 100). Date defaults
+to the server's Operations:TimeZone service day, configured as Asia/Colombo.
+Only the authenticated Courier's current Active assignments on that date or,
+when requested, earlier service dates appear. Parcel states are limited to
+Assigned/PickedUp/InTransit/OutForDelivery. Future work is absent from today's
+manifest. isOverdue compares serviceDate with the selected day. Empty results
+are a normal page with items=[], totalCount=0. Pages sort by parcel createdAt/id
+descending; counts and rows come from the same PostgreSQL repeatable-read snapshot.
+
+`GET /api/v1/parcels/{id}` is the documented shared private read: current assigned
+Courier, owning Customer, or Dispatcher/Admin. Courier manifests remain Courier-only.
+The database query itself applies the resource predicate. Details and their real
+private history are read in one snapshot; no ownership check followed by an
+unscoped parcel lookup exists. Reads already in flight may finish from their
+authorized snapshot; requests after reassignment commit see the new owner and
+reject the former Courier with 404. This is read consistency, not a write lock or
+the Phase 3 assignment/version commit guard.
+
+Both return explicit camelCase projections, not persistence entities: existing
+id/trackingNumber/status/version/priceSnapshot/createdAt, structured pickupAddress,
+deliveryAddress, recipient, packageDetails; manifests add serviceDate/isOverdue.
+Detail additionally returns current assignment status/date/timestamps (or null)
+and real history from/to states, changeReason, deliveryNote and timestamp. Neither
+projection includes proof metadata/refs, storage URLs, previous Courier IDs,
+customer/merchant IDs, audit actor IDs, quote/replay records or outbox data.
+Manifest does not load private history. Stored structured address/contact JSON
+must follow the booking contract; malformed authorized data fails safely with 503
+instead of exposing raw text or inventing replacement data.
+
+The claims adapter requires one authenticated identity with one nonempty UUID sub;
+roles must belong to that identity. No request courierId, forwarded identity header
+or unsigned bearer grants access. Duplicate/unknown query parameters are rejected;
+malformed/overflowing dates and pages return 400 after authorization. Missing/invalid
+identity returns 401, wrong role 403, missing/foreign parcel 404, unavailable read
+dependency 503. ProblemDetails has safe code/correlationId; responses are private,
+no-store. Cancellation is propagated without retrying a read under another actor.
+
+Production still registers UnconfiguredIdentityHandler. Only tests replace it with
+the established fixed-principal fixture. Real JWT/JWKS integration is a separate
+Identity dependency; no development identity switch or alternate login was added.
+No migrations, version/history/outbox writes or storage/broker calls are introduced.

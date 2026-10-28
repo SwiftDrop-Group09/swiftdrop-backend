@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Bookings;
+using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Infrastructure.Authentication;
 using SwiftDrop.Delivery.Api.Infrastructure.Bookings;
+using SwiftDrop.Delivery.Api.Infrastructure.DeliveryReads;
 using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 using SwiftDrop.Delivery.Api.Infrastructure.Quotes;
 using SwiftDrop.Delivery.Api.Presentation;
@@ -20,6 +22,11 @@ public partial class Program
         builder.Services.AddDeliveryPersistence(builder.Configuration);
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<ICurrentCustomer, ClaimsCurrentCustomer>();
+        builder.Services.AddScoped<ICurrentDeliveryUser, ClaimsCurrentDeliveryUser>();
+        builder.Services.AddScoped<OperationsClock>();
+        builder.Services.AddScoped<DeliveryReadHandler>();
+        builder.Services.AddScoped<IDeliveryReadStore>(services =>
+            new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<QuoteEstimator>();
         builder.Services.AddScoped<CustomerBookingHandler>();
@@ -58,11 +65,23 @@ public partial class Program
             await next(context);
         });
         app.UseExceptionHandler(handler => handler.Run(context => QuoteProblems.Unexpected(context).ExecuteAsync(context)));
+        app.Use(async (context, next) =>
+        {
+            if (context.GetEndpoint()?.Metadata.GetMetadata<DeliveryReadEndpointMetadata>() is not null)
+                context.Response.Headers.CacheControl = "private, no-store";
+            await next(context);
+        });
         app.UseStatusCodePages(async status =>
         {
             var context = status.HttpContext;
             if (context.Response.StatusCode is 401 or 403)
             {
+                if (context.GetEndpoint()?.Metadata.GetMetadata<DeliveryReadEndpointMetadata>() is not null)
+                {
+                    await DeliveryReadProblems.Failure(context, context.Response.StatusCode == 401
+                        ? DeliveryReadFailure.Unauthenticated : DeliveryReadFailure.Forbidden).ExecuteAsync(context);
+                    return;
+                }
                 var failure = context.Response.StatusCode == 401 ? QuoteFailure.Unauthenticated : QuoteFailure.Forbidden;
                 await QuoteProblems.Failure(context, failure).ExecuteAsync(context);
             }
@@ -74,6 +93,7 @@ public partial class Program
         app.MapHealthChecks("/health");
         app.MapCustomerQuotes();
         app.MapCustomerBookings();
+        app.MapDeliveryReads();
 
         app.Run();
     }

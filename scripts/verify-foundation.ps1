@@ -203,6 +203,26 @@ try {
     }
     Write-Output 'PASS: real Gateway quote and booking POSTs fail closed with HTTP 401 despite caller-supplied identity.'
 
+    foreach ($readPath in @('/api/v1/couriers/me/assignments', '/api/v1/parcels/11111111-1111-4111-8111-111111111111')) {
+        $readRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Get), ('http://127.0.0.1:5000' + $readPath)
+        $readRequest.Headers.Add('X-User-Id', '11111111-1111-4111-8111-111111111111')
+        $readRequest.Headers.Add('X-User-Role', 'Courier')
+        $readRequest.Headers.Authorization = New-Object Net.Http.Headers.AuthenticationHeaderValue 'Bearer', 'unverified-read-token'
+        try {
+            $readResponse = $client.SendAsync($readRequest).GetAwaiter().GetResult()
+            try {
+                $readProblem = ConvertFrom-Json $readResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if ([int]$readResponse.StatusCode -ne 401 -or $readProblem.code -ne 'unauthorized' -or
+                    -not $readResponse.Headers.CacheControl.NoStore -or -not $readResponse.Headers.CacheControl.Private) {
+                    throw "Expected $readPath through Gateway to reject unverified identity with private/no-store HTTP 401."
+                }
+            }
+            finally { $readResponse.Dispose() }
+        }
+        finally { $readRequest.Dispose() }
+    }
+    Write-Output 'PASS: real Gateway manifest/detail GETs require verified authentication and return private/no-store HTTP 401.'
+
     $parcelRead = $client.GetAsync('http://127.0.0.1:5000/api/v1/parcels').GetAwaiter().GetResult()
     try {
         if ([int]$parcelRead.StatusCode -ne 405) { throw 'Parcel listing remains unimplemented; expected HTTP 405 at the POST-only route.' }
