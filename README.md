@@ -28,7 +28,12 @@ the existing status operation: a required reason, optional private notes, atomic
 terminal assignment/history/outbox/replay and no automatic reassignment. Phase 6
 adds `GET /api/v1/couriers/me/history` for the caller's historical Delivered/Failed
 assignments, with stable pages and a minimal Parcel summary. Reassigned-away work
-and private recipient/proof data are excluded. See the
+and private recipient/proof data are excluded. Phase 7 supplies the React/Flutter
+Courier clients. Phase 8 adds reproducible cross-client/state verification and
+records separate live acceptance dependencies. See the
+[Courier verification runbook](docs/courier-verification.md),
+[Courier Phase 8 checkpoint](docs/courier-phase-8-assessment.md),
+[Courier Phase 7 clients checkpoint](docs/courier-phase-7-assessment.md),
 [Courier Phase 6 checkpoint](docs/courier-phase-6-assessment.md),
 [Courier history handoff](docs/courier-history.md),
 [Courier Phase 5 checkpoint](docs/courier-phase-5-assessment.md),

@@ -19,6 +19,8 @@ public static class Program
         Console.CancelKeyPress += cancel;
         try
         {
+            if (args.SequenceEqual(["--verify-private-storage"]))
+                return await PrivateStorageAcceptance.RunAsync(Console.Out, shutdown.Token);
             var courierWorkflow = args.Contains("--courier-workflow", StringComparer.Ordinal);
             var (actor, port, smoke) = Parse(args.Where(x => x != "--courier-workflow").ToArray());
             await using var harness = await BookingClientHarness.StartAsync(actor, port, courierWorkflow);
@@ -42,6 +44,11 @@ public static class Program
                 {
                     break;
                 }
+                else if (command.Equals("verify-courier", StringComparison.OrdinalIgnoreCase))
+                {
+                    var verification = await harness.VerifyCompletedCourierWorkflowAsync();
+                    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(verification));
+                }
             }
 
             return 0;
@@ -52,7 +59,7 @@ public static class Program
         }
         catch (ArgumentException)
         {
-            Console.Error.WriteLine("Usage: --port 5088 --actor customer-a|customer-b|courier [--smoke] [--courier-workflow].");
+            Console.Error.WriteLine("Usage: --port 5088 --actor customer-a|customer-b|courier [--smoke] [--courier-workflow], or --verify-private-storage.");
             return 2;
         }
         catch (Exception exception)

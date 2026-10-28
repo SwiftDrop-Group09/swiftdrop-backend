@@ -1,4 +1,5 @@
 using System.Net;
+
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -29,7 +30,7 @@ public sealed record BookingHarnessContext(Guid ActorId, IReadOnlyList<string> R
 /// Socket-capable client test fixture. It owns a disposable PostgreSQL cluster,
 /// real Delivery hosts and fictional identities; no normal host registers it.
 /// </summary>
-public sealed class BookingClientHarness : IAsyncDisposable
+public sealed partial class BookingClientHarness : IAsyncDisposable
 {
     private readonly PostgresFixture _database = new();
     private readonly List<BookingClientActorHost> _hosts = [];
