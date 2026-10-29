@@ -32,6 +32,7 @@ and private recipient/proof data are excluded. Phase 7 supplies the React/Flutte
 Courier clients. Phase 8 adds reproducible cross-client/state verification and
 records separate live acceptance dependencies. See the
 [Courier verification runbook](docs/courier-verification.md),
+[all-phase master audit](docs/courier-master-audit.md),
 [Courier Phase 8 checkpoint](docs/courier-phase-8-assessment.md),
 [Courier Phase 7 clients checkpoint](docs/courier-phase-7-assessment.md),
 [Courier Phase 6 checkpoint](docs/courier-phase-6-assessment.md),
