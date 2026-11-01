@@ -17,5 +17,7 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <None Include="../../src/BuildingBlocks/SwiftDrop.Contracts/Events/V1/status-changed-v1.schema.json"
+          Link="Contracts/status-changed-v1.schema.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -28,6 +28,7 @@ public sealed class FoundationTests : IDisposable
     [InlineData("/api/v1/parcels/example/events")]
     [InlineData("/internal/v1/notification-context")]
     [InlineData("/swiftdrop.delivery.v1.DeliveryService/CreateBooking")]
+    [InlineData("/swiftdrop.delivery.v1.DeliveryService/GetBookingByExternalOrder")]
     public async Task UnimplementedRoutesReturnNotFound(string path)
     {
         using var client = _factory.CreateClient();
@@ -55,6 +56,21 @@ public sealed class FoundationTests : IDisposable
         using var response = await client.GetAsync("/api/v1/parcels");
 
         Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("CreateBooking")]
+    [InlineData("GetBookingByExternalOrder")]
+    public async Task MerchantRpcPostsRemainUnimplementedDespiteCallerSuppliedCredentials(string method)
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Id", Guid.NewGuid().ToString("D"));
+        client.DefaultRequestHeaders.Add("X-User-Role", "Admin");
+        client.DefaultRequestHeaders.Add("X-API-Key", "fictional-merchant-key");
+        using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/grpc+json");
+        using var response = await client.PostAsync($"/swiftdrop.delivery.v1.DeliveryService/{method}", content);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     public void Dispose() => _factory.Dispose();
