@@ -2,7 +2,7 @@ name: Backend CI
 
 on:
   push:
-    branches: [main, 'chore/**']
+    branches: [main, dev, 'chore/**']
   pull_request:
   workflow_dispatch:
 
