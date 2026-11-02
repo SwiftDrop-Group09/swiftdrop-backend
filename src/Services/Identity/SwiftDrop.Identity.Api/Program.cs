@@ -82,7 +82,9 @@ public partial class Program
         {
             options.HeaderName = "X-CSRF-Token";
             options.Cookie.Name = BrowserAuthentication.CsrfCookie;
-            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+                ? CookieSecurePolicy.SameAsRequest
+                : CookieSecurePolicy.Always;
             options.Cookie.HttpOnly = true;
             options.Cookie.SameSite = SameSiteMode.Strict;
             options.Cookie.Path = "/";
