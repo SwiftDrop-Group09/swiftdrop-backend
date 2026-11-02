@@ -81,7 +81,9 @@ public partial class Program
         builder.Services.AddAntiforgery(options =>
         {
             options.HeaderName = "X-CSRF-Token";
-            options.Cookie.Name = BrowserAuthentication.CsrfCookie;
+            options.Cookie.Name = builder.Environment.IsDevelopment()
+                ? BrowserAuthentication.DevCsrfCookie
+                : BrowserAuthentication.CsrfCookie;
             options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
                 ? CookieSecurePolicy.SameAsRequest
                 : CookieSecurePolicy.Always;

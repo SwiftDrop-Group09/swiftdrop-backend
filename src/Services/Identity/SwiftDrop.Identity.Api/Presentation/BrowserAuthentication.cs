@@ -8,13 +8,29 @@ using Microsoft.AspNetCore.DataProtection;
 namespace SwiftDrop.Identity.Api.Presentation;
 
 public sealed class BrowserAuthentication(IAntiforgery antiforgery, IDataProtectionProvider protection,
-    IConfiguration configuration, TimeProvider clock)
+    IConfiguration configuration, TimeProvider clock, IHostEnvironment? environment = null)
 {
     public const string RefreshCookie = "__Secure-swiftdrop.refresh";
     public const string CsrfCookie = "__Host-swiftdrop.csrf";
+    public const string DevRefreshCookie = "swiftdrop.refresh";
+    public const string DevCsrfCookie = "swiftdrop.csrf";
+    public const string DevNonceCookie = "swiftdrop.google-nonce";
     private const string NonceCookie = "__Host-swiftdrop.google-nonce";
     private readonly IDataProtector nonceProtector = protection.CreateProtector("SwiftDrop.GoogleNonce.v1");
     private readonly IDataProtector refreshProtector = protection.CreateProtector("SwiftDrop.BrowserRefresh.v1");
+
+    private bool IsDevelopment => environment?.IsDevelopment()
+        ?? string.Equals(configuration["ASPNETCORE_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(configuration["DOTNET_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase);
+
+    public string CsrfCookieName => IsDevelopment ? DevCsrfCookie : CsrfCookie;
+    public string RefreshCookieName => IsDevelopment ? DevRefreshCookie : RefreshCookie;
+    public string NonceCookieName => IsDevelopment ? DevNonceCookie : NonceCookie;
+
+    private bool TryGetCsrfCookie(HttpContext context, out string csrfCookie) =>
+        context.Request.Cookies.TryGetValue(CsrfCookieName, out csrfCookie!)
+        || context.Request.Cookies.TryGetValue(CsrfCookie, out csrfCookie!)
+        || context.Request.Cookies.TryGetValue(DevCsrfCookie, out csrfCookie!);
 
     public static bool IsBrowser(HttpContext context) => context.Request.Headers.ContainsKey("Origin")
         || context.Request.Headers.ContainsKey("Sec-Fetch-Site") || context.Request.Cookies.Count > 0;
@@ -77,15 +93,17 @@ public sealed class BrowserAuthentication(IAntiforgery antiforgery, IDataProtect
 
         var nonce = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
         var expires = clock.GetUtcNow().AddMinutes(10);
-        context.Response.Cookies.Append(NonceCookie,
-            nonceProtector.Protect(nonce + ":" + expires.ToUnixTimeSeconds()), Cookie(TimeSpan.FromMinutes(10), "/"));
+        context.Response.Cookies.Append(NonceCookieName,
+            nonceProtector.Protect(nonce + ":" + expires.ToUnixTimeSeconds()), Cookie(TimeSpan.FromMinutes(10), "/", IsDevelopment));
         context.Response.Headers.CacheControl = "no-store";
         return Results.Ok(new { csrfToken = tokens.RequestToken, googleNonce = nonce });
     }
 
     public string? ExpectedGoogleNonce(HttpContext context)
     {
-        if (!context.Request.Cookies.TryGetValue(NonceCookie, out var encrypted))
+        if (!context.Request.Cookies.TryGetValue(NonceCookieName, out var encrypted)
+            && !context.Request.Cookies.TryGetValue(NonceCookie, out encrypted)
+            && !context.Request.Cookies.TryGetValue(DevNonceCookie, out encrypted))
         {
             return null;
         }
@@ -104,21 +122,23 @@ public sealed class BrowserAuthentication(IAntiforgery antiforgery, IDataProtect
 
     public void SetRefresh(HttpContext context, string token, DateTimeOffset expiresAt)
     {
-        if (!context.Request.Cookies.TryGetValue(CsrfCookie, out var csrfCookie))
+        if (!TryGetCsrfCookie(context, out var csrfCookie))
         {
             throw new InvalidOperationException("The browser session context is unavailable.");
         }
 
-        var options = Cookie(null, "/api/v1/auth");
+        var options = Cookie(null, "/api/v1/auth", IsDevelopment);
         options.Expires = expiresAt;
         var binding = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(csrfCookie)));
-        context.Response.Cookies.Append(RefreshCookie, refreshProtector.Protect(token + ":" + binding), options);
+        context.Response.Cookies.Append(RefreshCookieName, refreshProtector.Protect(token + ":" + binding), options);
     }
 
     public string? ReadRefresh(HttpContext context)
     {
-        if (!context.Request.Cookies.TryGetValue(RefreshCookie, out var encrypted)
-            || !context.Request.Cookies.TryGetValue(CsrfCookie, out var csrfCookie))
+        if ((!context.Request.Cookies.TryGetValue(RefreshCookieName, out var encrypted)
+             && !context.Request.Cookies.TryGetValue(RefreshCookie, out encrypted)
+             && !context.Request.Cookies.TryGetValue(DevRefreshCookie, out encrypted))
+            || !TryGetCsrfCookie(context, out var csrfCookie))
         {
             return null;
         }
@@ -140,11 +160,17 @@ public sealed class BrowserAuthentication(IAntiforgery antiforgery, IDataProtect
         }
     }
 
-    public static void ClearRefresh(HttpContext context) =>
-        context.Response.Cookies.Delete(RefreshCookie, Cookie(null, "/api/v1/auth"));
+    public static void ClearRefresh(HttpContext context)
+    {
+        context.Response.Cookies.Delete(RefreshCookie, Cookie(null, "/api/v1/auth", false));
+        context.Response.Cookies.Delete(DevRefreshCookie, Cookie(null, "/api/v1/auth", true));
+    }
 
-    public static void ClearGoogleNonce(HttpContext context) =>
-        context.Response.Cookies.Delete(NonceCookie, Cookie(null, "/"));
+    public static void ClearGoogleNonce(HttpContext context)
+    {
+        context.Response.Cookies.Delete(NonceCookie, Cookie(null, "/", false));
+        context.Response.Cookies.Delete(DevNonceCookie, Cookie(null, "/", true));
+    }
 
     public static bool ValidOrigin(string? origin) => Uri.TryCreate(origin, UriKind.Absolute, out var uri)
         && uri.Scheme is "https" or "http" && string.IsNullOrEmpty(uri.UserInfo)
@@ -152,9 +178,9 @@ public sealed class BrowserAuthentication(IAntiforgery antiforgery, IDataProtect
         && origin == uri.GetLeftPart(UriPartial.Authority)
         && (uri.Scheme == "https" || uri.IsLoopback);
 
-    private static CookieOptions Cookie(TimeSpan? age, string path) => new()
+    private static CookieOptions Cookie(TimeSpan? age, string path, bool isDev = false) => new()
     {
-        HttpOnly = true, Secure = true, SameSite = SameSiteMode.Strict, Path = path,
+        HttpOnly = true, Secure = !isDev, SameSite = SameSiteMode.Strict, Path = path,
         MaxAge = age, IsEssential = true
     };
 }
