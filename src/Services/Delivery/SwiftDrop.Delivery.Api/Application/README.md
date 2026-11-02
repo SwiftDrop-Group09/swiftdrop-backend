@@ -22,9 +22,15 @@ Location before quote expiry/consumption checks. New confirmations create a
 parcel, snapshot, initial history and pending outbox row, consume the quote and
 complete the replay record in one transaction through `IBookingStore`.
 
-`BookingAssembler` builds the shared initial booking records from an already
-authorized domain parcel and matching retained pricing. A future Merchant
-adapter must apply its own service/merchant permissions before using it.
+Phase 7 `BookingAssembler.CreateCustomer` and `CreateMerchant` provide separate
+creation contracts over the same domain factories, tracking and price/history/
+outbox assembly. Customer history derives its actor from its owner. Merchant
+requires an explicit trusted audit actor UUID and an accepted version matching
+the validated tariff. The shared `Create` method checks retained price, zone,
+size and initial state. A future Merchant adapter must apply its own
+service/merchant permissions and input/active-zone/tariff checks before using it.
+The [Member 7 handoff](../../../../../docs/delivery-merchant-booking-handoff.md)
+records the exact wire mapping and transaction/reconciliation responsibilities.
 `ITrackingNumberGenerator` supplies the random public code. HTTP adapters and
 persisted quote validation share the exact-decimal converter in
 `Application/Serialization`; input precision is unchanged.

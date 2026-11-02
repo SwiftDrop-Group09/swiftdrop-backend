@@ -2,6 +2,7 @@ using System.Data;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+
 using Npgsql;
 
 using SwiftDrop.Delivery.Api.Application.Bookings;
@@ -111,13 +112,9 @@ public sealed class PostgresBookingStore(Func<DeliveryDbContext> contextFactory)
                     throw new InvalidOperationException("Booking state must belong to this transaction.");
                 }
 
-                database.Parcels.Add(write.Parcel);
-                database.PriceSnapshots.Add(write.Snapshot);
-                database.BookingHistory.Add(write.History);
-                database.OutboxMessages.Add(write.Outbox);
                 // Quote and reservation were loaded/tracked inside this same
                 // transaction. Save their consumption/completion with the rows.
-                await database.SaveChangesAsync(cancellationToken);
+                await BookingWritePersistence.SaveAsync(database, write, cancellationToken);
             }
             catch (Exception exception) when (IsStorageFailure(exception))
             {

@@ -8,6 +8,17 @@ Customer authentication fails closed until verified Identity integration is supp
 positive HTTP tests use principals registered only in the test host. JWT
 verification, messaging relay, tracking reads, GraphQL, SSE and gRPC handlers
 remain later work. See the
+[Phase 7 compatibility checkpoint](docs/delivery-phase-7-assessment.md),
+[Member 7 booking handoff](docs/delivery-merchant-booking-handoff.md),
+[Phase 6 client implementation](docs/delivery-phase-6-implementation.md),
+[local Customer booking runbook](docs/customer-booking-local-runbook.md),
+[project secret commands](docs/development-secrets.md),
+[earlier Phase 6 assessment](docs/delivery-phase-6-assessment.md),
+[Customer client integration handoff](docs/delivery-customer-clients-handoff.md),
+[Phase 5 authentication checkpoint](docs/delivery-phase-5-assessment.md),
+[Identity integration handoff](docs/delivery-identity-integration-handoff.md),
+[Phase 4 reliability checkpoint](docs/delivery-phase-4-assessment.md),
+[outbox relay handoff](docs/delivery-outbox-relay-handoff.md),
 [Phase 3 checkpoint](docs/delivery-phase-3-assessment.md),
 [Phase 2 checkpoint](docs/delivery-phase-2-assessment.md),
 [Phase 1 report](docs/delivery-phase-1-assessment.md) and
@@ -17,8 +28,8 @@ Architecture follows the proposed [documentation baseline at 233f707](https://gi
 Architecture approval is still pending. See its
 [service catalog](https://github.com/SwiftDrop-Group09/swiftdrop-docs/blob/233f7077f54949c0cacc31f11b203bf4a27d02b4/architecture/service-catalog.md)
 and [environment matrix](https://github.com/SwiftDrop-Group09/swiftdrop-docs/blob/233f7077f54949c0cacc31f11b203bf4a27d02b4/deployment/environments.md).
-The current local booking contracts were reconciled in docs commit `2ea9695`;
-Delivery booking follows that checkout, including the user-confirmed delivery-address
+The current local documentation checkout is docs commit `d97fff4`; Phase 5
+reverified its unchanged booking/idempotency/event wire contracts, including the user-confirmed delivery-address
 tariff zone and Neon deployment, while other design decisions remain Proposed.
 
 ## Projects and ownership
@@ -35,6 +46,7 @@ tariff zone and Neon deployment, while other design decisions remain Proposed.
 | SwiftDrop.Contracts | src/BuildingBlocks/SwiftDrop.Contracts | Dependency-free, versioned integration contract assets |
 | SwiftDrop.Identity.Tests | tests/SwiftDrop.Identity.Tests | Identity host foundation |
 | SwiftDrop.Delivery.Tests | tests/SwiftDrop.Delivery.Tests | Delivery domain, quotes, confirmation, PostgreSQL persistence and host foundation |
+| SwiftDrop.Delivery.Harness | tests/SwiftDrop.Delivery.Harness | Test-only loopback runner; fixed fixture actors and disposable database |
 | SwiftDrop.Merchant.Tests | tests/SwiftDrop.Merchant.Tests | Merchant host foundation |
 | SwiftDrop.Notification.Tests | tests/SwiftDrop.Notification.Tests | Worker host foundation |
 | SwiftDrop.Gateway.Tests | tests/SwiftDrop.Gateway.Tests | Documented route ownership and internal-path isolation |
@@ -75,9 +87,21 @@ HTTP tests use ASP.NET Core TestServer. Delivery persistence tests additionally
 start a private loopback PostgreSQL process and clean up only their own data;
 see the persistence runbook for binary/temp-root environment settings. Tests
 check liveness, quote validation/pricing/ownership, atomic booking and replay,
+20-request races, real lock waits/cancellation, response loss and commit failures,
 absent later-phase endpoints, and the real YARP routing
 pipeline using a test-only transport. The route fixture is copied from baseline
 233f707; update it deliberately when the canonical route inventory changes.
+
+Delivery's `ICurrentCustomer` keeps handlers independent of Identity's unfinished
+token system. The claims adapter requires one authenticated identity and one
+nonempty UUID `sub`, and reads Customer roles only from that identity. The shared
+`DeliveryTestAuthentication` fixture provides deterministic fictional users and
+roles only in the test assembly; `QuoteApiFactory` registers it explicitly.
+Normal Development and Production hosts use the closed authentication scheme.
+Caller identity headers, unsigned tokens and ad hoc development settings cannot
+enable booking. Database scenarios may still supply separate fictional UUIDs
+for persistence isolation. The Identity handoff records issuer/audience/role
+details that need confirmation before actual JWT verification is implemented.
 
 GitHub Actions runs restore, Release build, tests and process smoke checks on
 pull requests, main/chore branch pushes, and manual dispatch. A hosted workflow
@@ -135,6 +159,13 @@ forwarding explicitly disables response buffering for future SSE support.
 Forwarding configuration does not implement or authorize any feature. Authentication
 and resource ownership checks must be implemented before protected handlers.
 
+Phase 7 exposes separate Customer/Merchant creation methods on Delivery's
+`BookingAssembler` and a common transaction-bound `BookingWritePersistence`.
+Customer confirmation uses them; Member 7 can reuse the same domain, tracking,
+price snapshot, history and pending outbox write from its authorized adapter.
+The Merchant gRPC methods, permanent fingerprint/result reservation and
+reconciliation transport remain with that integration; no RPC was enabled.
+
 ## Configuration and infrastructure boundaries
 
 ASP.NET Core defaults apply: appsettings.json, environment-specific appsettings,
@@ -173,8 +204,8 @@ start a second shared PostgreSQL stack. Disposable PostgreSQL remains test-only.
 Delivery uses EF Core/Npgsql with one initial migration; Identity retains
 its independent SQL migration. RabbitMQ/MassTransit, GraphQL, gRPC and SSE
 adapters, generated clients, publishers and consumers remain future work.
-Docker packaging exists for the development containers. Delivery's complete
-parcel confirmation/booking handlers and dependency-aware readiness are later phases.
+Docker packaging exists for the development containers. Delivery's quote and
+booking handlers are implemented; dependency-aware readiness remains later work.
 
 Do not add Redis, SignalR, a separate realtime process or extra capability services.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for review and contribution conventions.
