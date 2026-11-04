@@ -6,8 +6,44 @@ are implemented. Delivery provides fee estimates, owner-bound quotes and explici
 Customer booking confirmation with atomic PostgreSQL persistence. Production
 Customer authentication fails closed until verified Identity integration is supplied;
 positive HTTP tests use principals registered only in the test host. JWT
-verification, messaging relay, tracking reads, GraphQL, SSE and gRPC handlers
-remain later work. See the
+verification, messaging relay, public tracking, GraphQL, SSE and gRPC handlers
+remain later work. Courier Phase 1 adds operational profiles, zone memberships,
+retained assignments with one active owner per parcel, private proof metadata
+and append-only status-history persistence. The user confirmed at least one photo
+or signature for final proof; Phase 4 below enforces that completion policy.
+Courier Phase 2 adds the self-scoped service-day manifest and private parcel
+details using current assignments and documented owner/operations access. These
+reads fail closed until Identity authentication is integrated; positive tests
+use isolated principals. Courier Phase 3 adds the versioned, idempotent
+`PUT /api/v1/deliveries/{id}/status` with current-assignment checks and atomic
+status/history/outbox/replay persistence. It guards the documented pickup/transit/
+out-for-delivery and reason-required Failed transitions; direct Delivered writes
+are rejected. Courier Phase 4 adds the documented multipart
+`POST /api/v1/deliveries/{id}/pod`: photo or signature (both accepted), decoded
+JPEG/PNG validation, encrypted private S3/MinIO staging and guarded atomic Delivered
+completion. Reference-aware daily cleanup removes old orphan uploads. Production
+writes fail closed pending Identity integration; proof storage also requires
+explicit private configuration. Phase 5 verifies failed-delivery acceptance through
+the existing status operation: a required reason, optional private notes, atomic
+terminal assignment/history/outbox/replay and no automatic reassignment. Phase 6
+adds `GET /api/v1/couriers/me/history` for the caller's historical Delivered/Failed
+assignments, with stable pages and a minimal Parcel summary. Reassigned-away work
+and private recipient/proof data are excluded. Phase 7 supplies the React/Flutter
+Courier clients. Phase 8 adds reproducible cross-client/state verification and
+records separate live acceptance dependencies. See the
+[Courier verification runbook](docs/courier-verification.md),
+[all-phase master audit](docs/courier-master-audit.md),
+[Courier Phase 8 checkpoint](docs/courier-phase-8-assessment.md),
+[Courier Phase 7 clients checkpoint](docs/courier-phase-7-assessment.md),
+[Courier Phase 6 checkpoint](docs/courier-phase-6-assessment.md),
+[Courier history handoff](docs/courier-history.md),
+[Courier Phase 5 checkpoint](docs/courier-phase-5-assessment.md),
+[failure reporting handoff](docs/courier-failure-reporting.md),
+[Courier Phase 4 checkpoint](docs/courier-phase-4-assessment.md),
+[proof storage runbook](docs/courier-proof-storage.md),
+[Courier Phase 3 checkpoint](docs/courier-phase-3-assessment.md),
+the [Courier Phase 2 checkpoint](docs/courier-phase-2-assessment.md),
+the [Courier Phase 1 checkpoint](docs/courier-phase-1-assessment.md), the
 [Phase 7 compatibility checkpoint](docs/delivery-phase-7-assessment.md),
 [Member 7 booking handoff](docs/delivery-merchant-booking-handoff.md),
 [Phase 6 client implementation](docs/delivery-phase-6-implementation.md),
@@ -201,7 +237,9 @@ Neon is the selected PostgreSQL deployment: four privately owned logical
 databases with separate connection secrets, never a shared schema or cross-service
 query. Use the actual provisioned Neon endpoints/roles and TLS settings; do not
 start a second shared PostgreSQL stack. Disposable PostgreSQL remains test-only.
-Delivery uses EF Core/Npgsql with one initial migration; Identity retains
+Delivery uses EF Core/Npgsql with the initial Booking migration, additive Courier
+profile/proof/assignment migrations and the status replay-constraint migration;
+Identity retains
 its independent SQL migration. RabbitMQ/MassTransit, GraphQL, gRPC and SSE
 adapters, generated clients, publishers and consumers remain future work.
 Docker packaging exists for the development containers. Delivery's quote and

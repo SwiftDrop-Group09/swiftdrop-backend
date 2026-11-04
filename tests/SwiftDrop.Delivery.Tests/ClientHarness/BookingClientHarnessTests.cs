@@ -17,6 +17,22 @@ namespace SwiftDrop.Delivery.Tests.ClientHarness;
 public sealed class BookingClientHarnessTests
 {
     [Fact]
+    public async Task ExplicitCourierFixtureExercisesRealManifestStatusProofAndTerminalPrivacy()
+    {
+        await using var harness = await BookingClientHarness.StartAsync(BookingHarnessActor.Courier, courierWorkflow: true);
+        using var client = harness.Host.CreateClient();
+        using var manifest = JsonDocument.Parse(await client.GetStringAsync("/api/v1/couriers/me/assignments"));
+        var parcel = manifest.RootElement.GetProperty("items").EnumerateArray().First(x => x.GetProperty("status").GetString() == "OutForDelivery");
+        var id = parcel.GetProperty("id").GetGuid();
+        using var proof = await Courier.ProofTestSupport.Send(client, id, Courier.ProofTestSupport.Form());
+        Assert.Equal(HttpStatusCode.OK, proof.StatusCode);
+        using var detail = await client.GetAsync($"/api/v1/parcels/{id:D}");
+        Assert.Equal(HttpStatusCode.NotFound, detail.StatusCode);
+        using var history = JsonDocument.Parse(await client.GetStringAsync("/api/v1/couriers/me/history"));
+        Assert.Contains(history.RootElement.GetProperty("items").EnumerateArray(), x => x.GetProperty("id").GetGuid() == id);
+        Assert.All(history.RootElement.GetProperty("items").EnumerateArray(), x => Assert.Equal(6, x.EnumerateObject().Count()));
+    }
+    [Fact]
     public async Task RealHttpHostUsesLiveTimeAndCommitsOneServerOwnedBookingWithExactReplay()
     {
         await using var harness = await BookingClientHarness.StartAsync();
