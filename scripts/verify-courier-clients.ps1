@@ -18,7 +18,7 @@ $hostErrors = $null
 $completed = $false
 
 function Quote-Argument([string]$Value) {
-    if ($Value.Contains('"')) { throw 'An executable argument contains an unsupported quote.' }
+    if ($Value.Contains('"')) { throw 'An exec utable argument contains an unsupported quote.' }
     return '"' + $Value + '"'
 }
 
