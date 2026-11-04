@@ -24,7 +24,6 @@ public sealed class FoundationTests : IDisposable
     [InlineData("/weatherforecast")]
     [InlineData("/ready")]
     [InlineData("/api/v1/merchant/orders")]
-    [InlineData("/api/v1/merchants")]
     [InlineData("/internal/v1/webhook-dispatches")]
     public async Task UnimplementedRoutesReturnNotFound(string path)
     {
@@ -32,6 +31,18 @@ public sealed class FoundationTests : IDisposable
         using var response = await client.GetAsync(path);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/merchants")]
+    [InlineData("/api/v1/merchants/me")]
+    [InlineData("/api/v1/merchants/api-keys")]
+    public async Task FeatureRoutesRequireAuthentication(string path)
+    {
+        using var client = _factory.CreateClient();
+        using var response = await client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     public void Dispose() => _factory.Dispose();
