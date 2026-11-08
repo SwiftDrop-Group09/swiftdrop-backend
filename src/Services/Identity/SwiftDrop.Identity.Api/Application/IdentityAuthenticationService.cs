@@ -8,7 +8,7 @@ public sealed record IdentityAuthenticationResult(RegisteredProfile? User, strin
 
 public sealed class IdentityAuthenticationService(Func<IIdentityAuthenticationStore> storeFactory,
     IIdentityPasswordVerifier passwords, IIdentityAccessTokens accessTokens,
-    IGoogleIdentityVerifier google, TimeProvider clock)
+    IGoogleIdentityVerifier google, TimeProvider clock, IIdentityPasswordHasher passwordHasher)
 {
     private IIdentityAuthenticationStore Store => storeFactory();
     // An unknown account performs the same bounded password derivation. These
@@ -99,6 +99,38 @@ public sealed class IdentityAuthenticationService(Func<IIdentityAuthenticationSt
         var result = await Store.LinkGoogleAsync(userId, account.PasswordHash, identity, now, cancellationToken);
         return result.Account is { } linked
             ? new(linked.Profile)
+            : Failed(result.Failure ?? IdentityFailure.InvalidCredentials);
+    }
+
+    public Task<SignInMethods?> GetSignInMethodsAsync(Guid userId, CancellationToken cancellationToken) =>
+        Store.GetSignInMethodsAsync(userId, cancellationToken);
+
+    public async Task<IdentityAuthenticationResult> AddPasswordAsync(Guid userId, string idToken, string password,
+        string? expectedNonce, CancellationToken cancellationToken)
+    {
+        var account = await Store.FindByIdAsync(userId, cancellationToken);
+        if (account is not { Profile.IsActive: true } || password.Length is < 12 or > 128)
+        {
+            return Failed();
+        }
+
+        if (account.PasswordHash is not null)
+        {
+            return Failed(IdentityFailure.PasswordAlreadySet);
+        }
+
+        // Adding a credential always requires a fresh server challenge, including
+        // for non-browser callers. JWT possession alone cannot set a password.
+        var identity = await VerifyGoogleAsync(idToken, expectedNonce, true, cancellationToken);
+        if (identity is null)
+        {
+            return Failed();
+        }
+
+        var hash = await passwordHasher.HashAsync(password, cancellationToken);
+        var result = await Store.AddPasswordAsync(userId, identity, hash, Now(), cancellationToken);
+        return result.Account is { } updated
+            ? new(updated.Profile)
             : Failed(result.Failure ?? IdentityFailure.InvalidCredentials);
     }
 

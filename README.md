@@ -53,6 +53,7 @@ the [Courier Phase 1 checkpoint](docs/courier-phase-1-assessment.md), the
 [Customer client integration handoff](docs/delivery-customer-clients-handoff.md),
 [Phase 5 authentication checkpoint](docs/delivery-phase-5-assessment.md),
 [Identity integration handoff](docs/delivery-identity-integration-handoff.md),
+[profile sign-in method connections](docs/account-connections.md),
 [Phase 4 reliability checkpoint](docs/delivery-phase-4-assessment.md),
 [outbox relay handoff](docs/delivery-outbox-relay-handoff.md),
 [Phase 3 checkpoint](docs/delivery-phase-3-assessment.md),
