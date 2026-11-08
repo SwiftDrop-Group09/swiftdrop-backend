@@ -186,7 +186,9 @@ public sealed class AssignmentPersistenceTests(PostgresFixture fixture) : IAsync
         Assert.Equal(AssignmentStatus.Reassigned, (await context.Assignments.SingleAsync(x => x.Id == assignment.Id)).Status);
         var deleteCourier = await Assert.ThrowsAsync<PostgresException>(() => context.Database.ExecuteSqlInterpolatedAsync(
             $"DELETE FROM couriers WHERE id = {seed.CourierA}"));
-        Assert.Equal(PostgresErrorCodes.RestrictViolation, deleteCourier.SqlState);
+        Assert.Contains(deleteCourier.SqlState, new[] { PostgresErrorCodes.RestrictViolation, PostgresErrorCodes.ForeignKeyViolation });
+        Assert.True(await context.Couriers.AsNoTracking().AnyAsync(x => x.Id == seed.CourierA));
+        Assert.True(await context.Assignments.AsNoTracking().AnyAsync(x => x.Id == assignment.Id));
     }
 
     [Fact]

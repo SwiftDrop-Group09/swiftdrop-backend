@@ -54,6 +54,8 @@ public partial class Program
         // Invalid requests still have their proper response when DB settings are absent.
         builder.Services.AddScoped<IQuoteStore>(services =>
             new PostgresQuoteStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<IBookingZoneCatalog>(services =>
+            new PostgresBookingZoneCatalog(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IBookingStore>(services =>
             new PostgresBookingStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddAuthentication(UnconfiguredIdentityHandler.SchemeName)

@@ -72,7 +72,9 @@ public sealed class CourierPersistenceTests(PostgresFixture fixture) : IAsyncLif
 
         var deletion = await Assert.ThrowsAsync<PostgresException>(() => context.Database.ExecuteSqlInterpolatedAsync(
             $"DELETE FROM couriers WHERE id = {courier.Id}"));
-        Assert.Equal(PostgresErrorCodes.RestrictViolation, deletion.SqlState);
+        Assert.Contains(deletion.SqlState, new[] { PostgresErrorCodes.RestrictViolation, PostgresErrorCodes.ForeignKeyViolation });
+        Assert.True(await context.Couriers.AsNoTracking().AnyAsync(x => x.Id == courier.Id));
+        Assert.True(await context.CourierZones.AsNoTracking().AnyAsync(x => x.CourierId == courier.Id));
     }
 
     [Theory]

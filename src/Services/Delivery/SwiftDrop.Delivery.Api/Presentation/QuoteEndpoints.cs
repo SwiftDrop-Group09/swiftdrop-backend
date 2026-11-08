@@ -20,6 +20,24 @@ public static class QuoteEndpoints
 
     public static void MapCustomerQuotes(this WebApplication app)
     {
+        app.MapGet("/api/v1/quotes/zones", async (HttpContext context, ICurrentCustomer customer,
+            IBookingZoneCatalog catalog, CancellationToken cancellationToken) =>
+        {
+            if (!customer.IsAuthenticated || customer.CustomerId is not { } owner || owner == Guid.Empty)
+                return QuoteProblems.Failure(context, QuoteFailure.Unauthenticated);
+            if (!customer.IsCustomer) return QuoteProblems.Failure(context, QuoteFailure.Forbidden);
+            try
+            {
+                return Results.Ok(await catalog.ReadActiveAsync(cancellationToken));
+            }
+            catch (Exception exception) when (exception is System.Data.Common.DbException or InvalidOperationException or TimeoutException)
+            {
+                return QuoteProblems.Failure(context, QuoteFailure.PersistenceUnavailable);
+            }
+        }).RequireAuthorization().WithMetadata(new DeliveryReadEndpointMetadata())
+            .WithName("ListBookableZones").Produces<IReadOnlyList<BookableZone>>()
+            .ProducesProblem(401).ProducesProblem(403).ProducesProblem(503);
+
         app.MapPost("/api/v1/quotes", async (HttpContext context, ICurrentCustomer customer,
             QuoteEstimator estimator, CancellationToken cancellationToken) =>
         {
