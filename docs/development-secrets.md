@@ -45,8 +45,7 @@ Set-SwiftDropProjectSecret 'src/Workers/SwiftDrop.Notification.Worker' 'Connecti
 ConnectionStrings:Database is deliberately scoped by project. Do not give one
 host another service's connection. Identity's migration setting is separate;
 Delivery's current explicit migration task uses its existing Delivery setting.
-Merchant/Notification settings are reserved for their owning adapters and do not
-imply those adapters are implemented. Database configuration alone does not
+Merchant now uses its owning setting for its persistence slice; Notification persistence remains deferred. Database configuration alone does not
 enable IAM, Customer login or JWT validation.
 
 User secrets are local Development configuration, outside the repository, and
@@ -94,5 +93,17 @@ GENERATE_LOCALLY. Keep populated environment files private and ignored.
 No database password, broker password or signing key belongs in these clients or
 Gateway. VITE_API_BASE_URL and Flutter API_BASE_URL are public URLs, not secrets.
 The isolated test entry points use fixture context from the test harness; normal
-applications still require the IAM member's real session/request adapter.
+Flutter still requires its IAM session/request integration. React reuses the shared Identity session; Delivery and Merchant server authentication seams remain fail closed.
 Do not add tokens to VITE_* values, dart-define, source files or test fixtures.
+
+## Delivery proof storage
+
+Real courier completion requires Delivery-only `ProofStorage:Endpoint`, `Bucket`,
+`Region`, `AccessKey`, `SecretKey` and optional `SessionToken`. Use the helper above
+with the Delivery project to store each direct-host setting. The shared runner
+uses `DELIVERY_PROOF_STORAGE_ENDPOINT`, `DELIVERY_PROOF_STORAGE_BUCKET`,
+`DELIVERY_PROOF_STORAGE_REGION`, `DELIVERY_PROOF_STORAGE_ACCESS_KEY`,
+`DELIVERY_PROOF_STORAGE_SECRET_KEY` and optional
+`DELIVERY_PROOF_STORAGE_SESSION_TOKEN` in its ignored development file or exported
+environment. They are not browser values. See courier-proof-storage.md for bucket
+policy and permissions; missing or unsafe storage fails completion closed.

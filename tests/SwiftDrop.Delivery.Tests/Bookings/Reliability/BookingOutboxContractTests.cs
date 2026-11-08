@@ -90,7 +90,7 @@ public sealed class BookingOutboxContractTests(PostgresFixture fixture)
         Assert.DoesNotContain("TRK-contract-fixture", message.Payload, StringComparison.Ordinal);
     }
 
-    private static void AssertSchema(string json)
+    internal static void AssertSchema(string json)
     {
         using var schemaDocument = JsonDocument.Parse(File.ReadAllText(
             Path.Combine(AppContext.BaseDirectory, "Contracts", "status-changed-v1.schema.json")));

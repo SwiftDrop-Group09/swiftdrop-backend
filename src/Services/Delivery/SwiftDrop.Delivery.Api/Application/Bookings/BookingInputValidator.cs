@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using SwiftDrop.Delivery.Api.Application.Idempotency;
 
 namespace SwiftDrop.Delivery.Api.Application.Bookings;
 
@@ -13,8 +14,7 @@ public static class BookingInputValidator
     public static BookingInputValidationResult Validate(ConfirmInput? input, string? idempotencyKey)
     {
         var errors = new Dictionary<string, string[]>();
-        if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 128
-            || idempotencyKey.Any(char.IsControl))
+        if (!IdempotencyInput.IsValidKey(idempotencyKey))
         {
             errors["Idempotency-Key"] = ["Supply one nonblank key of at most 128 characters without control characters."];
         }

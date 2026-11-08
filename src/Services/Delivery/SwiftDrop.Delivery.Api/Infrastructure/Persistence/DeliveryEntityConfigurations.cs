@@ -116,7 +116,7 @@ internal static partial class DeliveryEntityConfigurations
         {
             table.HasCheckConstraint("ck_idempotency_scope", "btrim(principal_id) <> '' AND btrim(operation) <> '' AND btrim(key) <> '' AND btrim(request_fingerprint) <> ''");
             table.HasCheckConstraint("ck_idempotency_expiry", "expires_at = created_at + INTERVAL '720 hours'");
-            table.HasCheckConstraint("ck_idempotency_completion", "((parcel_id IS NULL AND stored_response IS NULL) OR (parcel_id IS NOT NULL AND stored_response IS NOT NULL AND jsonb_typeof(stored_response) = 'object' AND stored_response ?& ARRAY['statusCode','body','location'] AND stored_response->'statusCode' = '201'::jsonb AND jsonb_typeof(stored_response->'body') = 'string' AND jsonb_typeof(stored_response->'location') = 'string')) IS TRUE");
+            table.HasCheckConstraint("ck_idempotency_completion", "((parcel_id IS NULL AND stored_response IS NULL) OR (parcel_id IS NOT NULL AND stored_response IS NOT NULL AND jsonb_typeof(stored_response) = 'object' AND stored_response ?& ARRAY['statusCode','body','location'] AND (stored_response->'statusCode' = '201'::jsonb OR (operation IN ('UpdateDeliveryStatus','CompleteDeliveryWithProof') AND stored_response->'statusCode' = '200'::jsonb)) AND jsonb_typeof(stored_response->'body') = 'string' AND jsonb_typeof(stored_response->'location') = 'string')) IS TRUE");
         });
         keys.HasKey(x => x.Id);
         keys.Property(x => x.Key).HasMaxLength(128);
@@ -132,6 +132,8 @@ internal static partial class DeliveryEntityConfigurations
         outbox.HasKey(x => x.Id);
         outbox.Property(x => x.Payload).HasColumnType("jsonb");
         outbox.HasIndex(x => new { x.CreatedAt, x.Id }).HasFilter("published_at IS NULL");
+
+        CourierEntityConfigurations.Configure(model);
 
         // One convention, no extra naming package. Explicit ER aliases follow it.
         foreach (var entity in model.Model.GetEntityTypes())
