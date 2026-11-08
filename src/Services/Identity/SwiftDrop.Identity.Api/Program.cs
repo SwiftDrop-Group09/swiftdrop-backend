@@ -68,6 +68,7 @@ public partial class Program
         builder.Services.AddScoped<IUserRegistrationStore, PostgresUserRegistrationStore>();
         builder.Services.AddSingleton<Argon2PasswordHasher>();
         builder.Services.AddSingleton<IIdentityPasswordVerifier>(services => services.GetRequiredService<Argon2PasswordHasher>());
+        builder.Services.AddSingleton<IIdentityPasswordHasher>(services => services.GetRequiredService<Argon2PasswordHasher>());
         builder.Services.AddSingleton<IGoogleIdentityVerifier, GoogleIdentityVerifier>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<IIdentityAuthenticationStore, PostgresIdentityAuthenticationStore>();
@@ -75,7 +76,8 @@ public partial class Program
         builder.Services.AddScoped(services => new IdentityAuthenticationService(
             () => services.GetRequiredService<IIdentityAuthenticationStore>(),
             services.GetRequiredService<IIdentityPasswordVerifier>(), services.GetRequiredService<IIdentityAccessTokens>(),
-            services.GetRequiredService<IGoogleIdentityVerifier>(), services.GetRequiredService<TimeProvider>()));
+            services.GetRequiredService<IGoogleIdentityVerifier>(), services.GetRequiredService<TimeProvider>(),
+            services.GetRequiredService<IIdentityPasswordHasher>()));
         builder.Services.AddIdentityTokenAuthentication(builder.Configuration);
         builder.Services.AddDataProtection();
         builder.Services.AddAntiforgery(options =>

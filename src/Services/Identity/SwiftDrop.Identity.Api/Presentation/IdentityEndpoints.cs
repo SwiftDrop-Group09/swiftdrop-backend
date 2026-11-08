@@ -39,17 +39,19 @@ public static class IdentityEndpoints
         Map(app, "/api/v1/auth/logout", LogoutAsync, authenticated: true);
         Map(app, "/api/v1/auth/google", GoogleAsync);
         Map(app, "/api/v1/auth/google/link", LinkAsync, authenticated: true);
+        Map(app, "/api/v1/auth/methods", MethodsAsync, authenticated: true, method: "GET");
+        Map(app, "/api/v1/auth/password", AddPasswordAsync, authenticated: true);
     }
 
     private static void Map(WebApplication app, string path, Func<HttpContext, Task<IResult>> handler,
-        bool authenticated = false)
+        bool authenticated = false, string method = "POST")
     {
-        var endpoint = app.MapPost(path, async (HttpContext context) =>
+        var endpoint = app.MapMethods(path, [method], async (HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             try
             {
-                if (BrowserAuthentication.IsBrowser(context)
+                if (method != "GET" && BrowserAuthentication.IsBrowser(context)
                     && !await context.RequestServices.GetRequiredService<BrowserAuthentication>().ValidateAsync(context))
                 {
                     return Problem(403, "csrf_rejected", "Browser request verification failed.");
@@ -175,6 +177,38 @@ public static class IdentityEndpoints
         return Results.Ok(result.User);
     }
 
+    private static async Task<IResult> MethodsAsync(HttpContext context)
+    {
+        if (!Guid.TryParse(context.User.FindFirst("sub")?.Value, out var userId))
+        {
+            return Failure(IdentityFailure.InvalidCredentials);
+        }
+
+        var methods = await Service(context).GetSignInMethodsAsync(userId, context.RequestAborted);
+        return methods is null ? Failure(IdentityFailure.InvalidCredentials) : Results.Ok(methods);
+    }
+
+    private static async Task<IResult> AddPasswordAsync(HttpContext context)
+    {
+        var input = await ReadAsync<AddPasswordInput>(context);
+        if (!Guid.TryParse(context.User.FindFirst("sub")?.Value, out var userId)
+            || !ValidGoogleToken(input?.IdToken) || input?.Password is not { Length: >= 12 and <= 128 })
+        {
+            return Invalid();
+        }
+
+        var nonce = context.RequestServices.GetRequiredService<BrowserAuthentication>().ExpectedGoogleNonce(context);
+        var result = await Service(context).AddPasswordAsync(userId, input.IdToken!, input.Password, nonce,
+            context.RequestAborted);
+        if (result.User is null)
+        {
+            return Failure(result.Failure ?? IdentityFailure.InvalidCredentials);
+        }
+
+        BrowserAuthentication.ClearGoogleNonce(context);
+        return Results.Ok(new SignInMethods(HasPassword: true, GoogleLinked: true));
+    }
+
     private static IResult Tokens(HttpContext context, IdentityAuthenticationResult result)
     {
         if (result.User is null)
@@ -228,6 +262,7 @@ public static class IdentityEndpoints
         IdentityFailure.AccountLinkRequired => Problem(409, "account_link_required", "Sign in locally and explicitly link the Google account."),
         IdentityFailure.SubjectConflict => Problem(409, "google_identity_conflict", "The Google identity cannot be linked."),
         IdentityFailure.EmailMismatch => Problem(403, "account_link_rejected", "The Google identity cannot be linked."),
+        IdentityFailure.PasswordAlreadySet => Problem(409, "password_already_set", "Password sign-in is already enabled."),
         _ => Problem(401, "invalid_credentials", "The supplied credentials are invalid.")
     };
 
@@ -235,6 +270,7 @@ public static class IdentityEndpoints
     private sealed record RefreshInput(string? RefreshToken);
     private sealed record GoogleInput(string? IdToken);
     private sealed record LinkInput(string? IdToken, string? CurrentPassword);
+    private sealed record AddPasswordInput(string? IdToken, string? Password);
     private sealed record TokenPair(string AccessToken, string TokenType, int ExpiresInSeconds, RegisteredProfile User,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RefreshToken);
 }

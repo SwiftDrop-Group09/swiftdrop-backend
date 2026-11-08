@@ -5,7 +5,7 @@ using SwiftDrop.Identity.Api.Application;
 
 namespace SwiftDrop.Identity.Api.Infrastructure;
 
-public sealed class Argon2PasswordHasher : IIdentityPasswordVerifier
+public sealed class Argon2PasswordHasher : IIdentityPasswordVerifier, IIdentityPasswordHasher
 {
     private const int MemorySizeKiB = 65536;
     private const int Iterations = 3;
