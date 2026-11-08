@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Application.Serialization;
@@ -42,6 +43,12 @@ public static class QuoteEndpoints
                 }
 
                 input = await context.Request.ReadFromJsonAsync<QuoteInput>(InputJson, cancellationToken);
+            }
+            catch (InvalidOperationException exception) when (exception.InnerException is ArgumentException)
+            {
+                // ASP.NET Core wraps an unsupported request charset in this
+                // exception shape. It is invalid input, not a server failure.
+                return InvalidJson(context);
             }
             catch (Exception exception) when (exception is JsonException or BadHttpRequestException or NotSupportedException)
             {

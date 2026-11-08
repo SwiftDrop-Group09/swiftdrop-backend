@@ -1,7 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+
 using Microsoft.EntityFrameworkCore;
+
 using Npgsql;
+
 using SwiftDrop.Delivery.Api.Domain;
 using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 
@@ -22,6 +25,35 @@ public sealed class PersistenceTests(PostgresFixture fixture) : IAsyncLifetime
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
+
+    [Fact]
+    public async Task ReapplyingMigrationPreservesExistingDataAndMatchesTheCurrentModel()
+    {
+        var seed = await SeedAsync();
+        var parcel = await PersistParcelAsync(seed);
+        await using var context = Context();
+        var appliedMigrations = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+
+        Assert.NotEmpty(appliedMigrations);
+        Assert.Empty(await context.Database.GetPendingMigrationsAsync());
+        Assert.False(context.Database.HasPendingModelChanges());
+
+        await context.Database.MigrateAsync();
+
+        Assert.Equal(appliedMigrations, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Equal(seed.Zone.Name, (await context.Zones.SingleAsync(item => item.Id == seed.Zone.Id)).Name);
+        Assert.Equal(seed.Tier.PricingVersion,
+            (await context.PricingTiers.SingleAsync(item => item.Id == seed.Tier.Id)).PricingVersion);
+        var savedQuote = await context.Quotes.SingleAsync(item => item.Id == seed.Quote.Id);
+        Assert.Equal(seed.Quote.Total, savedQuote.Total);
+        using var originalInput = JsonDocument.Parse(seed.Quote.DeliveryInput);
+        using var savedInput = JsonDocument.Parse(savedQuote.DeliveryInput);
+        Assert.True(JsonElement.DeepEquals(originalInput.RootElement, savedInput.RootElement));
+        Assert.Equal(parcel.TrackingNumber,
+            (await context.Parcels.SingleAsync(item => item.Id == parcel.Id)).TrackingNumber);
+        Assert.Equal(540m,
+            (await context.PriceSnapshots.SingleAsync(item => item.ParcelId == parcel.Id)).Total);
+    }
 
     [Fact]
     public async Task QuotePersistsOwnerCompleteInputAndVersionWithoutCreatingBookingRows()
@@ -102,24 +134,43 @@ public sealed class PersistenceTests(PostgresFixture fixture) : IAsyncLifetime
         Assert.Equal(PostgresErrorCodes.CheckViolation, rewritten.SqlState);
     }
 
-    [Fact]
-    public async Task PostgreSqlRejectsInvalidWeightAndOriginEvenWhenDomainGuardsAreBypassed()
+    [Theory]
+    [InlineData("zeroWeight", "ck_parcels_weight")]
+    [InlineData("overweight", "ck_parcels_weight")]
+    [InlineData("origin", "ck_parcels_origin")]
+    [InlineData("size", "ck_parcels_size")]
+    public async Task PostgreSqlRejectsInvalidParcelInsertsEvenWhenDomainGuardsAreBypassed(
+        string invalidField, string expectedConstraint)
     {
         var seed = await SeedAsync();
-        var parcel = await PersistParcelAsync(seed);
         await using var context = Context();
+        var parcel = AddParcel(context, seed);
+        switch (invalidField)
+        {
+            case "zeroWeight":
+                context.Entry(parcel).Property(item => item.WeightKg).CurrentValue = 0m;
+                break;
+            case "overweight":
+                context.Entry(parcel).Property(item => item.WeightKg).CurrentValue = 30.0001m;
+                break;
+            case "origin":
+                context.Entry(parcel).Property(item => item.MerchantId).CurrentValue = Guid.NewGuid();
+                context.Entry(parcel).Property(item => item.ExternalOrderId).CurrentValue = "external-order";
+                break;
+            case "size":
+                context.Entry(parcel).Property(item => item.Size).CurrentValue = (ParcelSize)99;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(invalidField));
+        }
 
-        var weightError = await Assert.ThrowsAsync<PostgresException>(() => context.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE parcels SET weight_kg = 0 WHERE id = {parcel.Id}"));
-        Assert.Equal(PostgresErrorCodes.CheckViolation, weightError.SqlState);
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
 
-        var originError = await Assert.ThrowsAsync<PostgresException>(() => context.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE parcels SET merchant_id = {Guid.NewGuid()}, external_order_id = {"external-order"} WHERE id = {parcel.Id}"));
-        Assert.Equal(PostgresErrorCodes.CheckViolation, originError.SqlState);
-
-        var sizeError = await Assert.ThrowsAsync<PostgresException>(() => context.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE parcels SET size_category = {"Unsupported"} WHERE id = {parcel.Id}"));
-        Assert.Equal(PostgresErrorCodes.CheckViolation, sizeError.SqlState);
+        AssertPostgresState(exception, PostgresErrorCodes.CheckViolation);
+        Assert.Equal(expectedConstraint, Assert.IsType<PostgresException>(exception.InnerException).ConstraintName);
+        await using var verification = Context();
+        Assert.False(await verification.Parcels.AnyAsync(item => item.Id == parcel.Id));
+        Assert.False(await verification.PriceSnapshots.AnyAsync(item => item.ParcelId == parcel.Id));
     }
 
     [Fact]
@@ -155,6 +206,27 @@ public sealed class PersistenceTests(PostgresFixture fixture) : IAsyncLifetime
         var exception = await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
 
         AssertPostgresState(exception, PostgresErrorCodes.ForeignKeyViolation);
+    }
+
+    [Fact]
+    public async Task SnapshotMustMatchItsParcelsDeliveryZone()
+    {
+        var seed = await SeedAsync();
+        var otherZone = await SeedAsync();
+        var parcel = ParcelFor(seed);
+        var snapshot = Snapshot(otherZone, parcel);
+        await using var context = Context();
+        context.Parcels.Add(parcel);
+        context.PriceSnapshots.Add(snapshot);
+
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
+
+        AssertPostgresState(exception, PostgresErrorCodes.ForeignKeyViolation);
+        Assert.Equal("FK_price_snapshots_parcels_parcel_id_zone_id",
+            Assert.IsType<PostgresException>(exception.InnerException).ConstraintName);
+        await using var verification = Context();
+        Assert.False(await verification.Parcels.AnyAsync(item => item.Id == parcel.Id));
+        Assert.False(await verification.PriceSnapshots.AnyAsync(item => item.Id == snapshot.Id));
     }
 
     [Fact]
@@ -440,6 +512,30 @@ public sealed class PersistenceTests(PostgresFixture fixture) : IAsyncLifetime
         await using var verification = Context();
         var consumedBy = (await verification.Quotes.SingleAsync(item => item.Id == seed.Quote.Id)).ConsumedByParcelId;
         Assert.Contains(consumedBy, new Guid?[] { firstParcel.Id, secondParcel.Id });
+    }
+
+    [Fact]
+    public async Task ConcurrentParcelUpdatesAllowOnlyOneWriterAtTheOriginalVersion()
+    {
+        var seed = await SeedAsync();
+        var parcel = await PersistParcelAsync(seed);
+        await using var firstContext = Context();
+        await using var secondContext = Context();
+        var firstParcel = await firstContext.Parcels.SingleAsync(item => item.Id == parcel.Id);
+        var secondParcel = await secondContext.Parcels.SingleAsync(item => item.Id == parcel.Id);
+        firstContext.Entry(firstParcel).Property(item => item.Version).CurrentValue = 2;
+        firstContext.Entry(firstParcel).Property(item => item.Status).CurrentValue = ParcelStatus.Assigned;
+        secondContext.Entry(secondParcel).Property(item => item.Version).CurrentValue = 2;
+        secondContext.Entry(secondParcel).Property(item => item.Status).CurrentValue = ParcelStatus.Cancelled;
+
+        var outcomes = await RaceSaveAsync(firstContext, secondContext);
+
+        Assert.Single(outcomes, item => item is null);
+        Assert.IsType<DbUpdateConcurrencyException>(Assert.Single(outcomes, item => item is not null));
+        await using var verification = Context();
+        var saved = await verification.Parcels.SingleAsync(item => item.Id == parcel.Id);
+        Assert.Equal(2, saved.Version);
+        Assert.Equal(outcomes[0] is null ? ParcelStatus.Assigned : ParcelStatus.Cancelled, saved.Status);
     }
 
     [Fact]

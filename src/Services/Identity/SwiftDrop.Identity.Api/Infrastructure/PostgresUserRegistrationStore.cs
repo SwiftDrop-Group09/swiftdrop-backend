@@ -1,4 +1,5 @@
 using SwiftDrop.Identity.Api.Application;
+
 using Npgsql;
 
 namespace SwiftDrop.Identity.Api.Infrastructure;
@@ -18,7 +19,8 @@ public sealed class PostgresUserRegistrationStore(NpgsqlDataSource dataSource) :
         }
 
         command.CommandText =
-            "SELECT EXISTS (SELECT 1 FROM public.schema_migrations WHERE version = '001_identity_initial')";
+            "SELECT EXISTS (SELECT 1 FROM public.schema_migrations WHERE version = @version)";
+        command.Parameters.AddWithValue("version", IdentitySchemaMigrator.CurrentVersion);
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 

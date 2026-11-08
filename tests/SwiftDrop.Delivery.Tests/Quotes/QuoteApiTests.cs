@@ -82,6 +82,72 @@ public sealed class QuoteApiTests(PostgresFixture fixture) : IAsyncLifetime
     }
 
     [Theory]
+    [InlineData(ParcelSize.Small, false, 540)]
+    [InlineData(ParcelSize.Medium, false, 720)]
+    [InlineData(ParcelSize.Large, false, 1050)]
+    [InlineData(ParcelSize.Small, true, 540)]
+    [InlineData(ParcelSize.Medium, true, 720)]
+    [InlineData(ParcelSize.Large, true, 1050)]
+    public async Task QuoteSelectsTheRequestedDeliveryZoneAndSizeWithNoBookingSideEffects(
+        ParcelSize size, bool sameZone, int expectedTotal)
+    {
+        var delivery = new DeliveryZone(Guid.NewGuid(), "Size delivery " + Guid.NewGuid().ToString("N"));
+        var pickup = sameZone ? delivery
+            : new DeliveryZone(Guid.NewGuid(), "Size pickup " + Guid.NewGuid().ToString("N"));
+        var tiers = new[]
+        {
+            new PricingTier(Guid.NewGuid(), delivery.Id, ParcelSize.Small, "size-small-v1", 450m, 60m),
+            new PricingTier(Guid.NewGuid(), delivery.Id, ParcelSize.Medium, "size-medium-v2", 600m, 80m),
+            new PricingTier(Guid.NewGuid(), delivery.Id, ParcelSize.Large, "size-large-v3", 900m, 100m)
+        };
+        var expectedTier = tiers.Single(tier => tier.Size == size);
+        await using (var setup = Context())
+        {
+            setup.Zones.Add(delivery);
+            setup.PricingTiers.AddRange(tiers);
+            if (!sameZone)
+            {
+                setup.Zones.Add(pickup);
+                setup.PricingTiers.Add(new PricingTier(Guid.NewGuid(), pickup.Id, size,
+                    "pickup-competing-v1", 1200m, 120m));
+            }
+
+            await setup.SaveChangesAsync();
+        }
+
+        var owner = Guid.NewGuid();
+        var before = await CountsAsync();
+        using var factory = new QuoteApiFactory(fixture.ConnectionString, QuoteApiFactory.Customer(owner));
+        using var client = factory.CreateClient();
+        var input = Input(pickup.Id, delivery.Id);
+        input["packageDetails"]!["size"] = size.ToString();
+
+        using var response = await PostAsync(client, input);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var quoteId = result.RootElement.GetProperty("quoteId").GetGuid();
+        Assert.Equal((decimal)expectedTotal, result.RootElement.GetProperty("total").GetDecimal());
+        Assert.Equal(expectedTier.PricingVersion, result.RootElement.GetProperty("pricingVersion").GetString());
+        var fingerprint = result.RootElement.GetProperty("fingerprint").GetString();
+        Assert.Matches("^[a-f0-9]{64}$", fingerprint);
+
+        await using var verification = Context();
+        var quote = await verification.Quotes.SingleAsync(item => item.Id == quoteId);
+        Assert.Equal(owner, quote.OwnerId);
+        Assert.Equal(expectedTier.Id, quote.PricingTierId);
+        Assert.Equal(expectedTier.PricingVersion, quote.PricingVersion);
+        Assert.Equal((decimal)expectedTotal, quote.Total);
+        Assert.Equal(fingerprint, quote.RequestFingerprint);
+        Assert.Null(quote.ConsumedByParcelId);
+        using var retained = JsonDocument.Parse(quote.DeliveryInput);
+        Assert.Equal(size.ToString(), retained.RootElement.GetProperty("packageDetails").GetProperty("size").GetString());
+        Assert.Equal(pickup.Id, retained.RootElement.GetProperty("pickupAddress").GetProperty("zoneId").GetGuid());
+        Assert.Equal(delivery.Id, retained.RootElement.GetProperty("deliveryAddress").GetProperty("zoneId").GetGuid());
+        Assert.Equal(before with { Quotes = before.Quotes + 1 }, await CountsAsync());
+    }
+
+    [Theory]
     [InlineData("0.0001", "450")]
     [InlineData("0.5", "450")]
     [InlineData("1", "450")]
