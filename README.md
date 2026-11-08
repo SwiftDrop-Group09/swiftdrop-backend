@@ -1,13 +1,13 @@
 # SwiftDrop Backend
 
 Foundation for the SwiftDrop university Enterprise Application Development project.
-Targets .NET 10. Process liveness, gateway forwarding and Identity registration
-are implemented. Delivery provides fee estimates, owner-bound quotes and explicit
+Targets .NET 10. Process liveness, gateway forwarding and Identity
+registration/local and Google login, sessions, profile connections and Admin user
+management are implemented. Delivery provides fee estimates, owner-bound quotes and explicit
 Customer booking confirmation with atomic PostgreSQL persistence. Production
-Customer authentication fails closed until verified Identity integration is supplied;
-positive HTTP tests use principals registered only in the test host. JWT
-verification, messaging relay, public tracking, GraphQL, SSE and gRPC handlers
-remain later work. Courier Phase 1 adds operational profiles, zone memberships,
+Delivery Customer authentication fails closed until its verified Identity adapter is supplied;
+positive HTTP tests use principals registered only in the test host. Delivery/Merchant JWT integration, messaging relay, public tracking, GraphQL, SSE
+and gRPC handlers remain later work. Courier Phase 1 adds operational profiles, zone memberships,
 retained assignments with one active owner per parcel, private proof metadata
 and append-only status-history persistence. The user confirmed at least one photo
 or signature for final proof; Phase 4 below enforces that completion policy.
@@ -129,8 +129,8 @@ absent later-phase endpoints, and the real YARP routing
 pipeline using a test-only transport. The route fixture is copied from baseline
 233f707; update it deliberately when the canonical route inventory changes.
 
-Delivery's `ICurrentCustomer` keeps handlers independent of Identity's unfinished
-token system. The claims adapter requires one authenticated identity and one
+Delivery's `ICurrentCustomer` keeps handlers independent of the separate
+Identity token implementation. The claims adapter requires one authenticated identity and one
 nonempty UUID `sub`, and reads Customer roles only from that identity. The shared
 `DeliveryTestAuthentication` fixture provides deterministic fictional users and
 roles only in the test assembly; `QuoteApiFactory` registers it explicitly.
@@ -141,8 +141,9 @@ for persistence isolation. The Identity handoff records issuer/audience/role
 details that need confirmation before actual JWT verification is implemented.
 
 GitHub Actions runs restore, Release build, tests and process smoke checks on
-pull requests, main/chore branch pushes, and manual dispatch. A hosted workflow
-run is still required to establish CI execution evidence.
+pull requests, configured integration branch pushes, and manual dispatch. The
+default integration branch is `dev`. Hosted CI passed the reviewed courier and
+Merchant integration heads; see [PR review](docs/pr-integration-review.md).
 
 ## Run in the shared development environment
 
@@ -216,7 +217,8 @@ For the shared containerized development environment, follow the
 [infrastructure repository setup guide](../swiftdrop-infra/README.md).
 Delivery consumes its database setting when persistence is requested or the
 explicit `--migrate` task runs. Normal startup applies no migrations and health
-remains process liveness only. Broker/object-store adapters remain later work.
+remains process liveness only. Broker integration remains later work; the
+private proof object-store adapter requires explicit Delivery-only configuration.
 
 The infra development Compose file sets explicit container Kestrel endpoints
 and Production configuration so YARP uses private service DNS. API/Worker HTTP
@@ -240,11 +242,15 @@ query. Use the actual provisioned Neon endpoints/roles and TLS settings; do not
 start a second shared PostgreSQL stack. Disposable PostgreSQL remains test-only.
 Delivery uses EF Core/Npgsql with the initial Booking migration, additive Courier
 profile/proof/assignment migrations and the status replay-constraint migration;
-Identity retains
-its independent SQL migration. RabbitMQ/MassTransit, GraphQL, gRPC and SSE
+Identity retains its independent SQL migrations. Merchant has its separate
+EF Core persistence/migration slice; see [Merchant alignment](docs/merchant-dev-alignment.md). RabbitMQ/MassTransit, GraphQL, gRPC and SSE
 adapters, generated clients, publishers and consumers remain future work.
 Docker packaging exists for the development containers. Delivery's quote and
 booking handlers are implemented; dependency-aware readiness remains later work.
 
 Do not add Redis, SignalR, a separate realtime process or extra capability services.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for review and contribution conventions.
+
+Review validation and external acceptance limits are recorded in the
+[PR integration review](docs/pr-integration-review.md). This distinguishes tested
+handlers and fixtures from full live IAM, bucket and broker integration.
