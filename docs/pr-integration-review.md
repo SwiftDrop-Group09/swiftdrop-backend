@@ -1,4 +1,4 @@
-# PR integration review ? 9 November 2026
+# PR integration review - 9 November 2026
 
 Courier PR #12 was reviewed against current SRS, authorization, state-machine and
 API contracts, with current dev and the existing Merchant milestone integrated.
