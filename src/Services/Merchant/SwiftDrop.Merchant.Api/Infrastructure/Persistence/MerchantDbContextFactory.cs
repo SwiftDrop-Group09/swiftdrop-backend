@@ -29,4 +29,3 @@ public sealed class MerchantDbContextFactory : IDesignTimeDbContextFactory<Merch
         return new MerchantDbContext(options.Options);
     }
 }
-

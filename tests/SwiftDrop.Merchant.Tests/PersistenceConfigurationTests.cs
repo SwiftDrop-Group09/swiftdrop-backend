@@ -122,4 +122,3 @@ public sealed class PersistenceConfigurationTests
         Assert.Equal(DeleteBehavior.Cascade, foreignKey.DeleteBehavior);
     }
 }
-

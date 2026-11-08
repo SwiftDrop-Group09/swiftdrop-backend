@@ -22,4 +22,3 @@ public sealed class UnconfiguredIdentityHandler(
         return base.HandleChallengeAsync(properties);
     }
 }
-

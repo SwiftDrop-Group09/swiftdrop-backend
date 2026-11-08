@@ -96,4 +96,3 @@ public sealed class ApiKeyTests
         Assert.False(apiKey.Verify(plaintextKey));
     }
 }
-

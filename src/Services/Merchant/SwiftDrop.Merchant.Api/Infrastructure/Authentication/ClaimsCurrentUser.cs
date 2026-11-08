@@ -22,4 +22,3 @@ public sealed class ClaimsCurrentUser(IHttpContextAccessor contextAccessor) : IC
     public Guid? UserId => Identity?.FindAll("sub").Take(2).ToArray() is [var subject]
         && Guid.TryParse(subject.Value, out var id) && id != Guid.Empty ? id : null;
 }
-

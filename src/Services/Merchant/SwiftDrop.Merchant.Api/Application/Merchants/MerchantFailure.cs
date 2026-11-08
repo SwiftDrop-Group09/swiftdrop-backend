@@ -13,4 +13,3 @@ public enum MerchantFailure
     DuplicateBusiness,
     Unexpected
 }
-

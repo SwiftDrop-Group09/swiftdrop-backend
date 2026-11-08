@@ -334,4 +334,3 @@ public sealed class MerchantHandler(
         return errors.Count > 0 ? errors : null;
     }
 }
-

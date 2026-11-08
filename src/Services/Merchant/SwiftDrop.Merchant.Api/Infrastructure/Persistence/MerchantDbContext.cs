@@ -11,4 +11,3 @@ public sealed class MerchantDbContext(DbContextOptions<MerchantDbContext> option
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         MerchantEntityConfigurations.Configure(modelBuilder);
 }
-

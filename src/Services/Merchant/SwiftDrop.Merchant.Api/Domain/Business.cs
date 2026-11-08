@@ -98,4 +98,3 @@ public sealed class Business
     public DateTimeOffset? ApprovedAt { get; private set; }
     public Guid? ApprovedBy { get; private set; }
 }
-

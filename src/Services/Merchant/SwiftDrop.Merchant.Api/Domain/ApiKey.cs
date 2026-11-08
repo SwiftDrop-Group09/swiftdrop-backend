@@ -113,4 +113,3 @@ public sealed class ApiKey
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? RevokedAt { get; private set; }
 }
-

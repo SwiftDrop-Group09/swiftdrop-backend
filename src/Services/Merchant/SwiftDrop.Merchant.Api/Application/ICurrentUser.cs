@@ -8,4 +8,3 @@ public interface ICurrentUser
     bool IsMerchant { get; }
     Guid? UserId { get; }
 }
-
