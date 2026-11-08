@@ -356,6 +356,57 @@ public sealed class PostgresIdentityAuthenticationStore(NpgsqlDataSource dataSou
         }
     }
 
+    public async Task<SignInMethods?> GetSignInMethodsAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT password_hash IS NOT NULL,
+                EXISTS(SELECT 1 FROM public.external_identities e WHERE e.user_id=u.id AND e.provider='google')
+            FROM public.users u WHERE u.id=@id AND u.is_active
+            """, connection);
+        command.Parameters.AddWithValue("id", userId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? new(reader.GetBoolean(0), reader.GetBoolean(1)) : null;
+    }
+
+    public async Task<IdentityStoreResult> AddPasswordAsync(Guid userId, VerifiedGoogleIdentity identity,
+        string passwordHash, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await LockGoogleSubjectAsync(connection, transaction, identity.Subject, cancellationToken);
+        var account = await ReadAccountAsync(connection, transaction, userId, true, cancellationToken);
+        if (account is not { Profile.IsActive: true } || account.LockedUntil > now)
+        {
+            return Invalid();
+        }
+
+        if (account.PasswordHash is not null)
+        {
+            return new(null, IdentityFailure.PasswordAlreadySet);
+        }
+
+        // Match the stable verified subject, never an email supplied by a caller.
+        if (await FindGoogleUserAsync(connection, transaction, identity.Subject, cancellationToken) != userId)
+        {
+            return Invalid();
+        }
+
+        await using (var command = new NpgsqlCommand(
+            "UPDATE public.users SET password_hash=@hash, updated_at=@now WHERE id=@id", connection, transaction))
+        {
+            command.Parameters.AddWithValue("id", userId);
+            command.Parameters.AddWithValue("hash", passwordHash);
+            command.Parameters.AddWithValue("now", now);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await InsertAuditAsync(connection, transaction, userId, "PasswordAdded", now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new(account with { PasswordHash = passwordHash });
+    }
+
     private static async Task<IdentityAccount?> ReadAccountAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,

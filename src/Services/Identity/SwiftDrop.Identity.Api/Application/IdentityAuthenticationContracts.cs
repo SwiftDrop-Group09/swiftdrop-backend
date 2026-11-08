@@ -6,12 +6,15 @@ public sealed record RefreshSessionWrite(Guid Id, string TokenHash, DateTimeOffs
 
 public sealed record VerifiedGoogleIdentity(string Subject, string Email, string FullName, string? Nonce);
 
+public sealed record SignInMethods(bool HasPassword, bool GoogleLinked);
+
 public enum IdentityFailure
 {
     InvalidCredentials,
     AccountLinkRequired,
     SubjectConflict,
-    EmailMismatch
+    EmailMismatch,
+    PasswordAlreadySet
 }
 
 public sealed record IdentityStoreResult(IdentityAccount? Account, IdentityFailure? Failure = null,
@@ -31,11 +34,19 @@ public interface IIdentityAuthenticationStore
         RefreshSessionWrite session, CancellationToken cancellationToken);
     Task<IdentityStoreResult> LinkGoogleAsync(Guid userId, string expectedPasswordHash,
         VerifiedGoogleIdentity identity, DateTimeOffset now, CancellationToken cancellationToken);
+    Task<SignInMethods?> GetSignInMethodsAsync(Guid userId, CancellationToken cancellationToken);
+    Task<IdentityStoreResult> AddPasswordAsync(Guid userId, VerifiedGoogleIdentity identity,
+        string passwordHash, DateTimeOffset now, CancellationToken cancellationToken);
 }
 
 public interface IIdentityPasswordVerifier
 {
     Task<bool> VerifyAsync(string password, string? encodedHash, CancellationToken cancellationToken);
+}
+
+public interface IIdentityPasswordHasher
+{
+    Task<string> HashAsync(string password, CancellationToken cancellationToken);
 }
 
 public interface IIdentityAccessTokens
