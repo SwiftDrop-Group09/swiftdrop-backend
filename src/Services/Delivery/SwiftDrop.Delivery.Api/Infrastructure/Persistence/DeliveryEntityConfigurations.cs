@@ -135,6 +135,12 @@ internal static partial class DeliveryEntityConfigurations
 
         CourierEntityConfigurations.Configure(model);
 
+        var audits = model.Entity<DeliveryConfigAudit>();
+        audits.ToTable("delivery_config_audits");
+        audits.HasKey(x => x.Id);
+        audits.HasIndex(x => new { x.ResourceType, x.ResourceId });
+        audits.HasIndex(x => x.Timestamp);
+
         // One convention, no extra naming package. Explicit ER aliases follow it.
         foreach (var entity in model.Model.GetEntityTypes())
         {

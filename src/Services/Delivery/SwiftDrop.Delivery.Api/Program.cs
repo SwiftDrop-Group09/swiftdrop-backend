@@ -1,11 +1,15 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application;
+using SwiftDrop.Delivery.Api.Application.Admin.Pricing;
+using SwiftDrop.Delivery.Api.Application.Admin.Reports;
+using SwiftDrop.Delivery.Api.Application.Admin.Zones;
 using SwiftDrop.Delivery.Api.Application.Bookings;
 using SwiftDrop.Delivery.Api.Application.CourierStatus;
 using SwiftDrop.Delivery.Api.Application.CourierProof;
 using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 using SwiftDrop.Delivery.Api.Application.Quotes;
+using SwiftDrop.Delivery.Api.Infrastructure.Admin;
 using SwiftDrop.Delivery.Api.Infrastructure.Authentication;
 using SwiftDrop.Delivery.Api.Infrastructure.Bookings;
 using SwiftDrop.Delivery.Api.Infrastructure.CourierStatus;
@@ -58,6 +62,15 @@ public partial class Program
             new PostgresBookingZoneCatalog(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IBookingStore>(services =>
             new PostgresBookingStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<IZoneAdministrationStore>(services =>
+            new PostgresZoneAdministrationStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<ZoneAdministrationHandler>();
+        builder.Services.AddScoped<IPricingAdministrationStore>(services =>
+            new PostgresPricingAdministrationStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<PricingAdministrationHandler>();
+        builder.Services.AddScoped<IDeliveryReportStore>(services =>
+            new PostgresDeliveryReportStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<DeliveryReportHandler>();
         builder.Services.AddAuthentication(UnconfiguredIdentityHandler.SchemeName)
             .AddScheme<AuthenticationSchemeOptions, UnconfiguredIdentityHandler>(
                 UnconfiguredIdentityHandler.SchemeName, _ => { });
@@ -90,7 +103,10 @@ public partial class Program
         {
             if (context.GetEndpoint()?.Metadata.GetMetadata<DeliveryReadEndpointMetadata>() is not null
                 || context.GetEndpoint()?.Metadata.GetMetadata<CourierStatusEndpointMetadata>() is not null
-                || context.GetEndpoint()?.Metadata.GetMetadata<CourierProofEndpointMetadata>() is not null)
+                || context.GetEndpoint()?.Metadata.GetMetadata<CourierProofEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<AdminZoneEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<AdminPricingEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<AdminReportEndpointMetadata>() is not null)
                 context.Response.Headers.CacheControl = "private, no-store";
             await next(context);
         });
@@ -126,6 +142,9 @@ public partial class Program
         app.MapDeliveryReads();
         app.MapCourierStatus();
         app.MapCourierProof();
+        app.MapAdminZones();
+        app.MapAdminPricing();
+        app.MapAdminReports();
 
         app.Run();
     }

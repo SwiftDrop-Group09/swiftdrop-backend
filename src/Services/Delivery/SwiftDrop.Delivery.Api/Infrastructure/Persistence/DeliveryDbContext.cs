@@ -17,6 +17,7 @@ public sealed class DeliveryDbContext(DbContextOptions<DeliveryDbContext> option
     public DbSet<CourierZone> CourierZones => Set<CourierZone>();
     public DbSet<CourierAssignment> Assignments => Set<CourierAssignment>();
     public DbSet<ProofMetadata> ProofMetadata => Set<ProofMetadata>();
+    public DbSet<DeliveryConfigAudit> ConfigAuditLogs => Set<DeliveryConfigAudit>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         DeliveryEntityConfigurations.Configure(modelBuilder);

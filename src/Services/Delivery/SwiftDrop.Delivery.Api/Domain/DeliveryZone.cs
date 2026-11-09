@@ -18,4 +18,14 @@ public sealed class DeliveryZone
     public string? Description { get; private set; }
     public string? Boundaries { get; private set; }
     public bool IsActive { get; private set; }
+
+    public void Update(string name, string? description, string? boundaries, bool isActive)
+    {
+        Name = DomainGuard.Text(name, nameof(name));
+        Description = description;
+        Boundaries = boundaries is null ? null : DomainGuard.JsonObject(boundaries, nameof(boundaries));
+        IsActive = isActive;
+    }
+
+    public void SetActive(bool isActive) => IsActive = isActive;
 }
