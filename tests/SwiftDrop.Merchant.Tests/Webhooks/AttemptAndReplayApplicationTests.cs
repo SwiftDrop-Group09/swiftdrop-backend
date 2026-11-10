@@ -308,4 +308,57 @@ public sealed class AttemptAndReplayApplicationTests
             }
         }
     }
+
+    [Fact]
+    public async Task TriggerTestWebhook_WhenApprovedMerchant_EnqueuesAutomaticTestJob()
+    {
+        var businessId = _merchantContext.BusinessId!.Value;
+        var subscription = WebhookSubscription.Create(
+            businessId,
+            "https://merchant.example.com/webhooks",
+            [WebhookEvents.DeliveryDelivered],
+            [1, 2, 3],
+            new byte[12],
+            new byte[16],
+            1,
+            _clock.UtcNow);
+        await _subscriptionStore.AddAsync(subscription, CancellationToken.None);
+
+        var handler = new TriggerTestWebhookHandler(_merchantContext, _subscriptionStore, _dispatchStore, _clock);
+        var (response, failure) = await handler.HandleAsync(subscription.Id, CancellationToken.None);
+
+        Assert.Null(failure);
+        Assert.NotNull(response);
+        Assert.Equal(subscription.Id, response.SubscriptionId);
+        Assert.Equal("Pending", response.Status);
+        Assert.Equal(0, response.AttemptCount);
+
+        var queuedJob = await _dispatchStore.GetJobByIdAsync(response.Id, CancellationToken.None);
+        Assert.NotNull(queuedJob);
+        Assert.Equal(subscription.Id, queuedJob.SubscriptionId);
+        Assert.Equal(WebhookStatus.Pending, queuedJob.Status);
+    }
+
+    [Fact]
+    public async Task TriggerTestWebhook_WhenForeignSubscription_ReturnsNotFound()
+    {
+        var foreignBusinessId = Guid.NewGuid();
+        var subscription = WebhookSubscription.Create(
+            foreignBusinessId,
+            "https://other.example.com/webhooks",
+            [WebhookEvents.DeliveryDelivered],
+            [1, 2, 3],
+            new byte[12],
+            new byte[16],
+            1,
+            _clock.UtcNow);
+        await _subscriptionStore.AddAsync(subscription, CancellationToken.None);
+
+        var handler = new TriggerTestWebhookHandler(_merchantContext, _subscriptionStore, _dispatchStore, _clock);
+        var (response, failure) = await handler.HandleAsync(subscription.Id, CancellationToken.None);
+
+        Assert.NotNull(failure);
+        Assert.Equal("not_found", failure.Code);
+        Assert.Null(response);
+    }
 }

@@ -155,7 +155,25 @@ public static class WebhookEndpoints
           .Produces<WebhookJobResponse>(202)
           .ProducesProblem(400).ProducesProblem(401).ProducesProblem(403).ProducesProblem(404).ProducesProblem(409);
 
-        // 6. POST /internal/v1/webhook-dispatches — Service JWT (aud=merchant-internal, scope=webhooks:dispatch)
+        // 6. POST /api/v1/merchant/webhooks/{id:guid}/test — Approved Merchant owner
+        app.MapPost("/api/v1/merchant/webhooks/{id:guid}/test", async (
+            Guid id,
+            HttpContext context,
+            TriggerTestWebhookHandler handler,
+            CancellationToken ct) =>
+        {
+            var (response, failure) = await handler.HandleAsync(id, ct);
+            if (response is not null)
+            {
+                return Results.Accepted($"/api/v1/merchant/webhooks/{id}", response);
+            }
+
+            return WebhookProblems.Failure(context, failure!);
+        }).RequireAuthorization().WithName("TriggerTestWebhook")
+          .Produces<WebhookJobResponse>(202)
+          .ProducesProblem(401).ProducesProblem(403).ProducesProblem(404).ProducesProblem(409);
+
+        // 7. POST /internal/v1/webhook-dispatches — Service JWT (aud=merchant-internal, scope=webhooks:dispatch)
         app.MapPost("/internal/v1/webhook-dispatches", async (
             HttpContext context,
             AcceptStatusChangedDispatchHandler handler,

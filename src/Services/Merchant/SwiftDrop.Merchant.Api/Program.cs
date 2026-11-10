@@ -40,6 +40,7 @@ public partial class Program
         builder.Services.AddScoped<DeleteWebhookSubscriptionHandler>();
         builder.Services.AddScoped<ListWebhookAttemptsHandler>();
         builder.Services.AddScoped<ReplayWebhookJobHandler>();
+        builder.Services.AddScoped<TriggerTestWebhookHandler>();
         builder.Services.AddScoped<AcceptStatusChangedDispatchHandler>();
         builder.Services.AddScoped<ProcessDueWebhookJobsHandler>();
 
