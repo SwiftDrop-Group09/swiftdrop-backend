@@ -57,6 +57,9 @@ internal static partial class MerchantEntityConfigurations
             .HasForeignKey(x => x.BusinessId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // Webhook entities configuration
+        Webhooks.Persistence.WebhookEntityConfigurations.Configure(model);
+
         // Standard snake_case column mapping across all entities
         foreach (var entity in model.Model.GetEntityTypes())
         {

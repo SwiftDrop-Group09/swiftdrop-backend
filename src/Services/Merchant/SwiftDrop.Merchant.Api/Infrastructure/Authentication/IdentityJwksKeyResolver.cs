@@ -18,9 +18,9 @@ public sealed class IdentityJwksKeyResolver(IConfiguration configuration)
     public TokenValidationParameters CreateValidationParameters() => new()
     {
         ValidateIssuer = true,
-        ValidIssuer = configuration["Identity:Tokens:Issuer"],
+        ValidIssuer = configuration["Identity:Tokens:Issuer"] ?? "https://identity.swiftdrop.invalid",
         ValidateAudience = true,
-        ValidAudience = configuration["Identity:Tokens:Audience"],
+        ValidAudience = configuration["Identity:Tokens:Audience"] ?? "swiftdrop-api-local",
         ValidateIssuerSigningKey = true,
         RequireSignedTokens = true,
         ValidateLifetime = true,
@@ -40,7 +40,7 @@ public sealed class IdentityJwksKeyResolver(IConfiguration configuration)
             if (DateTimeOffset.UtcNow >= expiresAt ||
                 (keyId is not null && keys.All(key => key.KeyId != keyId)))
             {
-                var url = configuration["Identity:Tokens:JwksUrl"];
+                var url = configuration["Identity:Tokens:JwksUrl"] ?? "http://127.0.0.2:8080/.well-known/jwks.json";
                 if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var jwksUri))
                     throw new InvalidOperationException("Identity JWKS configuration is unavailable.");
 
