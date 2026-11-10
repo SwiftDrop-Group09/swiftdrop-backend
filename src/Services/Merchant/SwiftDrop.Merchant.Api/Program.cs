@@ -1,5 +1,6 @@
-using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using SwiftDrop.Merchant.Api.Application;
 using SwiftDrop.Merchant.Api.Application.Merchants;
 using SwiftDrop.Merchant.Api.Infrastructure.Authentication;
@@ -19,9 +20,15 @@ public partial class Program
         builder.Services.AddScoped<ICurrentUser, ClaimsCurrentUser>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<MerchantHandler>();
-        builder.Services.AddAuthentication(UnconfiguredIdentityHandler.SchemeName)
-            .AddScheme<AuthenticationSchemeOptions, UnconfiguredIdentityHandler>(
-                UnconfiguredIdentityHandler.SchemeName, _ => { });
+        var identityJwks = new IdentityJwksKeyResolver(builder.Configuration);
+        builder.Services.AddSingleton(identityJwks);
+        builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.MapInboundClaims = false;
+                options.IncludeErrorDetails = false;
+                options.TokenValidationParameters = identityJwks.CreateValidationParameters();
+            });
         builder.Services.AddAuthorization();
 
         // Explicit single-run migration task; normal host startup never applies DDL.
