@@ -21,6 +21,9 @@ public static class MerchantPersistence
             options.UseNpgsql(RequireMerchantDatabase(connectionString));
         });
 
+        services.AddScoped<Application.Webhooks.Ports.IWebhookSubscriptionStore, Webhooks.Persistence.PostgresWebhookSubscriptionStore>();
+        services.AddScoped<Application.Webhooks.Ports.IWebhookDispatchStore, Webhooks.Persistence.PostgresWebhookDispatchStore>();
+
         return services;
     }
 
