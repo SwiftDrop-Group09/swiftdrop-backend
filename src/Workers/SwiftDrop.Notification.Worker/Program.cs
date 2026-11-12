@@ -16,7 +16,13 @@ public partial class Program
         builder.Services.AddSingleton(TimeProvider.System);
 
         var database = builder.Configuration.GetConnectionString("Database");
+        var migrationMode = args.Contains("--migrate", StringComparer.Ordinal);
         var broker = builder.Configuration.GetSection("Notification:Broker");
+        if (!broker.Exists())
+        {
+            // The Kubernetes baseline uses the shorter service-local "Broker" section.
+            broker = builder.Configuration.GetSection("Broker");
+        }
         var brokerHost = broker["Host"];
         var brokerUser = broker["Username"];
         var brokerPassword = broker["Password"];
@@ -26,9 +32,13 @@ public partial class Program
             !string.IsNullOrWhiteSpace(brokerUser) &&
             !string.IsNullOrWhiteSpace(brokerPassword);
 
-        if (messagingEnabled)
+        if (!string.IsNullOrWhiteSpace(database))
         {
             builder.Services.AddDbContext<NotificationDbContext>(options => options.UseNpgsql(database));
+        }
+
+        if (messagingEnabled)
+        {
             builder.Services.AddMassTransit(registration =>
             {
                 registration.AddConsumer<StatusNotificationConsumer>();
@@ -57,14 +67,26 @@ public partial class Program
 
         var app = builder.Build();
 
+        if (migrationMode)
+        {
+            if (string.IsNullOrWhiteSpace(database))
+            {
+                throw new InvalidOperationException(
+                    "ConnectionStrings:Database must be configured to apply Notification Worker migrations.");
+            }
+
+            await using var migrationScope = app.Services.CreateAsyncScope();
+            var migrationDb = migrationScope.ServiceProvider.GetRequiredService<NotificationDbContext>();
+            await migrationDb.Database.MigrateAsync();
+            return;
+        }
+
         // Process liveness only; dependency readiness is a later milestone.
         app.MapHealthChecks("/health");
 
         if (messagingEnabled)
         {
-            await using var scope = app.Services.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
-            await db.Database.MigrateAsync();
+            app.Logger.LogInformation("StatusChanged consumer is configured on queue notification-status.");
         }
         else
         {
