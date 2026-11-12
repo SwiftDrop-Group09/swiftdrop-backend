@@ -6,10 +6,11 @@ using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
 using SwiftDrop.Delivery.Api.Application.CourierProof;
+using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 
 namespace SwiftDrop.Delivery.Api.Infrastructure.CourierProof;
 
-public sealed class S3ProofStorage : IPrivateProofStorage, IDisposable
+public sealed class S3ProofStorage : IPrivateProofStorage, IPrivateProofReader, IDisposable
 {
     private readonly Lazy<StorageClient> _storage;
 
@@ -164,6 +165,27 @@ public sealed class S3ProofStorage : IPrivateProofStorage, IDisposable
         catch (Exception exception) when (exception is AmazonServiceException or AmazonClientException or HttpRequestException or IOException or JsonException
             or InvalidOperationException or ArgumentException) { throw new ProofStorageException(exception); }
     }
+
+    public Task<(byte[] Content, string ContentType)?> ReadObjectAsync(string storageRef, CancellationToken cancellationToken) => Protect<(byte[] Content, string ContentType)?>(async token =>
+    {
+        RequireKey(storageRef);
+        await RequirePrivateBucketAsync(token);
+        var state = _storage.Value;
+        try
+        {
+            using var stored = await state.Client.GetObjectAsync(state.Bucket, storageRef, token);
+            using var buffer = new MemoryStream();
+            await stored.ResponseStream.CopyToAsync(buffer, token);
+            var contentType = string.IsNullOrWhiteSpace(stored.Headers.ContentType)
+                ? "application/octet-stream"
+                : stored.Headers.ContentType;
+            return (buffer.ToArray(), contentType);
+        }
+        catch (AmazonS3Exception exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }, cancellationToken);
 
     public void Dispose()
     {
