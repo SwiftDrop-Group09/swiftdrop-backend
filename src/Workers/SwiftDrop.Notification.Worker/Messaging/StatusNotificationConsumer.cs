@@ -49,19 +49,28 @@ public sealed class StatusNotificationConsumer(
             ConsumedAt = now
         });
 
-        db.NotificationWorkItems.Add(new NotificationWorkItem
+        if (message.MerchantId is null)
         {
-            EventId = message.EventId,
-            Kind = message.MerchantId is null ? "customer-resolution" : "merchant-webhook-dispatch",
-            OwnerId = message.MerchantId,
-            ParcelId = message.ParcelId,
-            ParcelVersion = message.ParcelVersion,
-            Status = message.Status,
-            CorrelationId = message.CorrelationId,
-            State = "Pending",
-            CreatedAt = now,
-            UpdatedAt = now
-        });
+            db.NotificationJobs.AddRange(
+                CreateNotificationJob(message, "InApp", now),
+                CreateNotificationJob(message, "MockSms", now));
+        }
+        else
+        {
+            db.WebhookDispatchJobs.Add(new WebhookDispatchJob
+            {
+                EventId = message.EventId,
+                MerchantId = message.MerchantId!,
+                ParcelId = message.ParcelId,
+                ParcelVersion = message.ParcelVersion,
+                Status = message.Status,
+                CorrelationId = message.CorrelationId,
+                OccurredAt = message.OccurredAt,
+                State = "Pending",
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+        }
 
         await db.SaveChangesAsync(context.CancellationToken);
         await transaction.CommitAsync(context.CancellationToken);
@@ -71,4 +80,21 @@ public sealed class StatusNotificationConsumer(
             message.ParcelId,
             message.ParcelVersion);
     }
+
+    private static NotificationJob CreateNotificationJob(
+        StatusChangedV1 message,
+        string channel,
+        DateTimeOffset now) => new()
+    {
+        EventId = message.EventId,
+        Channel = channel,
+        ParcelId = message.ParcelId,
+        ParcelVersion = message.ParcelVersion,
+        Status = message.Status,
+        CorrelationId = message.CorrelationId,
+        OccurredAt = message.OccurredAt,
+        State = "PendingRecipientResolution",
+        CreatedAt = now,
+        UpdatedAt = now
+    };
 }
