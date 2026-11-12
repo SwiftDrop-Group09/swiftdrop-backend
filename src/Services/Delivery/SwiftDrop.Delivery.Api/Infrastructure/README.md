@@ -1,3 +1,8 @@
+> Current authentication (12 November 2026): Program registers the production
+> DeliveryIdentityAuthentication JWT verifier. Historical unconfigured-handler
+> notes below describe earlier phase checkpoints. See the backend
+> docs/delivery-identity-jwt-integration.md for current configuration.
+
 # Delivery Infrastructure
 
 Own database and external-system adapters. Implement Application ports; this service alone may access swiftdrop_delivery.

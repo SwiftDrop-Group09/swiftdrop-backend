@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -6,7 +5,6 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
 
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -16,7 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 
-using JsonWebToken = Microsoft.IdentityModel.JsonWebTokens.JsonWebToken;
 
 using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Quotes;
@@ -27,15 +24,15 @@ using SwiftDrop.Identity.Tests.Persistence;
 
 namespace SwiftDrop.Identity.Tests;
 
-// The downstream verifier exists only in this contract harness. Normal Delivery
-// hosts keep their fail-closed handler pending integration by the Delivery owner.
+// Exercise the production Delivery verifier with real Identity login/JWKS output.
+// Only the metadata HTTP transport and owned quote persistence are test fixtures.
 [Collection(IdentityPostgresCollection.Name)]
 public sealed class CrossServiceTokenTests(IdentityPostgresFixture database)
 {
     private const string Password = "Contract Test Password 7!";
 
     [Fact]
-    public async Task RealLoginAndHttpJwksAuthorizeTheSameCustomerInUnchangedDeliveryEntry()
+    public async Task RealLoginAndHttpJwksAuthorizeTheSameCustomerThroughProductionDeliveryAuthentication()
     {
         using var identity = new IdentityApiFactory(database);
         var login = await RegisterAndLoginAsync(identity);
@@ -308,7 +305,6 @@ public sealed class CrossServiceTokenTests(IdentityPostgresFixture database)
 
     private sealed class DeliveryContractFactory(string publicJwks) : WebApplicationFactory<SwiftDrop.Delivery.Api.Program>
     {
-        private const string Scheme = "IdentityContractJwt";
         public RecordingQuoteStore Store { get; } = new();
         public ObservedIdentity? Observed { get; private set; }
 
@@ -327,7 +323,10 @@ public sealed class CrossServiceTokenTests(IdentityPostgresFixture database)
             {
                 ["ConnectionStrings:Database"] = "",
                 ["DELIVERY_DATABASE_CONNECTION_STRING"] = "",
-                ["Logging:EventLog:LogLevel:Default"] = "None"
+                ["Logging:EventLog:LogLevel:Default"] = "None",
+                ["Identity:Tokens:Issuer"] = IdentityApiFactory.Origin,
+                ["Identity:Tokens:Audience"] = "swiftdrop-api",
+                ["Identity:Tokens:JwksUrl"] = IdentityApiFactory.Origin + "/.well-known/jwks.json"
             }));
             builder.ConfigureTestServices(services =>
             {
@@ -336,79 +335,18 @@ public sealed class CrossServiceTokenTests(IdentityPostgresFixture database)
                 services.RemoveAll<ICurrentCustomer>();
                 services.AddScoped<ICurrentCustomer>(provider => new ObservingCustomer(
                     provider.GetRequiredService<IHttpContextAccessor>(), value => Observed = value));
-                services.AddAuthentication(options =>
-                {
-                    options.DefaultAuthenticateScheme = Scheme;
-                    options.DefaultChallengeScheme = Scheme;
-                    options.DefaultForbidScheme = Scheme;
-                }).AddJwtBearer(Scheme, options =>
-                {
-                    options.MapInboundClaims = false;
-                    options.IncludeErrorDetails = false;
-                    options.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        ValidateIssuer = true,
-                        ValidIssuer = IdentityApiFactory.Origin,
-                        ValidateAudience = true,
-                        ValidAudience = "swiftdrop-api",
-                        IgnoreTrailingSlashWhenValidatingAudience = false,
-                        AudienceValidator = (audiences, _, _) => audiences.ToArray() is ["swiftdrop-api"],
-                        ValidateIssuerSigningKey = true,
-                        RequireSignedTokens = true,
-                        IssuerSigningKeys = new JsonWebKeySet(publicJwks).GetSigningKeys(),
-                        TryAllIssuerSigningKeys = false,
-                        IssuerSigningKeyResolver = (_, _, keyId, _) => string.IsNullOrWhiteSpace(keyId) ? [] :
-                            new JsonWebKeySet(publicJwks).GetSigningKeys().Where(key => key.KeyId == keyId),
-                        ValidateLifetime = true,
-                        RequireExpirationTime = true,
-                        RequireAudience = true,
-                        ClockSkew = TimeSpan.FromSeconds(30),
-                        ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
-                        ValidTypes = ["JWT"],
-                        NameClaimType = "sub",
-                        RoleClaimType = "roles"
-                    };
-                    options.Events = new JwtBearerEvents
-                    {
-                        OnTokenValidated = context =>
-                        {
-                            var principal = context.Principal!;
-                            var subject = principal.FindAll("sub").Select(claim => claim.Value).ToArray();
-                            var issuedAt = principal.FindFirst("iat")?.Value;
-                            var validFrom = principal.FindFirst("nbf")?.Value;
-                            var expiry = principal.FindFirst("exp")?.Value;
-                            if (subject is not [var identifier] || !Guid.TryParse(identifier, out var userId) || userId == Guid.Empty ||
-                                string.IsNullOrWhiteSpace(principal.FindFirst("jti")?.Value) || !ValidRoleArray(context.SecurityToken) ||
-                                !long.TryParse(issuedAt, NumberStyles.None, CultureInfo.InvariantCulture, out var issued) ||
-                                !long.TryParse(validFrom, NumberStyles.None, CultureInfo.InvariantCulture, out var starts) ||
-                                !long.TryParse(expiry, NumberStyles.None, CultureInfo.InvariantCulture, out var expires) ||
-                                expires <= issued || expires - issued > 900 || starts != issued ||
-                                issued > DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeSeconds())
-                            {
-                                context.Fail("Invalid human access token.");
-                            }
-
-                            return Task.CompletedTask;
-                        }
-                    };
-                });
+                services.AddHttpClient(DeliveryIdentityAuthentication.JwksClientName)
+                    .ConfigurePrimaryHttpMessageHandler(() => new PublicKeysTransport(publicJwks));
             });
         }
 
-        private static bool ValidRoleArray(SecurityToken token)
+        private sealed class PublicKeysTransport(string jwks) : HttpMessageHandler
         {
-            var encoded = token switch
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
-                JsonWebToken jwt => jwt.EncodedPayload,
-                JwtSecurityToken jwt => jwt.RawPayload,
-                _ => null
-            };
-            if (encoded is null) return false;
-            using var payload = JsonDocument.Parse(Base64UrlEncoder.Decode(encoded));
-            return payload.RootElement.TryGetProperty("roles", out var roles)
-                && roles.ValueKind == JsonValueKind.Array
-                && roles.EnumerateArray().All(role => role.ValueKind == JsonValueKind.String
-                    && role.GetString() is "Customer" or "Courier" or "Merchant" or "Dispatcher" or "Admin");
+                Assert.Equal(IdentityApiFactory.Origin + "/.well-known/jwks.json", request.RequestUri!.AbsoluteUri);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(jwks) });
+            }
         }
 
         public HttpRequestMessage QuoteRequest(string? token)

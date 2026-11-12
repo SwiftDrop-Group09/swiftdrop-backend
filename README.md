@@ -4,17 +4,20 @@ Foundation for the SwiftDrop university Enterprise Application Development proje
 Targets .NET 10. Process liveness, gateway forwarding and Identity
 registration/local and Google login, sessions, profile connections and Admin user
 management are implemented. Delivery provides fee estimates, owner-bound quotes and explicit
-Customer booking confirmation with atomic PostgreSQL persistence. Production
-Delivery Customer authentication fails closed until its verified Identity adapter is supplied;
-positive HTTP tests use principals registered only in the test host. Delivery/Merchant JWT integration, messaging relay, public tracking, GraphQL, SSE
-and gRPC handlers remain later work. Courier Phase 1 adds operational profiles, zone memberships,
+Customer booking confirmation with atomic PostgreSQL persistence. Delivery now
+verifies Identity access tokens through its public JWKS endpoint; missing or
+unsafe verifier configuration fails closed. Cross-service tests exercise real
+Identity login/JWKS output through that verifier. Messaging relay and remaining
+domain integrations are separate work. See the
+[Delivery login-loop fix](docs/delivery-identity-jwt-integration.md) for the current
+JWT configuration, validation and service boundaries. Courier Phase 1 adds operational profiles, zone memberships,
 retained assignments with one active owner per parcel, private proof metadata
 and append-only status-history persistence. The user confirmed at least one photo
 or signature for final proof; Phase 4 below enforces that completion policy.
 Courier Phase 2 adds the self-scoped service-day manifest and private parcel
 details using current assignments and documented owner/operations access. These
-reads fail closed until Identity authentication is integrated; positive tests
-use isolated principals. Courier Phase 3 adds the versioned, idempotent
+reads require verified Identity tokens and resource authorization. Focused tests
+also use isolated principals. Courier Phase 3 adds the versioned, idempotent
 `PUT /api/v1/deliveries/{id}/status` with current-assignment checks and atomic
 status/history/outbox/replay persistence. It guards the documented pickup/transit/
 out-for-delivery and reason-required Failed transitions; direct Delivered writes
@@ -22,7 +25,7 @@ are rejected. Courier Phase 4 adds the documented multipart
 `POST /api/v1/deliveries/{id}/pod`: photo or signature (both accepted), decoded
 JPEG/PNG validation, encrypted private S3/MinIO staging and guarded atomic Delivered
 completion. Reference-aware daily cleanup removes old orphan uploads. Production
-writes fail closed pending Identity integration; proof storage also requires
+writes require verified Identity tokens; proof storage also requires
 explicit private configuration. Phase 5 verifies failed-delivery acceptance through
 the existing status operation: a required reason, optional private notes, atomic
 terminal assignment/history/outbox/replay and no automatic reassignment. Phase 6
@@ -134,11 +137,13 @@ Identity token implementation. The claims adapter requires one authenticated ide
 nonempty UUID `sub`, and reads Customer roles only from that identity. The shared
 `DeliveryTestAuthentication` fixture provides deterministic fictional users and
 roles only in the test assembly; `QuoteApiFactory` registers it explicitly.
-Normal Development and Production hosts use the closed authentication scheme.
+Normal Development and Production hosts use the configured public-JWKS verifier;
+missing or unsafe settings decline authentication.
 Caller identity headers, unsigned tokens and ad hoc development settings cannot
 enable booking. Database scenarios may still supply separate fictional UUIDs
 for persistence isolation. The Identity handoff records issuer/audience/role
-details that need confirmation before actual JWT verification is implemented.
+details and historical checkpoints; the current JWT integration guide supersedes
+its earlier unconfigured-handler status.
 
 GitHub Actions runs restore, Release build, tests and process smoke checks on
 pull requests, configured integration branch pushes, and manual dispatch. The
@@ -254,3 +259,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for review and contribution conventions.
 Review validation and external acceptance limits are recorded in the
 [PR integration review](docs/pr-integration-review.md). This distinguishes tested
 handlers and fixtures from full live IAM, bucket and broker integration.
+
+Delivery's former unconfigured authentication scheme is no longer registered.
+See [Delivery Identity JWT integration](docs/delivery-identity-jwt-integration.md)
+for current host/Docker configuration and login-loop regression evidence. Older
+phase checkpoints describe their historical baselines.
