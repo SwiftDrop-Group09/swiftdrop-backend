@@ -13,6 +13,7 @@ public static class DeliveryReadProblems
             DeliveryReadFailure.Forbidden => (403, "forbidden", "This role cannot use this delivery read operation."),
             DeliveryReadFailure.InvalidInput => (400, "validation", "The delivery query is invalid."),
             DeliveryReadFailure.NotFound => (404, "not_found", "The parcel was not found."),
+            DeliveryReadFailure.Conflict => (409, "receipt_unavailable", "The requested resource is only available for delivered parcels."),
             _ => (503, "delivery_unavailable", "Delivery information is unavailable.")
         };
         var extensions = new Dictionary<string, object?>

@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Bookings;
@@ -29,6 +28,8 @@ public partial class Program
         builder.Services.AddScoped<ICurrentDeliveryUser, ClaimsCurrentDeliveryUser>();
         builder.Services.AddScoped<OperationsClock>();
         builder.Services.AddScoped<DeliveryReadHandler>();
+        builder.Services.AddScoped<CustomerTrackingHandler>();
+        builder.Services.AddSingleton<IReceiptPdfRenderer, SkiaReceiptPdfRenderer>();
         builder.Services.AddScoped<CourierHistoryHandler>();
         builder.Services.AddScoped<ICourierHistoryStore>(services =>
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
@@ -47,6 +48,10 @@ public partial class Program
             new PostgresCourierStatusStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IDeliveryReadStore>(services =>
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<ICustomerDeliveryReadStore>(services =>
+            new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddSingleton<IPrivateProofReader>(services =>
+            new S3ProofStorage(services.GetRequiredService<IConfiguration>()));
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<QuoteEstimator>();
         builder.Services.AddScoped<CustomerBookingHandler>();
@@ -59,9 +64,7 @@ public partial class Program
             new PostgresBookingZoneCatalog(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IBookingStore>(services =>
             new PostgresBookingStore(() => services.GetRequiredService<DeliveryDbContext>()));
-        builder.Services.AddAuthentication(UnconfiguredIdentityHandler.SchemeName)
-            .AddScheme<AuthenticationSchemeOptions, UnconfiguredIdentityHandler>(
-                UnconfiguredIdentityHandler.SchemeName, _ => { });
+        builder.Services.AddDeliveryIdentityAuthentication();
         builder.Services.AddAuthorization();
 
         // Explicit single-run migration task; normal host startup never applies DDL.
