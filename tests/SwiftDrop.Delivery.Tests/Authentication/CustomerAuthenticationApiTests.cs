@@ -48,7 +48,7 @@ public sealed class CustomerAuthenticationApiTests(PostgresFixture fixture)
         Assert.Equal("true", configuredFactory.Services.GetRequiredService<IConfiguration>()["Authentication:Development:Enabled"]);
         var schemes = configuredFactory.Services.GetRequiredService<IAuthenticationSchemeProvider>();
         Assert.DoesNotContain(await schemes.GetAllSchemesAsync(), scheme => scheme.Name == DeliveryTestAuthentication.SchemeName);
-        Assert.Equal(UnconfiguredIdentityHandler.SchemeName, (await schemes.GetDefaultAuthenticateSchemeAsync())?.Name);
+        Assert.Equal(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme, (await schemes.GetDefaultAuthenticateSchemeAsync())?.Name);
 
         using var response = await PostRawAsync(client, route, MalformedPrivateInput, NewKey());
 

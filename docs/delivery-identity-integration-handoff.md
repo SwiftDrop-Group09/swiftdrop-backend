@@ -1,5 +1,9 @@
 # Delivery authentication and Identity integration handoff
 
+Historical Phase 5 checkpoint. The 12 November 2026 integration supersedes the
+unconfigured-handler and missing-issuer status below. See
+[the current JWT integration](delivery-identity-jwt-integration.md).
+
 This is the Phase 5 handoff for Customer fee estimation and booking. It records
 the actual backend baseline `8cf0e11` and documentation baseline `d97fff4`,
 reinspected on 24 October 2026, together with the authentication boundary

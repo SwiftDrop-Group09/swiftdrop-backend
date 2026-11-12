@@ -34,6 +34,9 @@ internal sealed class QuoteApiFactory(string? connectionString, ClaimsPrincipal?
             {
                 ["ConnectionStrings:Database"] = "",
                 ["DELIVERY_DATABASE_CONNECTION_STRING"] = "",
+                ["Identity:Tokens:Issuer"] = "",
+                ["Identity:Tokens:Audience"] = "",
+                ["Identity:Tokens:JwksUrl"] = "",
                 ["ProofStorage:Bucket"] = "",
                 ["ProofStorage:Endpoint"] = "",
                 ["Logging:EventLog:LogLevel:Default"] = "None"

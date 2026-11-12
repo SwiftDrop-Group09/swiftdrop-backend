@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Bookings;
@@ -64,9 +63,7 @@ public partial class Program
             new PostgresBookingZoneCatalog(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IBookingStore>(services =>
             new PostgresBookingStore(() => services.GetRequiredService<DeliveryDbContext>()));
-        builder.Services.AddAuthentication(UnconfiguredIdentityHandler.SchemeName)
-            .AddScheme<AuthenticationSchemeOptions, UnconfiguredIdentityHandler>(
-                UnconfiguredIdentityHandler.SchemeName, _ => { });
+        builder.Services.AddDeliveryIdentityAuthentication();
         builder.Services.AddAuthorization();
 
         // Explicit single-run migration task; normal host startup never applies DDL.
