@@ -121,4 +121,50 @@ public sealed class PersistenceConfigurationTests
         Assert.NotNull(foreignKey);
         Assert.Equal(DeleteBehavior.Cascade, foreignKey.DeleteBehavior);
     }
+
+    [Fact]
+    public void WebhookEntityConfigurationsModelEnforcesSchemaAndRelations()
+    {
+        var options = new DbContextOptionsBuilder<MerchantDbContext>()
+            .UseNpgsql("Host=mock.invalid;Database=swiftdrop_merchant")
+            .Options;
+
+        using var context = new MerchantDbContext(options);
+        var model = context.Model;
+
+        // 1. WebhookSubscription
+        var subEntity = model.FindEntityType(typeof(SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookSubscription));
+        Assert.NotNull(subEntity);
+        Assert.Equal("webhook_subscriptions", subEntity.GetTableName());
+        Assert.Equal("endpoint_url", subEntity.FindProperty("EndpointUrl")?.GetColumnName());
+        Assert.Equal("secret_ciphertext", subEntity.FindProperty("SecretCiphertext")?.GetColumnName());
+        Assert.Equal("subscribed_events", subEntity.FindProperty("SubscribedEvents")?.GetColumnName());
+
+        // 2. WebhookDeliveryJob
+        var jobEntity = model.FindEntityType(typeof(SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookDeliveryJob));
+        Assert.NotNull(jobEntity);
+        Assert.Equal("webhook_dispatch_jobs", jobEntity.GetTableName());
+        Assert.Equal("frozen_event_bytes", jobEntity.FindProperty("FrozenEventBytes")?.GetColumnName());
+
+        // Unique index on (event_id, subscription_id, replay_generation)
+        var uniqueIndex = jobEntity.GetIndexes()
+            .FirstOrDefault(i => i.Properties.Select(p => p.Name).SequenceEqual(
+                ["EventId", "SubscriptionId", "ReplayGeneration"]));
+        Assert.NotNull(uniqueIndex);
+        Assert.True(uniqueIndex.IsUnique);
+
+        // 3. WebhookAttempt
+        var attemptEntity = model.FindEntityType(typeof(SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookAttempt));
+        Assert.NotNull(attemptEntity);
+        Assert.Equal("webhook_attempts", attemptEntity.GetTableName());
+
+        var attemptFk = attemptEntity.GetForeignKeys().FirstOrDefault(fk => fk.PrincipalEntityType == jobEntity);
+        Assert.NotNull(attemptFk);
+        Assert.Equal(DeleteBehavior.Cascade, attemptFk.DeleteBehavior);
+
+        // 4. WebhookReplayAudit
+        var auditEntity = model.FindEntityType(typeof(SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookReplayAudit));
+        Assert.NotNull(auditEntity);
+        Assert.Equal("webhook_replay_audits", auditEntity.GetTableName());
+    }
 }

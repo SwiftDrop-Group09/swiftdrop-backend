@@ -31,7 +31,6 @@ public sealed class FoundationTests : IDisposable
     [InlineData("/weatherforecast")]
     [InlineData("/ready")]
     [InlineData("/graphql")]
-    [InlineData("/api/v1/parcels/example/events")]
     [InlineData("/internal/v1/notification-context")]
     [InlineData("/swiftdrop.delivery.v1.DeliveryService/CreateBooking")]
     [InlineData("/swiftdrop.delivery.v1.DeliveryService/GetBookingByExternalOrder")]
@@ -55,19 +54,14 @@ public sealed class FoundationTests : IDisposable
         Assert.Equal(expectedStatus, response.StatusCode);
     }
 
-    [Fact]
-    public async Task ParcelCollectionGetIsNotImplemented()
-    {
-        using var client = _factory.CreateClient();
-        using var response = await client.GetAsync("/api/v1/parcels");
-
-        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
-    }
-
     [Theory]
     [InlineData("/api/v1/couriers/me/assignments")]
     [InlineData("/api/v1/couriers/me/history")]
+    [InlineData("/api/v1/parcels")]
     [InlineData("/api/v1/parcels/11111111-1111-4111-8111-111111111111")]
+    [InlineData("/api/v1/parcels/11111111-1111-4111-8111-111111111111/events")]
+    [InlineData("/api/v1/parcels/11111111-1111-4111-8111-111111111111/receipt")]
+    [InlineData("/api/v1/parcels/11111111-1111-4111-8111-111111111111/pod")]
     public async Task PrivateDeliveryReadsRequireVerifiedAuthentication(string path)
     {
         using var client = _factory.CreateClient();

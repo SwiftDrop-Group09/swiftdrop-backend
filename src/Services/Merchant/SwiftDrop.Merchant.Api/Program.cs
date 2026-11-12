@@ -1,9 +1,16 @@
-using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using SwiftDrop.Merchant.Api.Application;
 using SwiftDrop.Merchant.Api.Application.Merchants;
+using SwiftDrop.Merchant.Api.Application.Webhooks.Handlers;
+using SwiftDrop.Merchant.Api.Application.Webhooks.Ports;
 using SwiftDrop.Merchant.Api.Infrastructure.Authentication;
 using SwiftDrop.Merchant.Api.Infrastructure.Persistence;
+using SwiftDrop.Merchant.Api.Infrastructure.Webhooks;
+using SwiftDrop.Merchant.Api.Infrastructure.Webhooks.Background;
+using SwiftDrop.Merchant.Api.Infrastructure.Webhooks.Network;
+using SwiftDrop.Merchant.Api.Infrastructure.Webhooks.Security;
 using SwiftDrop.Merchant.Api.Presentation;
 
 namespace SwiftDrop.Merchant.Api;
@@ -19,9 +26,35 @@ public partial class Program
         builder.Services.AddScoped<ICurrentUser, ClaimsCurrentUser>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<MerchantHandler>();
-        builder.Services.AddAuthentication(UnconfiguredIdentityHandler.SchemeName)
-            .AddScheme<AuthenticationSchemeOptions, UnconfiguredIdentityHandler>(
-                UnconfiguredIdentityHandler.SchemeName, _ => { });
+
+        // Webhook infrastructure, ports & handlers
+        builder.Services.AddScoped<ICurrentMerchantContext, ClaimsCurrentMerchantContext>();
+        builder.Services.AddSingleton<IWebhookClock>(SystemWebhookClock.Instance);
+        builder.Services.AddSingleton<IWebhookSecretProtector, AesGcmSecretProtector>();
+        builder.Services.AddSingleton<IWebhookDestinationValidator, SsrfDestinationValidator>();
+        builder.Services.AddSingleton<IWebhookSender, ResilientWebhookSender>();
+        builder.Services.AddScoped<IWebhookOrderResolver, StubWebhookOrderResolver>();
+
+        builder.Services.AddScoped<CreateWebhookSubscriptionHandler>();
+        builder.Services.AddScoped<ListWebhookSubscriptionsHandler>();
+        builder.Services.AddScoped<DeleteWebhookSubscriptionHandler>();
+        builder.Services.AddScoped<ListWebhookAttemptsHandler>();
+        builder.Services.AddScoped<ReplayWebhookJobHandler>();
+        builder.Services.AddScoped<TriggerTestWebhookHandler>();
+        builder.Services.AddScoped<AcceptStatusChangedDispatchHandler>();
+        builder.Services.AddScoped<ProcessDueWebhookJobsHandler>();
+
+        builder.Services.AddHostedService<WebhookDispatchBackgroundService>();
+
+        var identityJwks = new IdentityJwksKeyResolver(builder.Configuration);
+        builder.Services.AddSingleton(identityJwks);
+        builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.MapInboundClaims = false;
+                options.IncludeErrorDetails = false;
+                options.TokenValidationParameters = identityJwks.CreateValidationParameters();
+            });
         builder.Services.AddAuthorization();
 
         // Explicit single-run migration task; normal host startup never applies DDL.
@@ -64,6 +97,7 @@ public partial class Program
         // Process liveness only; dependency readiness is a later milestone.
         app.MapHealthChecks("/health");
         app.MapMerchantEndpoints();
+        app.MapWebhookEndpoints();
 
         app.Run();
     }

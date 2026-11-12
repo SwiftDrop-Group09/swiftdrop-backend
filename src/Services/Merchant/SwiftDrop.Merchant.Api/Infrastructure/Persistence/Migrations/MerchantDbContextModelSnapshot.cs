@@ -158,7 +158,308 @@ namespace SwiftDrop.Merchant.Api.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempt_number");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<long>("DurationMs")
+                        .HasColumnType("bigint")
+                        .HasColumnName("duration_ms");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("failure_reason");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("job_id");
+
+                    b.Property<DateTimeOffset?>("NextRetryAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_retry_at");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("requested_at");
+
+                    b.Property<int?>("ResponseStatusCode")
+                        .HasColumnType("integer")
+                        .HasColumnName("response_status_code");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId");
+
+                    b.HasIndex("JobId", "AttemptNumber");
+
+                    b.ToTable("webhook_attempts", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_webhook_attempts_duration", "duration_ms >= 0");
+
+                            t.HasCheckConstraint("ck_webhook_attempts_number", "attempt_number > 0");
+                        });
+                });
+
+            modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookDeliveryJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempt_count");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("DueAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("due_at");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<byte[]>("FrozenEventBytes")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("frozen_event_bytes");
+
+                    b.Property<Guid?>("LeaseToken")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lease_token");
+
+                    b.Property<DateTimeOffset?>("LeasedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("leased_until");
+
+                    b.Property<int>("ReplayGeneration")
+                        .HasColumnType("integer")
+                        .HasColumnName("replay_generation");
+
+                    b.Property<string>("SafeErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("safe_error_code");
+
+                    b.Property<int>("SecretVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("secret_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("SubscriptionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subscription_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SubscriptionId");
+
+                    b.HasIndex("Status", "DueAt");
+
+                    b.HasIndex("EventId", "SubscriptionId", "ReplayGeneration")
+                        .IsUnique();
+
+                    b.ToTable("webhook_dispatch_jobs", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_webhook_dispatch_jobs_attempts", "attempt_count >= 0");
+
+                            t.HasCheckConstraint("ck_webhook_dispatch_jobs_replay_gen", "replay_generation >= 0");
+
+                            t.HasCheckConstraint("ck_webhook_dispatch_jobs_status", "status IN ('Pending','PendingResolution','Processing','Delivered','Failed','Cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookReplayAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_id");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("business_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("OriginalJobId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("original_job_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("ReplayJobId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("replay_job_id");
+
+                    b.Property<Guid>("SubscriptionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subscription_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessId");
+
+                    b.HasIndex("OriginalJobId");
+
+                    b.HasIndex("SubscriptionId");
+
+                    b.ToTable("webhook_replay_audits", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_webhook_replay_audits_reason", "btrim(reason) <> ''");
+                        });
+                });
+
+            modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("business_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EndpointUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("endpoint_url");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<int>("KeyVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("key_version");
+
+                    b.Property<byte[]>("SecretCiphertext")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("secret_ciphertext");
+
+                    b.Property<byte[]>("SecretNonce")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("bytea")
+                        .HasColumnName("secret_nonce");
+
+                    b.Property<byte[]>("SecretTag")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("bytea")
+                        .HasColumnName("secret_tag");
+
+                    b.Property<int>("SecretVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("secret_version");
+
+                    b.Property<string>("SubscribedEvents")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("subscribed_events");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessId");
+
+                    b.HasIndex("BusinessId", "IsActive");
+
+                    b.ToTable("webhook_subscriptions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_webhook_subscriptions_endpoint", "btrim(endpoint_url) <> ''");
+
+                            t.HasCheckConstraint("ck_webhook_subscriptions_key_version", "key_version > 0");
+
+                            t.HasCheckConstraint("ck_webhook_subscriptions_secret_version", "secret_version > 0");
+                        });
+                });
+
             modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.ApiKey", b =>
+                {
+                    b.HasOne("SwiftDrop.Merchant.Api.Domain.Business", null)
+                        .WithMany()
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookAttempt", b =>
+                {
+                    b.HasOne("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookDeliveryJob", null)
+                        .WithMany()
+                        .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookDeliveryJob", b =>
+                {
+                    b.HasOne("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookSubscription", null)
+                        .WithMany()
+                        .HasForeignKey("SubscriptionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookReplayAudit", b =>
+                {
+                    b.HasOne("SwiftDrop.Merchant.Api.Domain.Business", null)
+                        .WithMany()
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookSubscription", null)
+                        .WithMany()
+                        .HasForeignKey("SubscriptionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookSubscription", b =>
                 {
                     b.HasOne("SwiftDrop.Merchant.Api.Domain.Business", null)
                         .WithMany()

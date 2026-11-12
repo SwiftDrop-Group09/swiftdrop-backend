@@ -160,7 +160,6 @@ try {
     $probes = @(
         'http://127.0.0.1:5000/api/v1/merchant/orders',
         'http://127.0.0.1:5000/graphql',
-        'http://127.0.0.1:5000/api/v1/parcels/example/events',
         'http://127.0.0.1:5000/internal/v1/webhook-dispatches',
         'http://127.0.0.1:5000/swiftdrop.delivery.v1.DeliveryService/CreateBooking'
     )
@@ -295,10 +294,10 @@ try {
 
     $parcelRead = $client.GetAsync('http://127.0.0.1:5000/api/v1/parcels').GetAwaiter().GetResult()
     try {
-        if ([int]$parcelRead.StatusCode -ne 405) { throw 'Parcel listing remains unimplemented; expected HTTP 405 at the POST-only route.' }
+        if ([int]$parcelRead.StatusCode -ne 401) { throw 'Expected parcel listing GET through Gateway to require authentication (HTTP 401).' }
     }
     finally { $parcelRead.Dispose() }
-    Write-Output 'PASS: parcel collection GET has no handler (HTTP 405 at the POST-only route).'
+    Write-Output 'PASS: parcel collection GET requires verified authentication (HTTP 401).'
 
     $grpcConnection = New-Object Net.Sockets.TcpClient
     try { $grpcConnection.Connect('127.0.0.3', 8081) }
