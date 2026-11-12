@@ -1,3 +1,4 @@
+using SwiftDrop.Auditing;
 using System.ComponentModel.DataAnnotations;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
@@ -156,6 +157,7 @@ public partial class Program
             }
         });
         app.UseAuthentication();
+        app.UseActivityAudit("Identity", "/api/v1/audit-logs/activity");
         app.UseAuthorization();
         app.UseRateLimiter();
         app.MapIdentityAuthentication();
@@ -186,6 +188,7 @@ public partial class Program
             return Results.Ok(new { status = "ready" });
         });
         app.MapPost("/api/v1/auth/register", async (
+            HttpContext context,
             RegisterRequest input,
             IServiceProvider services,
             IConfiguration configuration,
@@ -235,6 +238,8 @@ public partial class Program
                     extensions: new Dictionary<string, object?> { ["code"] = "registration_conflict" });
             }
 
+            context.Items[ActivityAudit.ActorItem] = profile.Id;
+            context.Items[ActivityAudit.RolesItem] = new[] { "Customer" };
             return Results.Json(profile, statusCode: StatusCodes.Status201Created);
         }).RequireRateLimiting("registration");
 

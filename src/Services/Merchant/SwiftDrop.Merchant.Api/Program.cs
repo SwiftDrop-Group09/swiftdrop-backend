@@ -1,3 +1,4 @@
+using SwiftDrop.Auditing;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -92,6 +93,7 @@ public partial class Program
             }
         });
         app.UseAuthentication();
+        app.UseActivityAudit("Merchant", "/api/v1/merchant/audit-logs");
         app.UseAuthorization();
 
         // Process liveness only; dependency readiness is a later milestone.

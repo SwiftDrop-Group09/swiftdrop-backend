@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$env:Audit__Enabled = 'false'
 Add-Type -AssemblyName System.Net.Http
 $backendRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 
@@ -16,10 +17,11 @@ Get-ChildItem -LiteralPath (Join-Path $backendRoot 'src'), (Join-Path $backendRo
     ForEach-Object { $projects[$_.BaseName] = $_ }
 $allowed = @{
     'SwiftDrop.Contracts' = @()
+    'SwiftDrop.Auditing' = @()
     'SwiftDrop.Gateway' = @()
-    'SwiftDrop.Identity.Api' = @('SwiftDrop.Contracts')
-    'SwiftDrop.Delivery.Api' = @('SwiftDrop.Contracts')
-    'SwiftDrop.Merchant.Api' = @('SwiftDrop.Contracts')
+    'SwiftDrop.Identity.Api' = @('SwiftDrop.Contracts', 'SwiftDrop.Auditing')
+    'SwiftDrop.Delivery.Api' = @('SwiftDrop.Contracts', 'SwiftDrop.Auditing')
+    'SwiftDrop.Merchant.Api' = @('SwiftDrop.Contracts', 'SwiftDrop.Auditing')
     'SwiftDrop.Notification.Worker' = @('SwiftDrop.Contracts')
     # Cross-service cryptographic contract harness; runtime services stay isolated.
     'SwiftDrop.Identity.Tests' = @('SwiftDrop.Identity.Api', 'SwiftDrop.Delivery.Api')
