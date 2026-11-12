@@ -1,10 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application;
+using SwiftDrop.Delivery.Api.Application.Admin.Pricing;
+using SwiftDrop.Delivery.Api.Application.Admin.Reports;
+using SwiftDrop.Delivery.Api.Application.Admin.Zones;
 using SwiftDrop.Delivery.Api.Application.Bookings;
 using SwiftDrop.Delivery.Api.Application.CourierStatus;
 using SwiftDrop.Delivery.Api.Application.CourierProof;
 using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 using SwiftDrop.Delivery.Api.Application.Quotes;
+using SwiftDrop.Delivery.Api.Infrastructure.Admin;
 using SwiftDrop.Delivery.Api.Infrastructure.Authentication;
 using SwiftDrop.Delivery.Api.Infrastructure.Bookings;
 using SwiftDrop.Delivery.Api.Infrastructure.CourierStatus;
@@ -64,6 +68,15 @@ public partial class Program
             new PostgresBookingZoneCatalog(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IBookingStore>(services =>
             new PostgresBookingStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<IZoneAdministrationStore>(services =>
+            new PostgresZoneAdministrationStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<ZoneAdministrationHandler>();
+        builder.Services.AddScoped<IPricingAdministrationStore>(services =>
+            new PostgresPricingAdministrationStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<PricingAdministrationHandler>();
+        builder.Services.AddScoped<IDeliveryReportStore>(services =>
+            new PostgresDeliveryReportStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<DeliveryReportHandler>();
         builder.Services.AddDeliveryIdentityAuthentication();
         builder.Services.AddAuthorization();
 
@@ -89,12 +102,26 @@ public partial class Program
             context.Response.Headers["X-Correlation-ID"] = correlation;
             await next(context);
         });
-        app.UseExceptionHandler(handler => handler.Run(context => QuoteProblems.Unexpected(context).ExecuteAsync(context)));
+        app.UseExceptionHandler(handler => handler.Run(context =>
+        {
+            var isAdmin = context.Request.Path.StartsWithSegments("/api/v1/zones")
+                || context.Request.Path.StartsWithSegments("/api/v1/pricing-tiers")
+                || context.Request.Path.StartsWithSegments("/api/v1/reports/deliveries");
+            var error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+            if (isAdmin && (error is DbUpdateConcurrencyException || error is Npgsql.PostgresException { SqlState: "23505" or "40001" or "40P01" }))
+                return AdminProblems.Conflict(context).ExecuteAsync(context);
+            if (isAdmin && error is System.Data.Common.DbException or DbUpdateException or InvalidOperationException or TimeoutException)
+                return AdminProblems.Unavailable(context).ExecuteAsync(context);
+            return QuoteProblems.Unexpected(context).ExecuteAsync(context);
+        }));
         app.Use(async (context, next) =>
         {
             if (context.GetEndpoint()?.Metadata.GetMetadata<DeliveryReadEndpointMetadata>() is not null
                 || context.GetEndpoint()?.Metadata.GetMetadata<CourierStatusEndpointMetadata>() is not null
-                || context.GetEndpoint()?.Metadata.GetMetadata<CourierProofEndpointMetadata>() is not null)
+                || context.GetEndpoint()?.Metadata.GetMetadata<CourierProofEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<AdminZoneEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<AdminPricingEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<AdminReportEndpointMetadata>() is not null)
                 context.Response.Headers.CacheControl = "private, no-store";
             await next(context);
         });
@@ -130,6 +157,9 @@ public partial class Program
         app.MapDeliveryReads();
         app.MapCourierStatus();
         app.MapCourierProof();
+        app.MapAdminZones();
+        app.MapAdminPricing();
+        app.MapAdminReports();
 
         app.Run();
     }

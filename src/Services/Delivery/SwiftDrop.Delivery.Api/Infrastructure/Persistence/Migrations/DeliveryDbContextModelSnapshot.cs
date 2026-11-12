@@ -192,6 +192,48 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                     b.ToTable("courier_zones", (string)null);
                 });
 
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.DeliveryConfigAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("action");
+
+                    b.Property<Guid>("ActorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("Details")
+                        .HasColumnType("text")
+                        .HasColumnName("details");
+
+                    b.Property<Guid>("ResourceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resource_id");
+
+                    b.Property<string>("ResourceType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("resource_type");
+
+                    b.Property<DateTimeOffset>("Timestamp")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("timestamp");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Timestamp");
+
+                    b.HasIndex("ResourceType", "ResourceId");
+
+                    b.ToTable("delivery_config_audits", (string)null);
+                });
+
             modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.DeliveryZone", b =>
                 {
                     b.Property<Guid>("Id")
@@ -215,6 +257,12 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("name");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
@@ -543,6 +591,11 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                         .HasColumnName("xmin");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ZoneId", "Size")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pricing_active_zone_size")
+                        .HasFilter("is_active");
 
                     b.HasIndex("ZoneId", "Size", "PricingVersion")
                         .IsUnique();

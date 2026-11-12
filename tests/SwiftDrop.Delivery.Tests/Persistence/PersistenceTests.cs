@@ -122,6 +122,9 @@ public sealed class PersistenceTests(PostgresFixture fixture) : IAsyncLifetime
     {
         var seed = await SeedAsync();
         await using var context = Context();
+        var previousTier = await context.PricingTiers.SingleAsync(item => item.Id == seed.Tier.Id);
+        previousTier.SetActive(false);
+        await context.SaveChangesAsync();
         context.PricingTiers.Add(new PricingTier(Guid.NewGuid(), seed.Zone.Id, ParcelSize.Small, "test-v2", 600m, 80m));
         await context.SaveChangesAsync();
 
