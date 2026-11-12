@@ -22,6 +22,8 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                     data         bytea       NOT NULL,
                     stored_at    timestamptz NOT NULL DEFAULT now()
                 );
+                CREATE INDEX IF NOT EXISTS ix_proof_objects_stored_at
+                    ON proof_objects (stored_at);
                 """);
         }
 
