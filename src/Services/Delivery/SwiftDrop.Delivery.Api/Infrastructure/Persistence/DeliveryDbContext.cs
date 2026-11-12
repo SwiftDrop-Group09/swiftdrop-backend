@@ -17,6 +17,7 @@ public sealed class DeliveryDbContext(DbContextOptions<DeliveryDbContext> option
     public DbSet<CourierZone> CourierZones => Set<CourierZone>();
     public DbSet<CourierAssignment> Assignments => Set<CourierAssignment>();
     public DbSet<ProofMetadata> ProofMetadata => Set<ProofMetadata>();
+    public DbSet<DeliveryConfigAudit> ConfigAuditLogs => Set<DeliveryConfigAudit>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         DeliveryEntityConfigurations.Configure(modelBuilder);
@@ -37,6 +38,8 @@ public sealed class DeliveryDbContext(DbContextOptions<DeliveryDbContext> option
     private void GuardImmutableRecords()
     {
         ChangeTracker.DetectChanges();
+        if (ChangeTracker.Entries<DeliveryConfigAudit>().Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Delivery configuration audit records are append-only.");
         if (ChangeTracker.Entries<PriceSnapshot>().Any(entry =>
             entry.State is EntityState.Modified or EntityState.Deleted))
         {

@@ -8,4 +8,5 @@ public interface ICurrentDeliveryUser
     bool IsCourier { get; }
     bool IsCustomer { get; }
     bool IsOperations { get; }
+    bool IsAdmin => false;
 }

@@ -386,6 +386,13 @@ public sealed class QuoteApiTests(PostgresFixture fixture) : IAsyncLifetime
                     ParcelSize.Small, "alternative-active-version", 500m, 80m));
             }
 
+            if (condition == "ambiguous")
+            {
+                var failure = await Assert.ThrowsAsync<Microsoft.EntityFrameworkCore.DbUpdateException>(() => context.SaveChangesAsync());
+                Assert.Equal("23505", Assert.IsType<Npgsql.PostgresException>(failure.InnerException).SqlState);
+                return; // The database now prevents ambiguous active tariffs before quoting.
+            }
+
             await context.SaveChangesAsync();
         }
 

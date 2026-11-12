@@ -30,4 +30,6 @@ public sealed class PricingTier
     public decimal PerKgRate { get; private set; }
     public string Currency { get; private set; } = null!;
     public bool IsActive { get; private set; }
+
+    public void SetActive(bool isActive) => IsActive = isActive;
 }
