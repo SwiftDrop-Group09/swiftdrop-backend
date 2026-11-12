@@ -29,6 +29,8 @@ public partial class Program
         builder.Services.AddScoped<ICurrentDeliveryUser, ClaimsCurrentDeliveryUser>();
         builder.Services.AddScoped<OperationsClock>();
         builder.Services.AddScoped<DeliveryReadHandler>();
+        builder.Services.AddScoped<CustomerTrackingHandler>();
+        builder.Services.AddSingleton<IReceiptPdfRenderer, SkiaReceiptPdfRenderer>();
         builder.Services.AddScoped<CourierHistoryHandler>();
         builder.Services.AddScoped<ICourierHistoryStore>(services =>
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
@@ -46,6 +48,10 @@ public partial class Program
             new PostgresCourierStatusStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IDeliveryReadStore>(services =>
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<ICustomerDeliveryReadStore>(services =>
+            new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddSingleton<IPrivateProofReader>(services =>
+            new S3ProofStorage(services.GetRequiredService<IConfiguration>()));
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<QuoteEstimator>();
         builder.Services.AddScoped<CustomerBookingHandler>();
