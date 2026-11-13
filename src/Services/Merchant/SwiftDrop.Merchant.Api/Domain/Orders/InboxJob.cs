@@ -86,6 +86,25 @@ public sealed class InboxJob
         };
     }
 
+    /// <summary>
+    /// Leases the job to one processor by pushing <see cref="NextRetryAt"/> past
+    /// the processing window. If the processor crashes mid-call, the job simply
+    /// becomes due again when the lease expires; it is never lost.
+    /// </summary>
+    public void Claim(DateTimeOffset leaseUntil, DateTimeOffset now)
+    {
+        EnsureUnsettled(nameof(Claim));
+        var timestamp = now.ToUniversalTime();
+        var until = leaseUntil.ToUniversalTime();
+        if (until <= timestamp)
+        {
+            throw new ArgumentOutOfRangeException(nameof(leaseUntil), "A lease must end in the future.");
+        }
+
+        NextRetryAt = until;
+        UpdatedAt = timestamp;
+    }
+
     /// <summary>True when a resubmission carries exactly the same order content.</summary>
     public bool HasSameContentAs(string requestFingerprint) =>
         string.Equals(RequestFingerprint, requestFingerprint, StringComparison.Ordinal);
