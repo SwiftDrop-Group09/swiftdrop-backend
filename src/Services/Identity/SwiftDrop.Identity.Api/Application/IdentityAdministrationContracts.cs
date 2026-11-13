@@ -1,3 +1,4 @@
+using SwiftDrop.Contracts;
 namespace SwiftDrop.Identity.Api.Application;
 
 public enum IdentityAdministrationFailure
@@ -25,7 +26,7 @@ public interface IIdentityAdministrationStore
         int pageSize, CancellationToken cancellationToken, IdentityUserFilter? filter = null);
     Task<IdentityAdministrationResult<RegisteredProfile>> CreateUserAsync(Guid actor, string email,
         string normalizedEmail, string fullName, bool isActive, string passwordHash, DateTimeOffset now,
-        string? correlation, CancellationToken cancellationToken);
+        string? correlation, CancellationToken cancellationToken, HumanRole role = HumanRole.Customer);
     Task<IdentityAdministrationResult<RegisteredProfile>> UpdateUserAsync(Guid actor, Guid target, string email,
         string normalizedEmail, string fullName, bool isActive, DateTimeOffset now, string? correlation,
         CancellationToken cancellationToken);

@@ -74,6 +74,20 @@ public sealed class ActivityAuditTests(PostgresFixture fixture)
         Assert.Equal("23514", exception.SqlState);
     }
 
+    [Fact]
+    public async Task ExclusionsFilterAllMatchingRecordsBeforePagination()
+    {
+        var actor = Guid.NewGuid(); await using var app = await Host(actor, "Admin");
+        using var client = app.GetTestClient();
+        using var created = await client.PostAsync($"/api/v1/fixture/{Guid.NewGuid()}", null);
+        foreach (var excluded in new[] { "notRole=Admin", "notMethod=POST", "notOutcome=Success", "notActorType=Human", "notKind=Request", "notAction=SaveFixture", "notIp=192.0.2.7" })
+        {
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery($"?actorId={actor}&{excluded}");
+            var result = await ActivityAudit.Read(app.Configuration, "Delivery", new QueryCollection(query), default);
+            Assert.Empty(result.Items); Assert.Equal(0, result.TotalCount);
+        }
+    }
+
     [Theory]
     [InlineData("Admin", HttpStatusCode.OK)]
     [InlineData("Customer", HttpStatusCode.Forbidden)]
@@ -91,7 +105,7 @@ public sealed class ActivityAuditTests(PostgresFixture fixture)
     public async Task FiltersRejectInvalidValuesAndDoNotInterpretSearchAsSql()
     {
         var actor = Guid.NewGuid(); await using var app = await Host(actor, "Admin"); using var client = app.GetTestClient();
-        foreach (var query in new[] { "ip=not-an-ip", "limit=0", "limit=abc", "actorId=bad", "before=2026-01-01T00:00:00Z", "method=BAD", "unexpected=1" })
+        foreach (var query in new[] { "ip=not-an-ip", "limit=0", "limit=abc", "actorId=bad", "before=2026-01-01T00:00:00Z", "method=BAD", "unexpected=1", "notIp=bad", "notActorId=bad", "notMethod=BAD", "notRole=a&notRole=b" })
         {
             using var response = await client.GetAsync("/api/v1/delivery/audit-logs?" + query);
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

@@ -72,7 +72,7 @@ public sealed class IdentityPersistenceTests(IdentityPostgresFixture database)
         var user = await LocalAsync();
         await AssertSqlStateAsync(PostgresErrorCodes.UniqueViolation,
             "INSERT INTO public.user_roles (user_id, role_name) VALUES (@id, 'Customer')", ("id", user.Id));
-        await AssertSqlStateAsync(PostgresErrorCodes.ForeignKeyViolation,
+        await AssertSqlStateAsync(PostgresErrorCodes.InvalidTextRepresentation,
             "INSERT INTO public.user_roles (user_id, role_name) VALUES (@id, 'MissingRole')", ("id", user.Id));
         await AssertSqlStateAsync(PostgresErrorCodes.ForeignKeyViolation,
             "INSERT INTO public.user_roles (user_id, role_name) VALUES (@id, 'Customer')", ("id", Guid.NewGuid()));
@@ -102,13 +102,13 @@ public sealed class IdentityPersistenceTests(IdentityPostgresFixture database)
     {
         var identity = Google();
         var first = AssertSuccess(await _store.AuthenticateGoogleAsync(identity, Session(), default));
-        await ExecuteAsync("INSERT INTO public.user_roles (user_id,role_name) VALUES (@id,'Courier')", ("id", first.Profile.Id));
+        await ExecuteAsync("UPDATE public.user_roles SET role_name='Courier' WHERE user_id=@id", ("id", first.Profile.Id));
 
         var second = AssertSuccess(await _store.AuthenticateGoogleAsync(
             identity with { Email = NewEmail(), FullName = "Changed Google metadata" }, Session(), default));
         Assert.Equal(first.Profile.Id, second.Profile.Id);
         Assert.Equal(first.Profile.Email, second.Profile.Email);
-        Assert.Equal(["Courier", "Customer"], second.Profile.Roles);
+        Assert.Equal(["Courier"], second.Profile.Roles);
         Assert.Equal(1L, await CountAsync("external_identities", "subject", identity.Subject));
         Assert.Equal(2L, await CountAsync("refresh_sessions", "user_id", first.Profile.Id));
     }
@@ -546,7 +546,7 @@ public sealed class IdentityPersistenceTests(IdentityPostgresFixture database)
         AssertSuccess(await _store.LinkGoogleAsync(local.Id, PasswordHash, identity, Now, default));
         AssertSuccess(await _store.CreateSessionAsync(local.Id, Session(), default));
         await Task.WhenAll(IdentitySchemaMigrator.ApplyAsync(database.ConnectionString), IdentitySchemaMigrator.ApplyAsync(database.ConnectionString));
-        Assert.Equal(4L, await ScalarAsync<long>("SELECT COUNT(*) FROM public.schema_migrations"));
+        Assert.Equal(5L, await ScalarAsync<long>("SELECT COUNT(*) FROM public.schema_migrations"));
         Assert.Equal(1L, await ScalarAsync<long>(
             "SELECT COUNT(*) FROM public.schema_migrations WHERE version=@version", ("version", IdentitySchemaMigrator.CurrentVersion)));
         Assert.True(await _registration.IsReadyAsync(default));

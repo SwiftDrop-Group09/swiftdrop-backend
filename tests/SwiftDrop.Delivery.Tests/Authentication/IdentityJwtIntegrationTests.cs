@@ -66,6 +66,8 @@ public sealed class IdentityJwtIntegrationTests
     [InlineData("no-exp")]
     [InlineData("roles-string")]
     [InlineData("unknown-role")]
+    [InlineData("empty-roles")]
+    [InlineData("multiple-roles")]
     [InlineData("signature")]
     [InlineData("unknown-key")]
     [InlineData("unsigned")]
@@ -174,6 +176,8 @@ public sealed class IdentityJwtIntegrationTests
                 case "no-nbf": payload.Remove("nbf"); break;
                 case "no-exp": payload.Remove("exp"); break;
                 case "roles-string": payload["roles"] = "Customer"; break;
+                case "empty-roles": payload["roles"] = Array.Empty<string>(); break;
+                case "multiple-roles": payload["roles"] = new[] { "Customer", "Admin" }; break;
                 case "unknown-role": payload["roles"] = new[] { "service" }; break;
             }
             var signingKey = new RsaSecurityKey(rsa) { KeyId = defect == "unknown-key" ? "unknown" : "test-key" };

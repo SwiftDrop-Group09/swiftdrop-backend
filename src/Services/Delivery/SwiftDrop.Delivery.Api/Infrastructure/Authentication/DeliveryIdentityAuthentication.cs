@@ -91,9 +91,9 @@ public static class DeliveryIdentityAuthentication
                 && Number(root, "iat", out var issued) && Number(root, "nbf", out var starts) && Number(root, "exp", out var expires)
                 && issued >= 0 && issued <= DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeSeconds()
                 && starts == issued && expires > issued && expires - issued <= 900
-                && root.TryGetProperty("roles", out var roles) && roles.ValueKind == JsonValueKind.Array
+                && root.TryGetProperty("roles", out var roles) && roles.ValueKind == JsonValueKind.Array && roles.GetArrayLength() == 1
                 && roles.EnumerateArray().All(role => role.ValueKind == JsonValueKind.String
-                    && role.GetString() is "Customer" or "Courier" or "Merchant" or "Dispatcher" or "Admin");
+                    && SwiftDrop.Contracts.HumanRoles.TryParse(role.GetString(), out _));
         }
         catch (Exception exception) when (exception is JsonException or FormatException or InvalidOperationException) { return false; }
     }
