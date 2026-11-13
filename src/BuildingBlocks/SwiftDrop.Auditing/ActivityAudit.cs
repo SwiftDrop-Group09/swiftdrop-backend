@@ -41,9 +41,21 @@ public static class ActivityAudit
             try { await Append(context, configuration, operation, occurred, correlation, "Started", null, null); started = true; }
             catch (Exception ex) when (ex is NpgsqlException or InvalidOperationException or ArgumentException or TimeoutException or OperationCanceledException)
             {
-                logger.LogCritical("Activity audit unavailable for {Service}; no payload or credentials logged. Failure: {Failure}", service, ex.GetType().Name);
+                LogStorageFailure(logger, service, correlation, ex, completion: false);
                 if (context.User.Identity?.IsAuthenticated == true || context.Request.Path.StartsWithSegments("/api/v1/auth"))
-                { context.Response.StatusCode = 503; await context.Response.WriteAsJsonAsync(new { code = "audit_unavailable", title = "Activity recording is unavailable. Try again later.", status = 503 }); return; }
+                {
+                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    context.Response.Headers.CacheControl = "private, no-store";
+                    context.Response.Headers["X-Correlation-ID"] = correlation.ToString("D");
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        code = "audit_unavailable",
+                        title = "This service is temporarily unavailable. Please try again later.",
+                        status = StatusCodes.Status503ServiceUnavailable,
+                        correlationId = correlation
+                    });
+                    return;
+                }
             }
             var failed = false;
             try { await next(context); }
@@ -53,7 +65,10 @@ public static class ActivityAudit
                 if (started)
                     try { await Append(context, configuration, operation, occurred, correlation, "Completed", failed ? 500 : context.Response.StatusCode, stopwatch.ElapsedMilliseconds); }
                     catch (Exception ex) when (ex is NpgsqlException or InvalidOperationException or ArgumentException or TimeoutException or OperationCanceledException)
-                    { logger.LogCritical("Activity completion could not be recorded for operation {Operation}; its Started record remains. Failure: {Failure}", operation, ex.GetType().Name); }
+                    {
+                        LogStorageFailure(logger, service, correlation, ex, completion: true);
+                        logger.LogCritical("Activity completion was not recorded for operation {Operation}; its Started record remains.", operation);
+                    }
             }
         });
         app.MapGet(path, async (HttpContext context) =>
@@ -65,6 +80,31 @@ public static class ActivityAudit
             { return Results.Problem(statusCode: 503, title: "Audit records are unavailable."); }
         }).RequireAuthorization(policy => policy.RequireRole("Admin")).WithName($"List{service}ActivityAudit");
         return app;
+    }
+
+    private static void LogStorageFailure(ILogger logger, string service, Guid correlation, Exception failure, bool completion)
+    {
+        var reason = failure switch
+        {
+            PostgresException { SqlState: PostgresErrorCodes.UndefinedTable } => "schema_missing",
+            PostgresException { SqlState: PostgresErrorCodes.InsufficientPrivilege } => "permission_denied",
+            PostgresException => "database_error",
+            NpgsqlException => "database_unavailable",
+            TimeoutException or OperationCanceledException => "timeout",
+            _ => "configuration_invalid"
+        };
+        var recovery = reason switch
+        {
+            "schema_missing" => "Apply the pending service database migrations before starting authentication.",
+            "permission_denied" => "Verify the service runtime role has SELECT and INSERT access to its audit table.",
+            "configuration_invalid" => "Verify the service database configuration.",
+            _ => "Check database availability and service readiness."
+        };
+        // Do not pass the exception itself: PostgreSQL detail can contain private data.
+        logger.LogCritical(
+            "Activity audit storage failure for {Service}; Phase: {Phase}; Reason: {Reason}; SQLSTATE: {SqlState}; Correlation: {CorrelationId}. {Recovery}",
+            service, completion ? "Completed" : "Started", reason,
+            failure is PostgresException postgres ? postgres.SqlState : "none", correlation, recovery);
     }
 
     private static NpgsqlConnection Connection(IConfiguration configuration) => new(configuration.GetConnectionString("Database")
