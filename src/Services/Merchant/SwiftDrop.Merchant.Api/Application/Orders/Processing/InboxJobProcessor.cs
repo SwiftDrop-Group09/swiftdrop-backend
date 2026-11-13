@@ -108,24 +108,7 @@ public sealed class InboxJobProcessor(
         return JobOutcome.Retrying;
     }
 
-    /// <summary>Runs one Delivery call under the configured deadline; timeouts and unexpected errors become Transient.</summary>
-    private async Task<BookingCallResult> CallDeliveryAsync(
-        Func<CancellationToken, Task<BookingCallResult>> call, CancellationToken cancellationToken)
-    {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(options.Value.DeliveryTimeout);
-        try
-        {
-            return await call(deadline.Token);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return new BookingCallResult.Transient(DeliveryErrorCodes.Timeout);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            logger.LogError(exception, "Unexpected error calling Delivery.");
-            return new BookingCallResult.Transient(DeliveryErrorCodes.UnexpectedError);
-        }
-    }
+    private Task<BookingCallResult> CallDeliveryAsync(
+        Func<CancellationToken, Task<BookingCallResult>> call, CancellationToken cancellationToken) =>
+        DeliveryCalls.WithDeadlineAsync(call, options.Value.DeliveryTimeout, logger, cancellationToken);
 }

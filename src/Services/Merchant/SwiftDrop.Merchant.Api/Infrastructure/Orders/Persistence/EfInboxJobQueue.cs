@@ -45,6 +45,21 @@ public sealed class EfInboxJobQueue(MerchantDbContext database) : IInboxJobQueue
         return leased;
     }
 
+    public async Task<IReadOnlyList<InboxJob>> ListDueForStatusRefreshAsync(
+        int batchSize, DateTimeOffset staleBefore, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(batchSize, 1);
+        var terminal = ParcelStatuses.Terminal.ToArray();
+
+        return await database.InboxJobs
+            .Where(job => job.State == InboxJobState.Created
+                && job.ParcelStatus != null && !terminal.Contains(job.ParcelStatus)
+                && (job.LastRefreshedAt == null || job.LastRefreshedAt < staleBefore))
+            .OrderBy(job => job.LastRefreshedAt)
+            .Take(batchSize)
+            .ToListAsync(cancellationToken);
+    }
+
     public Task SaveAsync(InboxJob job, CancellationToken cancellationToken) =>
         database.SaveChangesAsync(cancellationToken);
 

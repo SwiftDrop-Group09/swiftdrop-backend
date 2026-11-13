@@ -93,6 +93,24 @@ internal static class ProcessingTestData
             OrderFingerprint.Compute(payload), payload, acceptedAt ?? Now);
     }
 
+    /// <summary>A Created job whose parcel is in <paramref name="parcelStatus"/>, as Delivery last reported it.</summary>
+    public static InboxJob CreatedJob(
+        Guid businessId,
+        string externalOrderId,
+        DateTimeOffset createdAt,
+        string parcelStatus,
+        long parcelVersion = 1,
+        DateTimeOffset? terminalAt = null,
+        DateTimeOffset? refreshedAt = null)
+    {
+        var job = Job(businessId, externalOrderId, createdAt);
+        var booking = new BookingConfirmation(Guid.NewGuid(), $"SD-{externalOrderId}",
+            new ParcelStatusSnapshot(parcelStatus, parcelVersion, terminalAt ?? createdAt, terminalAt),
+            540m, "LKR", "2026-11-v1");
+        job.MarkCreated(booking, refreshedAt ?? createdAt.AddMinutes(1));
+        return job;
+    }
+
     public static InboxJobProcessor Processor(IDeliveryBookingClient client, TimeProvider clock, TimeSpan? timeout = null) =>
         new(client, clock, Options.Create(Settings(timeout)), NullLogger<InboxJobProcessor>.Instance);
 

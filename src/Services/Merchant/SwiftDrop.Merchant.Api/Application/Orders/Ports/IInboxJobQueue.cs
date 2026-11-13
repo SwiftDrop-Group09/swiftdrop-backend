@@ -13,6 +13,14 @@ public interface IInboxJobQueue
     Task<IReadOnlyList<InboxJob>> ClaimDueAsync(int batchSize, TimeSpan leaseDuration, DateTimeOffset now,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Created orders whose parcel is not yet terminal and whose copy of the
+    /// parcel status was last refreshed before <paramref name="staleBefore"/>
+    /// (or never), oldest first.
+    /// </summary>
+    Task<IReadOnlyList<InboxJob>> ListDueForStatusRefreshAsync(int batchSize, DateTimeOffset staleBefore,
+        CancellationToken cancellationToken);
+
     /// <summary>Persists the job's new state after processing.</summary>
     Task SaveAsync(InboxJob job, CancellationToken cancellationToken);
 }

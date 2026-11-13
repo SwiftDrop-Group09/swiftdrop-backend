@@ -107,6 +107,8 @@ internal sealed class OrderAuthTestHost : IDisposable
         return await context.AuthenticateAsync(ApiKeyAuthenticationDefaults.SchemeName);
     }
 
+    public Task SeedJobAsync(SwiftDrop.Merchant.Api.Domain.Orders.InboxJob job) => SaveAsync(job);
+
     public async Task<SwiftDrop.Merchant.Api.Domain.Orders.InboxJob?> FindJobAsync(Guid id)
     {
         using var scope = _factory.Services.CreateScope();
