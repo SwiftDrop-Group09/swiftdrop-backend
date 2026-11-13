@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using SwiftDrop.Merchant.Api.Application;
 using SwiftDrop.Merchant.Api.Application.Merchants;
+using SwiftDrop.Merchant.Api.Application.Orders;
 using SwiftDrop.Merchant.Api.Application.Webhooks.Handlers;
 using SwiftDrop.Merchant.Api.Application.Webhooks.Ports;
 using SwiftDrop.Merchant.Api.Infrastructure.Authentication;
@@ -27,6 +28,10 @@ public partial class Program
         builder.Services.AddScoped<ICurrentUser, ClaimsCurrentUser>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<MerchantHandler>();
+
+        // Merchant orders (FR-M04 / FR-M07)
+        builder.Services.AddScoped<SubmitMerchantOrderHandler>();
+        builder.Services.AddScoped<MerchantOrderQueryHandler>();
 
         // Webhook infrastructure, ports & handlers
         builder.Services.AddScoped<ICurrentMerchantContext, ClaimsCurrentMerchantContext>();
@@ -102,6 +107,7 @@ public partial class Program
         app.MapHealthChecks("/health");
         app.MapMerchantEndpoints();
         app.MapWebhookEndpoints();
+        app.MapOrderEndpoints();
 
         app.Run();
     }

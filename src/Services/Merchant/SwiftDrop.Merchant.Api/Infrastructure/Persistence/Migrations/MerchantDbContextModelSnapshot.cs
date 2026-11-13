@@ -270,6 +270,8 @@ namespace SwiftDrop.Merchant.Api.Infrastructure.Persistence.Migrations
                     b.HasIndex("BusinessId", "ExternalOrderId")
                         .IsUnique();
 
+                    b.HasIndex("BusinessId", "IdempotencyKey");
+
                     b.HasIndex("State", "NextRetryAt");
 
                     b.HasIndex("BusinessId", "CreatedAt", "Id");

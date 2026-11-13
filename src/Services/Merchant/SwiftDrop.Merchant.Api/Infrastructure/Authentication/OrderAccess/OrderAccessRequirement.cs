@@ -31,6 +31,12 @@ public sealed class OrderAccessHandler(IHttpContextAccessor contextAccessor)
 {
     protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, OrderAccessRequirement requirement)
     {
+        // Anonymous callers are left to the authenticated-user requirement (401); no lookup needed.
+        if (!context.User.Identities.Any(identity => identity.IsAuthenticated))
+        {
+            return;
+        }
+
         var httpContext = contextAccessor.HttpContext;
         if (httpContext is null || HasMixedCredentials(httpContext.Request))
         {
