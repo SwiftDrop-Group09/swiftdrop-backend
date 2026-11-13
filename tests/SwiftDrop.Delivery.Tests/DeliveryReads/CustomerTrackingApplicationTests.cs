@@ -21,7 +21,7 @@ public sealed class CustomerTrackingApplicationTests
         var store = new FakeCustomerReadStore();
         var handler = CreateHandler(new FakeUser(authenticated, CustomerId, isCustomer, isOperations), store);
 
-        var result = await handler.ListParcelsAsync(new(Status: "not_a_status"));
+        var result = await handler.ListParcelsAsync(new(Status: "not_a_status", ZoneId: "invalid"));
 
         Assert.Equal(expected, result.Failure);
         Assert.Equal(0, store.Calls);
@@ -72,6 +72,36 @@ public sealed class CustomerTrackingApplicationTests
         Assert.Equal("TRK-123", store.LastQuery.Search);
         Assert.Equal(2, store.LastQuery.Page);
         Assert.Equal(10, store.LastQuery.PageSize);
+    }
+
+    [Fact]
+    public async Task ListParcelsForwardsZoneAndPreservesOptionalDefault()
+    {
+        var store = new FakeCustomerReadStore();
+        var handler = CreateHandler(new FakeUser(true, CustomerId, isCustomer: true), store);
+        var zoneId = Guid.NewGuid();
+
+        Assert.Null((await handler.ListParcelsAsync(new(ZoneId: zoneId.ToString()))).Failure);
+        Assert.Equal(zoneId, store.LastQuery!.ZoneId);
+        Assert.Null((await handler.ListParcelsAsync(new())).Failure);
+        Assert.Null(store.LastQuery!.ZoneId);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("invalid")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public async Task ListParcelsRejectsInvalidZoneBeforeStore(string zoneId)
+    {
+        var store = new FakeCustomerReadStore();
+        var handler = CreateHandler(new FakeUser(true, CustomerId, isCustomer: true), store);
+
+        var result = await handler.ListParcelsAsync(new(ZoneId: zoneId));
+
+        Assert.Equal(DeliveryReadFailure.InvalidInput, result.Failure);
+        Assert.True(result.Errors!.ContainsKey("zoneId"));
+        Assert.Equal(0, store.Calls);
     }
 
     [Fact]
