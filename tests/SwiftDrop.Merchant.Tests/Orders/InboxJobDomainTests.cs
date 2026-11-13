@@ -197,6 +197,27 @@ public sealed class InboxJobDomainTests
     public void MarkFailed_OnSettledJob_Throws() =>
         Assert.Throws<InvalidOperationException>(() => CreatedJob().MarkFailed("invalid_order", Now));
 
+    // ── Claim (processor lease) ────────────────────────────────────────────
+
+    [Fact]
+    public void Claim_PushesNextRetryAtToTheEndOfTheLease()
+    {
+        var job = NewJob();
+
+        job.Claim(Now.AddMinutes(2), Now);
+
+        Assert.Equal(Now.AddMinutes(2), job.NextRetryAt);
+        Assert.Equal(InboxJobState.Accepted, job.State);
+        Assert.Equal(0, job.Attempts);
+    }
+
+    [Fact]
+    public void Claim_RejectsPastLeasesAndSettledJobs()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => NewJob().Claim(Now, Now));
+        Assert.Throws<InvalidOperationException>(() => CreatedJob().Claim(Now.AddMinutes(2), Now));
+    }
+
     // ── ApplyStatus ────────────────────────────────────────────────────────
 
     [Fact]

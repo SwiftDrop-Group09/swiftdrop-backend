@@ -6,8 +6,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SwiftDrop.Merchant.Api.Application.Orders.Ports;
+using SwiftDrop.Merchant.Api.Application.Orders.Processing;
 using SwiftDrop.Merchant.Api.Domain;
 using SwiftDrop.Merchant.Api.Infrastructure.Authentication.ApiKeys;
+using SwiftDrop.Merchant.Api.Infrastructure.Orders.Delivery;
 using SwiftDrop.Merchant.Api.Infrastructure.Persistence;
 
 namespace SwiftDrop.Merchant.Tests.Authentication;
@@ -21,12 +23,27 @@ internal sealed class OrderAuthTestHost : IDisposable
 {
     private readonly MerchantApiFactory _factory;
 
-    public OrderAuthTestHost(ClaimsPrincipal? ownerPrincipal = null) =>
+    /// <param name="ownerPrincipal">Fixed "owner JWT" principal, if any.</param>
+    /// <param name="runOrderProcessor">
+    /// Off by default so API tests can assert intake state. When on, the real
+    /// background processor runs against the development fake Delivery client.
+    /// </param>
+    public OrderAuthTestHost(ClaimsPrincipal? ownerPrincipal = null, bool runOrderProcessor = false) =>
         _factory = new MerchantApiFactory(ownerPrincipal, inMemoryDbName: $"order-auth-{Guid.NewGuid():N}",
             configureServices: services =>
             {
                 services.RemoveAll<TimeProvider>();
                 services.AddSingleton<TimeProvider>(new SteppingTimeProvider());
+                services.Configure<OrderProcessingOptions>(options =>
+                {
+                    options.Enabled = runOrderProcessor;
+                    options.PollingInterval = TimeSpan.FromMilliseconds(20);
+                });
+                if (runOrderProcessor)
+                {
+                    services.RemoveAll<IDeliveryBookingClient>();
+                    services.AddSingleton<IDeliveryBookingClient, FakeDeliveryBookingClient>();
+                }
             });
 
     public HttpClient CreateClient() => _factory.CreateClient();

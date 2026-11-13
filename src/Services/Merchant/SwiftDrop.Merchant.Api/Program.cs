@@ -8,6 +8,7 @@ using SwiftDrop.Merchant.Api.Application.Orders;
 using SwiftDrop.Merchant.Api.Application.Webhooks.Handlers;
 using SwiftDrop.Merchant.Api.Application.Webhooks.Ports;
 using SwiftDrop.Merchant.Api.Infrastructure.Authentication;
+using SwiftDrop.Merchant.Api.Infrastructure.Orders;
 using SwiftDrop.Merchant.Api.Infrastructure.Persistence;
 using SwiftDrop.Merchant.Api.Infrastructure.Webhooks;
 using SwiftDrop.Merchant.Api.Infrastructure.Webhooks.Background;
@@ -32,6 +33,7 @@ public partial class Program
         // Merchant orders (FR-M04 / FR-M07)
         builder.Services.AddScoped<SubmitMerchantOrderHandler>();
         builder.Services.AddScoped<MerchantOrderQueryHandler>();
+        builder.Services.AddMerchantOrderProcessing(builder.Configuration, builder.Environment);
 
         // Webhook infrastructure, ports & handlers
         builder.Services.AddScoped<ICurrentMerchantContext, ClaimsCurrentMerchantContext>();

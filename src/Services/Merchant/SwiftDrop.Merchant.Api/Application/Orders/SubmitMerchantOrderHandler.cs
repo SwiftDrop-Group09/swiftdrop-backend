@@ -22,8 +22,18 @@ public sealed class SubmitMerchantOrderHandler(
     ICurrentOrderCaller currentCaller,
     TimeProvider clock)
 {
-    /// <summary>Stable serialisation of the validated order; its canonical form is fingerprinted and stored.</summary>
-    internal static readonly JsonSerializerOptions PayloadJson = new(JsonSerializerDefaults.Web);
+    /// <summary>
+    /// Serialisation of the validated order; its canonical form is fingerprinted and stored.
+    /// Reading is strict (numbers must be numbers, every field present and non-null), so a
+    /// damaged stored payload fails loudly instead of reaching Delivery with missing data.
+    /// The strict settings only affect reading; written bytes are unchanged.
+    /// </summary>
+    internal static readonly JsonSerializerOptions PayloadJson = new(JsonSerializerDefaults.Web)
+    {
+        NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.Strict,
+        RespectNullableAnnotations = true,
+        RespectRequiredConstructorParameters = true
+    };
 
     public async Task<OrderResult<OrderJobResponse>> SubmitAsync(
         MerchantOrderInput? input, string? idempotencyKey, CancellationToken cancellationToken)
