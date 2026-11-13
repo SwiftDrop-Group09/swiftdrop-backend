@@ -151,7 +151,7 @@ public static class ActivityAudit
     public static async Task<ActivityPage> Read(IConfiguration configuration, string service, IQueryCollection query, CancellationToken ct)
     {
         string? Value(string name, int maximum = 160) { var value = query[name]; if (value.Count > 1 || value.ToString().Length > maximum) throw new ArgumentException(); return value.Count == 0 || string.IsNullOrWhiteSpace(value[0]) ? null : value[0]; }
-        var allowed = new[] { "limit", "before", "beforeId", "from", "to", "actorId", "role", "ip", "action", "method", "outcome", "resourceId", "correlationId", "kind", "actorType" };
+        var allowed = new[] { "limit", "before", "beforeId", "from", "to", "actorId", "role", "ip", "action", "method", "outcome", "resourceId", "correlationId", "kind", "actorType", "notActorId", "notRole", "notIp", "notAction", "notMethod", "notOutcome", "notResourceId", "notCorrelationId", "notKind", "notActorType" };
         if (query.Keys.Any(key => !allowed.Contains(key, StringComparer.Ordinal))) throw new ArgumentException();
         var limit = Value("limit") is { } rawLimit && int.TryParse(rawLimit, out var parsedLimit) ? parsedLimit : 20;
         if (limit is < 1 or > 100 || (Value("limit") is not null && !int.TryParse(Value("limit"), out _))) throw new ArgumentException();
@@ -172,6 +172,25 @@ public static class ActivityAudit
         Filter("outcome", NpgsqlDbType.Text, outcome, "outcome = @outcome");
         var kind = Value("kind", 20); if (kind is not null && kind is not ("Request" or "Security" or "Domain" or "Configuration" or "Background")) throw new ArgumentException(); Filter("kind", NpgsqlDbType.Text, kind, "kind = @kind");
         var actorType = Value("actorType", 20); if (actorType is not null && actorType is not ("Human" or "Service" or "Anonymous" or "System")) throw new ArgumentException(); Filter("actorType", NpgsqlDbType.Text, actorType, "actor_type = @actorType");
+        foreach (var (key, column) in new[] { ("notActorId", "actor_id"), ("notResourceId", "resource_id"), ("notCorrelationId", "correlation_id") })
+            Filter(key, NpgsqlDbType.Uuid, Id(key), $"{column} IS DISTINCT FROM @{key}");
+        if (Value("notIp", 64) is { } excludedIp)
+        {
+            if (!IPAddress.TryParse(excludedIp, out var address)) throw new ArgumentException();
+            Filter("notIp", NpgsqlDbType.Inet, address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address, "ip_address IS DISTINCT FROM @notIp");
+        }
+        Filter("notRole", NpgsqlDbType.Text, Value("notRole", 40), "NOT (@notRole = ANY(actor_roles))");
+        Filter("notAction", NpgsqlDbType.Text, Value("notAction"), "strpos(lower(action), lower(@notAction)) = 0");
+        foreach (var (key, column, values) in new[] {
+            ("notMethod", "method", new[] { "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "SYSTEM" }),
+            ("notOutcome", "outcome", new[] { "Success", "Denied", "Failed", "InProgress" }),
+            ("notKind", "kind", new[] { "Request", "Security", "Domain", "Configuration", "Background" }),
+            ("notActorType", "actor_type", new[] { "Human", "Service", "Anonymous", "System" }) })
+        {
+            var value = Value(key, 20);
+            if (value is not null && !values.Contains(value, StringComparer.Ordinal)) throw new ArgumentException();
+            Filter(key, NpgsqlDbType.Text, value, $"{column} IS DISTINCT FROM @{key}");
+        }
         var before = Date("before"); var beforeId = Id("beforeId"); if ((before is null) != (beforeId is null)) throw new ArgumentException();
         var legacy = service == "Identity" ? """
             UNION ALL SELECT md5('identity-security-' || id::text)::uuid, created_at, actor_user_id, ARRAY[]::text[],

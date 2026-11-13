@@ -94,3 +94,14 @@ projections run in disposable PostgreSQL schemas. Existing business tests disabl
 the cross-cutting recorder through `test.runsettings`; the test-only client harness
 also disables it because its private store is injected rather than configured as
 a production database. This does not disable existing transactional domain audits.
+
+### Exclusion filters
+
+The activity read endpoints accept `notActorId`, `notResourceId`,
+`notCorrelationId`, `notIp`, `notRole`, `notAction`, `notMethod`, `notOutcome`,
+`notKind` and `notActorType` with the corresponding positive filter's validation.
+Rules combine with AND and apply before totals and cursor pagination. Nullable
+IDs/IPs use IS DISTINCT FROM, so missing metadata remains included unless an
+explicit positive filter selects it. `notAction` negates case-insensitive
+substring matching. Role exclusion keeps rows whose recorded role array lacks
+the selected role. All values are SQL parameters; no schema migration is needed.
