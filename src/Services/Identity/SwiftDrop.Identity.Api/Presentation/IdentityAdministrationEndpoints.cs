@@ -76,8 +76,17 @@ public static class IdentityAdministrationEndpoints
 
     private static async Task<IResult> ListUsersAsync(HttpContext context)
     {
-        if (!Page(context, out var page, out var size)) return Invalid();
-        return Result(await Store(context).ListUsersAsync(Actor(context), page, size, context.RequestAborted));
+        if (!Page(context, out var page, out var size, users: true)) return Invalid();
+        var query = context.Request.Query;
+        if (new[] { "role", "search", "status" }.Any(key => query[key].Count > 1)) return Invalid();
+        var role = query["role"].ToString();
+        var search = query["search"].ToString().Trim();
+        var status = query["status"].ToString();
+        if (role.Length > 0 && role is not ("Customer" or "Courier" or "Merchant" or "Dispatcher" or "Admin")
+            || search.Length > 200 || status is not ("" or "active" or "inactive")) return Invalid();
+        var filter = new IdentityUserFilter(role.Length == 0 ? null : role, search.Length == 0 ? null : search,
+            status.Length == 0 ? null : status == "active");
+        return Result(await Store(context).ListUsersAsync(Actor(context), page, size, context.RequestAborted, filter));
     }
 
     private static async Task<IResult> ListAuditAsync(HttpContext context)
@@ -131,11 +140,12 @@ public static class IdentityAdministrationEndpoints
         return await context.Request.ReadFromJsonAsync<T>(InputJson, context.RequestAborted);
     }
 
-    private static bool Page(HttpContext context, out int page, out int size)
+    private static bool Page(HttpContext context, out int page, out int size, bool users = false)
     {
         page = 1;
         size = 20;
-        if (context.Request.Query.Keys.Any(key => key is not ("page" or "pageSize"))) return false;
+        if (context.Request.Query.Keys.Any(key => key is not ("page" or "pageSize")
+            && !(users && key is "role" or "search" or "status"))) return false;
         return ReadPage("page", ref page) && ReadPage("pageSize", ref size) && page >= 1 && size is >= 1 and <= 100;
 
         bool ReadPage(string key, ref int value)

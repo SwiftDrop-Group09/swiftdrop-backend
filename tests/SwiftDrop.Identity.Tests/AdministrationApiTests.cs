@@ -151,6 +151,38 @@ public sealed class AdministrationApiTests(IdentityPostgresFixture database)
         Assert.Equal(HttpStatusCode.BadRequest, audit.StatusCode);
     }
 
+    [Theory]
+    [InlineData("?role=SuperAdmin")]
+    [InlineData("?role=customer")]
+    [InlineData("?role=Admin&role=Customer")]
+    [InlineData("?search=a&search=b")]
+    [InlineData("?status=disabled")]
+    [InlineData("?status=active&status=inactive")]
+    public async Task UserFiltersRejectInvalidOrAmbiguousInputs(string query)
+    {
+        using var factory = new IdentityApiFactory(database);
+        using var client = factory.Client();
+        await Authenticate(client, admin: true);
+        using var response = await client.GetAsync("/api/v1/users" + query);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UserFiltersReturnOnlyMatchingAccountsAndRemainAdminOnly()
+    {
+        using var factory = new IdentityApiFactory(database);
+        using var client = factory.Client();
+        var administrator = await Authenticate(client, admin: true);
+        var result = await client.GetFromJsonAsync<IdentityPage<RegisteredProfile>>("/api/v1/users?role=Admin&status=active&search=" + administrator.Email);
+        Assert.Equal(administrator.Id, Assert.Single(result!.Items).Id);
+        Assert.Equal(1, result.TotalCount);
+        using var invalid = await client.GetAsync("/api/v1/users?search=" + new string('a', 201));
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        await Authenticate(client);
+        using var denied = await client.GetAsync("/api/v1/users?role=Customer");
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+    }
+
     [Fact]
     public async Task AuditAndUserPagesAreBoundedSafeProjections()
     {

@@ -56,7 +56,7 @@ public sealed class PostgresIdentityAdministrationStore(NpgsqlDataSource dataSou
     }
 
     public async Task<IdentityAdministrationResult<IdentityPage<RegisteredProfile>>> ListUsersAsync(
-        Guid actor, int page, int pageSize, CancellationToken cancellationToken)
+        Guid actor, int page, int pageSize, CancellationToken cancellationToken, IdentityUserFilter? filter = null)
     {
         ValidatePage(page, pageSize);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -66,13 +66,20 @@ public sealed class PostgresIdentityAdministrationStore(NpgsqlDataSource dataSou
             return Failure<IdentityPage<RegisteredProfile>>(IdentityAdministrationFailure.Forbidden);
         }
 
-        await using var count = new NpgsqlCommand("SELECT COUNT(*) FROM public.users", connection, transaction);
+        const string predicate = """
+            WHERE (@role IS NULL OR EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id=u.id AND r.role_name::text=@role))
+              AND (@search IS NULL OR strpos(lower(u.full_name), lower(@search)) > 0 OR strpos(lower(u.email), lower(@search)) > 0)
+              AND (@active IS NULL OR u.is_active=@active)
+            """;
+        await using var count = new NpgsqlCommand($"SELECT COUNT(*) FROM public.users u {predicate}", connection, transaction);
+        AddFilters(count);
         var total = (long)(await count.ExecuteScalarAsync(cancellationToken))!;
         await using var list = new NpgsqlCommand($"""
-            SELECT {ProfileColumns} FROM public.users u
+            SELECT {ProfileColumns} FROM public.users u {predicate}
             ORDER BY u.created_at, u.id LIMIT @limit OFFSET @offset
             """, connection, transaction);
         AddPage(list, page, pageSize);
+        AddFilters(list);
         var items = new List<RegisteredProfile>();
         await using (var reader = await list.ExecuteReaderAsync(cancellationToken))
         {
@@ -81,6 +88,13 @@ public sealed class PostgresIdentityAdministrationStore(NpgsqlDataSource dataSou
 
         await transaction.CommitAsync(cancellationToken);
         return new(new IdentityPage<RegisteredProfile>(items, total, page, pageSize));
+
+        void AddFilters(NpgsqlCommand command)
+        {
+            command.Parameters.Add("role", NpgsqlDbType.Text).Value = (object?)filter?.Role ?? DBNull.Value;
+            command.Parameters.Add("search", NpgsqlDbType.Text).Value = (object?)filter?.Search ?? DBNull.Value;
+            command.Parameters.Add("active", NpgsqlDbType.Boolean).Value = (object?)filter?.IsActive ?? DBNull.Value;
+        }
     }
 
     public async Task<IdentityAdministrationResult<RegisteredProfile>> CreateUserAsync(
