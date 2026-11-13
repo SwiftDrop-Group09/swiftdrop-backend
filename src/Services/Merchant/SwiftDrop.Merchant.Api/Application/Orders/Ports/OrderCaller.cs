@@ -64,4 +64,7 @@ public sealed record OrderCaller
     /// <summary>Reading orders is for the owner (portal) or a key holding <c>orders:read</c> (FR-M07).</summary>
     public bool CanReadOrders => IsApprovedBusiness &&
         (Kind == OrderCallerKind.MerchantOwner || (Kind == OrderCallerKind.ApiKey && HasScope(ApiKeyScopes.OrdersRead)));
+
+    /// <summary>The dashboard is a human view: approved owner with a JWT only, never an API key (FR-M06).</summary>
+    public bool CanViewDashboard => IsApprovedBusiness && Kind == OrderCallerKind.MerchantOwner;
 }

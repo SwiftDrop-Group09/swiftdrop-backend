@@ -30,13 +30,19 @@ public static class OrderProcessingServiceCollectionExtensions
                 && options.DeliveryTimeout > TimeSpan.Zero
                 && options.LeaseDuration > options.DeliveryTimeout * 2,
                 "Order processing needs a positive batch size, polling interval and timeout, and a lease longer than two Delivery calls.")
+            .Validate(options => options.StatusRefreshBatchSize > 0
+                && options.StatusRefreshAfter > TimeSpan.Zero
+                && options.StatusRefreshPollingInterval > TimeSpan.Zero,
+                "Status refresh needs a positive batch size, staleness window and polling interval.")
             .ValidateOnStart();
 
         services.AddScoped<IInboxJobQueue, EfInboxJobQueue>();
         services.AddScoped<InboxJobProcessor>();
         services.AddScoped<ProcessDueOrdersHandler>();
+        services.AddScoped<RefreshOrderStatusesHandler>();
         services.AddDeliveryBookingClient(configuration, environment);
         services.AddHostedService<InboxJobProcessorService>();
+        services.AddHostedService<OrderStatusRefreshService>();
         return services;
     }
 

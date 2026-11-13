@@ -12,4 +12,7 @@ public static class MerchantAuthorizationPolicies
 
     /// <summary>Owner JWT, or API key with <c>orders:read</c>; approved business. Reading orders (FR-M07).</summary>
     public const string OrdersRead = "OrdersRead";
+
+    /// <summary>Owner JWT only, approved business. Merchant dashboard (FR-M06).</summary>
+    public const string Dashboard = "MerchantDashboard";
 }

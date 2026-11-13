@@ -7,7 +7,8 @@ namespace SwiftDrop.Merchant.Api.Infrastructure.Authentication.OrderAccess;
 public enum OrderAccess
 {
     Read,
-    Write
+    Write,
+    Dashboard
 }
 
 /// <summary>The caller must belong to an approved business and be allowed the requested access.</summary>
@@ -52,6 +53,7 @@ public sealed class OrderAccessHandler(IHttpContextAccessor contextAccessor)
         {
             OrderAccess.Write => caller.CanWriteOrders,
             OrderAccess.Read => caller.CanReadOrders,
+            OrderAccess.Dashboard => caller.CanViewDashboard,
             _ => false
         };
 

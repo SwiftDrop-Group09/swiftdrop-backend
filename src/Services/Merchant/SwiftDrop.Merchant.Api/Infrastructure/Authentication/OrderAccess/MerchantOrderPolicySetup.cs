@@ -34,5 +34,17 @@ internal sealed class MerchantOrderPolicySetup(IOptions<AuthenticationOptions> a
             policy.RequireAuthenticatedUser()
                 .AddRequirements(new OrderAccessRequirement(OrderAccess.Read));
         });
+
+        // Owner scheme only: an API key is never even evaluated for the dashboard.
+        options.AddPolicy(MerchantAuthorizationPolicies.Dashboard, policy =>
+        {
+            if (ownerScheme is not null)
+            {
+                policy.AddAuthenticationSchemes(ownerScheme);
+            }
+
+            policy.RequireAuthenticatedUser()
+                .AddRequirements(new OrderAccessRequirement(OrderAccess.Dashboard));
+        });
     }
 }

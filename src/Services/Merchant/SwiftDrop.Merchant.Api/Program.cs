@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using SwiftDrop.Merchant.Api.Application;
 using SwiftDrop.Merchant.Api.Application.Merchants;
 using SwiftDrop.Merchant.Api.Application.Orders;
+using SwiftDrop.Merchant.Api.Application.Orders.Dashboard;
 using SwiftDrop.Merchant.Api.Application.Webhooks.Handlers;
 using SwiftDrop.Merchant.Api.Application.Webhooks.Ports;
 using SwiftDrop.Merchant.Api.Infrastructure.Authentication;
@@ -34,6 +35,7 @@ public partial class Program
         builder.Services.AddScoped<SubmitMerchantOrderHandler>();
         builder.Services.AddScoped<MerchantOrderQueryHandler>();
         builder.Services.AddMerchantOrderProcessing(builder.Configuration, builder.Environment);
+        builder.Services.AddScoped<MerchantDashboardHandler>();
 
         // Webhook infrastructure, ports & handlers
         builder.Services.AddScoped<ICurrentMerchantContext, ClaimsCurrentMerchantContext>();
@@ -41,7 +43,7 @@ public partial class Program
         builder.Services.AddSingleton<IWebhookSecretProtector, AesGcmSecretProtector>();
         builder.Services.AddSingleton<IWebhookDestinationValidator, SsrfDestinationValidator>();
         builder.Services.AddSingleton<IWebhookSender, ResilientWebhookSender>();
-        builder.Services.AddScoped<IWebhookOrderResolver, StubWebhookOrderResolver>();
+        builder.Services.AddScoped<IWebhookOrderResolver, InboxJobWebhookOrderResolver>();
 
         builder.Services.AddScoped<CreateWebhookSubscriptionHandler>();
         builder.Services.AddScoped<ListWebhookSubscriptionsHandler>();
@@ -110,6 +112,7 @@ public partial class Program
         app.MapMerchantEndpoints();
         app.MapWebhookEndpoints();
         app.MapOrderEndpoints();
+        app.MapDashboardEndpoints();
 
         app.Run();
     }

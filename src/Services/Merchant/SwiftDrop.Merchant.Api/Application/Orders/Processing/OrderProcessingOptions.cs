@@ -18,4 +18,14 @@ public sealed class OrderProcessingOptions
 
     /// <summary>Deadline for each Delivery call (contract: five seconds).</summary>
     public TimeSpan DeliveryTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    // ── Status refresh (keeps parcel status current for the dashboard) ──
+
+    /// <summary>A Created order's parcel status is refreshed once it is older than this.</summary>
+    public TimeSpan StatusRefreshAfter { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>How often the refresh loop looks for stale orders.</summary>
+    public TimeSpan StatusRefreshPollingInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    public int StatusRefreshBatchSize { get; set; } = 50;
 }
