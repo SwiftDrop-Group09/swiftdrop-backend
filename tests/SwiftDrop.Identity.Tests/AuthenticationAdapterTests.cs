@@ -87,7 +87,7 @@ public sealed class AuthenticationAdapterTests : IDisposable
         var principal = handler.ValidateToken(encoded, Validation(services), out _);
         Assert.Equal(user.Id.ToString("D"), principal.Identity!.Name);
         Assert.True(principal.IsInRole("Customer"));
-        Assert.True(principal.IsInRole("Courier"));
+        Assert.False(principal.IsInRole("Courier"));
 
         using var jwks = JsonDocument.Parse(JsonSerializer.Serialize(tokens.PublicKeys()));
         var key = Assert.Single(jwks.RootElement.GetProperty("keys").EnumerateArray());
@@ -199,7 +199,7 @@ public sealed class AuthenticationAdapterTests : IDisposable
         services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>().Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters;
 
     private static RegisteredProfile Profile() =>
-        new(Guid.NewGuid(), "customer@example.test", "Customer", null, null, ["Customer", "Courier"], true);
+        new(Guid.NewGuid(), "customer@example.test", "Customer", null, null, ["Customer"], true);
 
     public void Dispose()
     {

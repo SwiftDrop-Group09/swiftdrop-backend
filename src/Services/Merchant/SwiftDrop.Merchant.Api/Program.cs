@@ -64,6 +64,14 @@ public partial class Program
                 options.MapInboundClaims = false;
                 options.IncludeErrorDetails = false;
                 options.TokenValidationParameters = identityJwks.CreateValidationParameters();
+                options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents {
+                    OnTokenValidated = context => {
+                        var roles = context.Principal?.FindAll("roles").Select(claim => claim.Value).ToArray() ?? [];
+                        if (roles.Length != 1 || !SwiftDrop.Contracts.HumanRoles.TryParse(roles[0], out _))
+                            context.Fail("Exactly one defined human role is required.");
+                        return Task.CompletedTask;
+                    }
+                };
             })
             .AddMerchantApiKey();
         builder.Services.AddAuthorization();

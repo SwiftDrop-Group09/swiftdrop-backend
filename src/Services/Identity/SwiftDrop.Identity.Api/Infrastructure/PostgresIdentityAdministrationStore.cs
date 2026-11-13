@@ -1,3 +1,4 @@
+using SwiftDrop.Contracts;
 using System.Data;
 
 using Npgsql;
@@ -99,8 +100,9 @@ public sealed class PostgresIdentityAdministrationStore(NpgsqlDataSource dataSou
 
     public async Task<IdentityAdministrationResult<RegisteredProfile>> CreateUserAsync(
         Guid actor, string email, string normalizedEmail, string fullName, bool isActive, string passwordHash,
-        DateTimeOffset now, string? correlation, CancellationToken cancellationToken)
+        DateTimeOffset now, string? correlation, CancellationToken cancellationToken, HumanRole role = HumanRole.Customer)
     {
+        if (!Enum.IsDefined(role)) return Failure<RegisteredProfile>(IdentityAdministrationFailure.InvalidRoles);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await LockAdministrationAsync(connection, transaction, cancellationToken);
@@ -117,11 +119,12 @@ public sealed class PostgresIdentityAdministrationStore(NpgsqlDataSource dataSou
                 INSERT INTO public.users
                     (id,email,normalized_email,full_name,is_active,password_hash,created_at,updated_at)
                 VALUES (@id,@email,@normalized_email,@full_name,@active,@password_hash,@now,@now);
-                INSERT INTO public.user_roles (user_id,role_name,assigned_at) VALUES (@id,'Customer',@now);
+                INSERT INTO public.user_roles (user_id,role_name,assigned_at) VALUES (@id,@role::public.user_role,@now);
                 """, connection, transaction))
             {
                 AddUserParameters(create, target, email, normalizedEmail, fullName, isActive, now);
                 create.Parameters.AddWithValue("password_hash", passwordHash);
+                create.Parameters.AddWithValue("role", role.ToString());
                 await create.ExecuteNonQueryAsync(cancellationToken);
             }
 
@@ -189,14 +192,14 @@ public sealed class PostgresIdentityAdministrationStore(NpgsqlDataSource dataSou
         var failure = CheckAdministratorAndTarget(profiles, actor, target);
         if (failure is not null) return Failure<RegisteredProfile>(failure.Value);
 
-        if (roles.Length > 5 || roles.Any(string.IsNullOrWhiteSpace)
+        if (roles.Length != 1 || roles.Any(role => !HumanRoles.TryParse(role, out _))
             || roles.Distinct(StringComparer.Ordinal).Count() != roles.Length)
         {
             return Failure<RegisteredProfile>(IdentityAdministrationFailure.InvalidRoles);
         }
 
         await using (var knownRoles = new NpgsqlCommand(
-            "SELECT COUNT(*) FROM public.roles WHERE name=ANY(@roles)", connection, transaction))
+            "SELECT COUNT(*) FROM public.roles WHERE name::text=ANY(@roles)", connection, transaction))
         {
             knownRoles.Parameters.AddWithValue("roles", roles);
             if ((long)(await knownRoles.ExecuteScalarAsync(cancellationToken))! != roles.Length)
@@ -214,7 +217,7 @@ public sealed class PostgresIdentityAdministrationStore(NpgsqlDataSource dataSou
         await using (var replace = new NpgsqlCommand("""
             DELETE FROM public.user_roles WHERE user_id=@target;
             INSERT INTO public.user_roles (user_id,role_name,assigned_at)
-            SELECT @target, role_name, @now FROM unnest(@roles::text[]) AS role_name;
+            SELECT @target, role_name::public.user_role, @now FROM unnest(@roles::text[]) AS role_name;
             UPDATE public.users SET updated_at=@now WHERE id=@target;
             """, connection, transaction))
         {
@@ -334,7 +337,7 @@ public sealed class PostgresIdentityAdministrationStore(NpgsqlDataSource dataSou
         reader.GetFieldValue<string[]>(6), reader.GetBoolean(5));
 
     private static bool IsAdministrator(RegisteredProfile? profile) =>
-        profile is { IsActive: true } && profile.Roles.Contains("Admin", StringComparer.Ordinal);
+        profile is { IsActive: true } && profile.Role == HumanRole.Admin;
 
     private static IdentityAdministrationFailure? CheckAdministratorAndTarget(
         Dictionary<Guid, RegisteredProfile> profiles, Guid actor, Guid target)
