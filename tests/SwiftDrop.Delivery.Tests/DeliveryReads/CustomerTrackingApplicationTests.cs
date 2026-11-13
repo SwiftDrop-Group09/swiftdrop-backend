@@ -143,6 +143,39 @@ public sealed class CustomerTrackingApplicationTests
         Assert.Equal([1, 2, 3, 4], image.Response.Content);
     }
 
+    [Fact]
+    public async Task DispatcherCanTrackButCannotReadReceiptOrProofInAnyFormat()
+    {
+        var store = new FakeCustomerReadStore();
+        var handler = CreateHandler(new FakeUser(true, CustomerId, isOperations: true), store);
+        Assert.Null((await handler.ListParcelsAsync(new())).Failure);
+        Assert.True(store.LastScope!.IsOperations);
+        var calls = store.Calls;
+        Assert.Equal(DeliveryReadFailure.Forbidden, (await handler.GetReceiptAsync("invalid")).Failure);
+        Assert.Equal(DeliveryReadFailure.Forbidden, (await handler.GetReceiptPdfAsync(ParcelId.ToString())).Failure);
+        Assert.Equal(DeliveryReadFailure.Forbidden, (await handler.GetProofAsync(ParcelId.ToString())).Failure);
+        Assert.Equal(DeliveryReadFailure.Forbidden, (await handler.GetProofImageAsync(ParcelId.ToString())).Failure);
+        Assert.Equal(calls, store.Calls);
+    }
+
+    [Theory]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    public async Task ReceiptAndProofUseAdminOrOwnerScopeEvenForCombinedDispatcherCustomer(
+        bool admin, bool customer, bool unrestricted)
+    {
+        var store = new FakeCustomerReadStore();
+        var handler = CreateHandler(new FakeUser(true, CustomerId, customer, true, isAdmin: admin), store);
+        await handler.GetReceiptAsync(ParcelId.ToString());
+        Assert.Equal(unrestricted, store.LastScope!.IsOperations);
+        Assert.Equal(customer, store.LastScope.IsCustomer);
+        Assert.False(store.LastScope.IsCourier);
+        await handler.GetProofAsync(ParcelId.ToString());
+        Assert.Equal(unrestricted, store.LastScope!.IsOperations);
+        Assert.Equal(customer, store.LastScope.IsCustomer);
+    }
+
     private static CustomerTrackingHandler CreateHandler(
         ICurrentDeliveryUser user,
         ICustomerDeliveryReadStore store,
@@ -172,13 +205,14 @@ public sealed class CustomerTrackingApplicationTests
         Guid? userId,
         bool isCustomer = false,
         bool isOperations = false,
-        bool isCourier = false) : ICurrentDeliveryUser
+        bool isCourier = false, bool isAdmin = false) : ICurrentDeliveryUser
     {
         public bool IsAuthenticated { get; } = isAuthenticated;
         public Guid? UserId { get; } = userId;
         public bool IsCourier { get; } = isCourier;
         public bool IsCustomer { get; } = isCustomer;
         public bool IsOperations { get; } = isOperations;
+        public bool IsAdmin { get; } = isAdmin;
     }
 
     private sealed class FakeProofReader : IPrivateProofReader
@@ -226,12 +260,14 @@ public sealed class CustomerTrackingApplicationTests
         public Task<ParcelReceiptLookup?> GetReceiptAsync(ParcelReadScope scope, Guid parcelId, CancellationToken cancellationToken)
         {
             Calls++;
+            LastScope = scope;
             return Task.FromResult(ReceiptLookup);
         }
 
         public Task<ParcelProofLookup?> GetProofAsync(ParcelReadScope scope, Guid parcelId, CancellationToken cancellationToken)
         {
             Calls++;
+            LastScope = scope;
             return Task.FromResult(ProofLookup);
         }
     }

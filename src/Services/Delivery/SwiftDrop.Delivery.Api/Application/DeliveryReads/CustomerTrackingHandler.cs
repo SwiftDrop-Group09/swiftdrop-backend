@@ -164,7 +164,7 @@ public sealed class CustomerTrackingHandler(
     {
         if (!currentUser.IsAuthenticated || currentUser.UserId is not { } userId || userId == Guid.Empty)
             return new(null, DeliveryReadFailure.Unauthenticated);
-        if (!currentUser.IsCustomer && !currentUser.IsOperations)
+        if (!currentUser.IsCustomer && !currentUser.IsAdmin)
             return new(null, DeliveryReadFailure.Forbidden);
         if (invalidParameters)
             return new(null, DeliveryReadFailure.InvalidInput,
@@ -174,7 +174,7 @@ public sealed class CustomerTrackingHandler(
 
         try
         {
-            var scope = new ParcelReadScope(userId, false, currentUser.IsCustomer, currentUser.IsOperations);
+            var scope = new ParcelReadScope(userId, false, currentUser.IsCustomer, currentUser.IsAdmin);
             var lookup = await store.GetReceiptAsync(scope, id, cancellationToken);
             if (lookup is null)
                 return new(null, DeliveryReadFailure.NotFound);
@@ -241,7 +241,7 @@ public sealed class CustomerTrackingHandler(
     {
         if (!currentUser.IsAuthenticated || currentUser.UserId is not { } userId || userId == Guid.Empty)
             return new(null, DeliveryReadFailure.Unauthenticated);
-        if (!currentUser.IsCustomer && !currentUser.IsOperations)
+        if (!currentUser.IsCustomer && !currentUser.IsAdmin)
             return new(null, DeliveryReadFailure.Forbidden);
         if (invalidParameters)
             return new(null, DeliveryReadFailure.InvalidInput,
@@ -251,7 +251,7 @@ public sealed class CustomerTrackingHandler(
 
         try
         {
-            var scope = new ParcelReadScope(userId, false, currentUser.IsCustomer, currentUser.IsOperations);
+            var scope = new ParcelReadScope(userId, false, currentUser.IsCustomer, currentUser.IsAdmin);
             var lookup = await store.GetProofAsync(scope, id, cancellationToken);
             if (lookup is null)
                 return new(null, DeliveryReadFailure.NotFound);
