@@ -18,12 +18,14 @@ namespace SwiftDrop.Merchant.Api.Infrastructure.Authentication.ApiKeys;
 /// Business approval is not decided here: it is checked per request by the
 /// order policies, so a valid key of a suspended business gets 403, not 401.
 /// The raw key is never logged or placed in a failure message.
+/// <para>The handler is created for every request that evaluates this scheme
+/// (including requests without a key), so the database is resolved only once a
+/// key is actually presented.</para>
 /// </summary>
 public sealed class ApiKeyAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
-    UrlEncoder encoder,
-    MerchantDbContext database)
+    UrlEncoder encoder)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     private const string InvalidKey = "The API key is invalid or revoked.";
@@ -67,6 +69,7 @@ public sealed class ApiKeyAuthenticationHandler(
     /// <summary>Returns the key only when it exists, is active and the secret verifies (constant time).</summary>
     private async Task<ApiKey?> FindVerifiedKeyAsync(ParsedApiKey parsed, string presented, CancellationToken cancellationToken)
     {
+        var database = Context.RequestServices.GetRequiredService<MerchantDbContext>();
         var candidates = database.ApiKeys.AsNoTracking().Where(key => key.KeyPrefix == parsed.Prefix);
         if (parsed.KeyId is { } keyId)
         {

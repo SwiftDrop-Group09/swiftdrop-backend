@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SwiftDrop.Merchant.Api.Application.Orders.Ports;
 using SwiftDrop.Merchant.Api.Domain;
 using SwiftDrop.Merchant.Api.Infrastructure.Authentication.ApiKeys;
@@ -21,7 +22,12 @@ internal sealed class OrderAuthTestHost : IDisposable
     private readonly MerchantApiFactory _factory;
 
     public OrderAuthTestHost(ClaimsPrincipal? ownerPrincipal = null) =>
-        _factory = new MerchantApiFactory(ownerPrincipal, inMemoryDbName: $"order-auth-{Guid.NewGuid():N}");
+        _factory = new MerchantApiFactory(ownerPrincipal, inMemoryDbName: $"order-auth-{Guid.NewGuid():N}",
+            configureServices: services =>
+            {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(new SteppingTimeProvider());
+            });
 
     public HttpClient CreateClient() => _factory.CreateClient();
 
@@ -84,6 +90,13 @@ internal sealed class OrderAuthTestHost : IDisposable
         return await context.AuthenticateAsync(ApiKeyAuthenticationDefaults.SchemeName);
     }
 
+    public async Task<SwiftDrop.Merchant.Api.Domain.Orders.InboxJob?> FindJobAsync(Guid id)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<MerchantDbContext>();
+        return await database.InboxJobs.FindAsync(id);
+    }
+
     public static Action<HttpRequest> WithKey(string key) =>
         request => request.Headers[ApiKeyAuthenticationDefaults.HeaderName] = key;
 
@@ -95,6 +108,15 @@ internal sealed class OrderAuthTestHost : IDisposable
         configureRequest?.Invoke(context.Request);
         services.GetRequiredService<IHttpContextAccessor>().HttpContext = context;
         return context;
+    }
+
+    /// <summary>Deterministic clock: every reading is one second after the previous one, so ordering by time is stable.</summary>
+    private sealed class SteppingTimeProvider : TimeProvider
+    {
+        private long _ticks = new DateTimeOffset(2026, 11, 13, 9, 0, 0, TimeSpan.Zero).UtcTicks;
+
+        public override DateTimeOffset GetUtcNow() =>
+            new(Interlocked.Add(ref _ticks, TimeSpan.TicksPerSecond), TimeSpan.Zero);
     }
 
     private async Task SaveAsync(object entity)

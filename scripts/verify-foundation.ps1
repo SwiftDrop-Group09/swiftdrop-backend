@@ -160,7 +160,6 @@ try {
     }
 
     $probes = @(
-        'http://127.0.0.1:5000/api/v1/merchant/orders',
         'http://127.0.0.1:5000/graphql',
         'http://127.0.0.1:5000/internal/v1/webhook-dispatches',
         'http://127.0.0.1:5000/swiftdrop.delivery.v1.DeliveryService/CreateBooking'
@@ -181,6 +180,31 @@ try {
         finally { $response.Dispose() }
     }
     Write-Output "PASS: $($probes.Count) missing-feature/internal/readiness probes; real gateway destinations reachable."
+
+    # Merchant orders are implemented: without a credential both routes must fail closed with 401.
+    $orderRequests = @(
+        @{ Method = [System.Net.Http.HttpMethod]::Get; Path = '/api/v1/merchant/orders' },
+        @{ Method = [System.Net.Http.HttpMethod]::Post; Path = '/api/v1/merchant/orders' }
+    )
+    foreach ($orderRequest in $orderRequests) {
+        $request = [System.Net.Http.HttpRequestMessage]::new($orderRequest.Method, "http://127.0.0.1:5000$($orderRequest.Path)")
+        if ($orderRequest.Method -eq [System.Net.Http.HttpMethod]::Post) {
+            $request.Content = [System.Net.Http.StringContent]::new('{}', [System.Text.Encoding]::UTF8, 'application/json')
+            $request.Headers.Add('Idempotency-Key', 'foundation-probe')
+        }
+        try {
+            $orderResponse = $client.SendAsync($request).GetAwaiter().GetResult()
+            try {
+                $orderProblem = ConvertFrom-Json $orderResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if ([int]$orderResponse.StatusCode -ne 401 -or $orderProblem.code -ne 'unauthorized') {
+                    throw "Expected $($orderRequest.Method) $($orderRequest.Path) through Gateway to require a credential (HTTP 401); got $([int]$orderResponse.StatusCode)."
+                }
+            }
+            finally { $orderResponse.Dispose() }
+        }
+        finally { $request.Dispose() }
+    }
+    Write-Output 'PASS: merchant order GET/POST through Gateway require a verified credential (HTTP 401).'
 
     $identityReadiness = $client.GetAsync('http://127.0.0.2:8080/ready').GetAwaiter().GetResult()
     try {

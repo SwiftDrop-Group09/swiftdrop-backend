@@ -23,7 +23,6 @@ public sealed class FoundationTests : IDisposable
     [Theory]
     [InlineData("/weatherforecast")]
     [InlineData("/ready")]
-    [InlineData("/api/v1/merchant/orders")]
     public async Task UnimplementedRoutesReturnNotFound(string path)
     {
         using var client = _factory.CreateClient();
@@ -37,6 +36,7 @@ public sealed class FoundationTests : IDisposable
     [InlineData("/api/v1/merchants/me")]
     [InlineData("/api/v1/merchants/api-keys")]
     [InlineData("/api/v1/merchant/webhooks")]
+    [InlineData("/api/v1/merchant/orders")]
     public async Task FeatureRoutesRequireAuthentication(string path)
     {
         using var client = _factory.CreateClient();

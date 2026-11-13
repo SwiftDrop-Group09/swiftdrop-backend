@@ -70,6 +70,8 @@ internal sealed class InboxJobEntityConfiguration : IEntityTypeConfiguration<Inb
         job.HasIndex(x => new { x.State, x.NextRetryAt });
         // Merchant order list: stable newest-first paging within one business.
         job.HasIndex(x => new { x.BusinessId, x.CreatedAt, x.Id });
+        // Intake: detect an Idempotency-Key reused for a different order.
+        job.HasIndex(x => new { x.BusinessId, x.IdempotencyKey });
 
         // Orders are lifetime records: a business with orders cannot be hard-deleted.
         job.HasOne<Business>()
