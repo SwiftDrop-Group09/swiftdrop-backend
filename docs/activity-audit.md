@@ -54,6 +54,20 @@ reviewed forwarding configuration before claiming end-user IP attribution.
 
 ## Deployment prerequisite
 
+If local sign-in fails before showing Google's control, check
+`GET /api/v1/auth/csrf` and Identity `/ready`. A 503 `audit_unavailable` together
+with pending migrations means the service cannot durably record authentication;
+CSRF tokens and Google nonces are deliberately not issued. Apply Identity's
+pending migration using the explicit migration task below. Do not disable the
+recorder or relax origin/cookie checks.
+
+Audit failures return a private/no-store 503 with an opaque `correlationId` also
+present in `X-Correlation-ID`. Operator logs classify missing schema, insufficient
+permissions, connectivity, timeouts and invalid configuration with a SQLSTATE
+when available and a recovery hint. They omit exception details, SQL parameters,
+connection strings, request bodies and credentials. The public response does not
+reveal database schema or privilege information.
+
 Apply migrations before deploying/restarting the new API binaries:
 
 - Identity: `004_actor_activity_audit` through the existing `--migrate` task and
