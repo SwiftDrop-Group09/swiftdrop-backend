@@ -60,6 +60,9 @@ internal static partial class MerchantEntityConfigurations
         // Webhook entities configuration
         Webhooks.Persistence.WebhookEntityConfigurations.Configure(model);
 
+        // Merchant order inbox
+        model.ApplyConfiguration(new Orders.Persistence.InboxJobEntityConfiguration());
+
         // Standard snake_case column mapping across all entities
         foreach (var entity in model.Model.GetEntityTypes())
         {
