@@ -158,6 +158,144 @@ namespace SwiftDrop.Merchant.Api.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.Orders.InboxJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AcceptedPriceVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("accepted_price_version");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("business_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("error_code");
+
+                    b.Property<string>("ExternalOrderId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("external_order_id");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<DateTimeOffset?>("LastRefreshedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_refreshed_at");
+
+                    b.Property<DateTimeOffset?>("LastStatusChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_status_changed_at");
+
+                    b.Property<DateTimeOffset?>("NextRetryAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_retry_at");
+
+                    b.Property<string>("OrderPayload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("order_payload");
+
+                    b.Property<Guid?>("ParcelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<string>("ParcelStatus")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("parcel_status");
+
+                    b.Property<long?>("ParcelVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("parcel_version");
+
+                    b.Property<string>("RequestFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .HasColumnName("request_fingerprint")
+                        .IsFixedLength();
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("state");
+
+                    b.Property<DateTimeOffset?>("TerminalAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("terminal_at");
+
+                    b.Property<decimal?>("Total")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("total");
+
+                    b.Property<string>("TrackingNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("tracking_number");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessId", "ExternalOrderId")
+                        .IsUnique();
+
+                    b.HasIndex("State", "NextRetryAt");
+
+                    b.HasIndex("BusinessId", "CreatedAt", "Id");
+
+                    b.ToTable("inbox_jobs", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_inbox_jobs_attempts", "attempts >= 0");
+
+                            t.HasCheckConstraint("ck_inbox_jobs_created_has_parcel", "state <> 'Created' OR (parcel_id IS NOT NULL AND tracking_number IS NOT NULL AND parcel_status IS NOT NULL AND parcel_version IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_inbox_jobs_external_order_id", "btrim(external_order_id) <> ''");
+
+                            t.HasCheckConstraint("ck_inbox_jobs_fingerprint", "request_fingerprint ~ '^[0-9a-f]{64}$'");
+
+                            t.HasCheckConstraint("ck_inbox_jobs_idempotency_key", "btrim(idempotency_key) <> ''");
+
+                            t.HasCheckConstraint("ck_inbox_jobs_parcel_version", "parcel_version IS NULL OR parcel_version >= 1");
+
+                            t.HasCheckConstraint("ck_inbox_jobs_state", "state IN ('Accepted','Retrying','Created','Failed')");
+
+                            t.HasCheckConstraint("ck_inbox_jobs_total", "total IS NULL OR total >= 0");
+
+                            t.HasCheckConstraint("ck_inbox_jobs_unsettled_is_scheduled", "state NOT IN ('Accepted','Retrying') OR next_retry_at IS NOT NULL");
+                        });
+                });
+
             modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.Webhooks.WebhookAttempt", b =>
                 {
                     b.Property<Guid>("Id")
@@ -423,6 +561,15 @@ namespace SwiftDrop.Merchant.Api.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("BusinessId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SwiftDrop.Merchant.Api.Domain.Orders.InboxJob", b =>
+                {
+                    b.HasOne("SwiftDrop.Merchant.Api.Domain.Business", null)
+                        .WithMany()
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

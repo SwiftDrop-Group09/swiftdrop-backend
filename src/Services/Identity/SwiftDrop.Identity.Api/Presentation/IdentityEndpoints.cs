@@ -216,6 +216,8 @@ public static class IdentityEndpoints
             return Failure(result.Failure ?? IdentityFailure.InvalidCredentials);
         }
 
+        context.Items[SwiftDrop.Auditing.ActivityAudit.ActorItem] = result.User.Id;
+        context.Items[SwiftDrop.Auditing.ActivityAudit.RolesItem] = result.User.Roles;
         var browser = BrowserAuthentication.IsBrowser(context);
         if (browser)
         {

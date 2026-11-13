@@ -1,3 +1,4 @@
+using SwiftDrop.Auditing;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Admin.Pricing;
@@ -148,6 +149,7 @@ public partial class Program
             }
         });
         app.UseAuthentication();
+        app.UseActivityAudit("Delivery", "/api/v1/delivery/audit-logs");
         app.UseAuthorization();
 
         // Process liveness only; dependency readiness is a later milestone.

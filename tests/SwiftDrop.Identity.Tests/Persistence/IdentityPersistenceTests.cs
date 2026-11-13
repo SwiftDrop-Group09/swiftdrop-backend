@@ -546,7 +546,7 @@ public sealed class IdentityPersistenceTests(IdentityPostgresFixture database)
         AssertSuccess(await _store.LinkGoogleAsync(local.Id, PasswordHash, identity, Now, default));
         AssertSuccess(await _store.CreateSessionAsync(local.Id, Session(), default));
         await Task.WhenAll(IdentitySchemaMigrator.ApplyAsync(database.ConnectionString), IdentitySchemaMigrator.ApplyAsync(database.ConnectionString));
-        Assert.Equal(3L, await ScalarAsync<long>("SELECT COUNT(*) FROM public.schema_migrations"));
+        Assert.Equal(4L, await ScalarAsync<long>("SELECT COUNT(*) FROM public.schema_migrations"));
         Assert.Equal(1L, await ScalarAsync<long>(
             "SELECT COUNT(*) FROM public.schema_migrations WHERE version=@version", ("version", IdentitySchemaMigrator.CurrentVersion)));
         Assert.True(await _registration.IsReadyAsync(default));

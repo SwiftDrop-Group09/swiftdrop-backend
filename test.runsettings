@@ -1,0 +1,6 @@
+<RunSettings>
+  <RunConfiguration>
+    <!-- Existing feature tests isolate business behavior. Audit tests explicitly enable recording. -->
+    <EnvironmentVariables><Audit__Enabled>false</Audit__Enabled></EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>
