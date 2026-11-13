@@ -55,8 +55,10 @@ public partial class Program
                 options.MapInboundClaims = false;
                 options.IncludeErrorDetails = false;
                 options.TokenValidationParameters = identityJwks.CreateValidationParameters();
-            });
+            })
+            .AddMerchantApiKey();
         builder.Services.AddAuthorization();
+        builder.Services.AddMerchantOrderAuthorization();
 
         // Explicit single-run migration task; normal host startup never applies DDL.
         if (args.Contains("--migrate", StringComparer.Ordinal))
