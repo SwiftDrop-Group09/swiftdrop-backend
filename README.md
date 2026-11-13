@@ -104,7 +104,8 @@ domain rules. No code generation or transport package is enabled yet.
 
 ## Build and test
 
-Install SDK **10.0.301**, pinned exactly in `global.json`, and Git. Delivery
+Install SDK **10.0.301** or a newer .NET 10 feature band, and Git. `global.json`
+allows feature-band roll-forward, including SDK 10.0.404. Delivery
 persistence tests require installed PostgreSQL binaries for a disposable cluster
 or an explicitly configured test database with temporary-schema permission.
 They fail when PostgreSQL is unavailable. No broker/object store is required.
