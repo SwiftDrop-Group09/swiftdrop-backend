@@ -377,6 +377,33 @@ public sealed class AdministrationPersistenceTests(IdentityPostgresFixture datab
             typeof(IdentityAuditRecord).GetProperties().Select(property => property.Name));
     }
 
+    [Fact]
+    public async Task UserFiltersApplyBeforePaginationAndCountMultiRoleUsersOnce()
+    {
+        var administrator = await AdministratorAsync();
+        var marker = Guid.NewGuid().ToString("N");
+        var first = Success(await _store.CreateUserAsync(administrator.Id, marker + "1@example.test", Normalize(marker + "1@example.test"), "Filter " + marker, true, PasswordHash, Now, null, default));
+        var second = Success(await _store.CreateUserAsync(administrator.Id, marker + "2@example.test", Normalize(marker + "2@example.test"), "Filter " + marker, false, PasswordHash, Now, null, default));
+        Success(await _store.SetRolesAsync(administrator.Id, first.Id, ["Customer", "Courier"], Now, null, default));
+        var filter = new IdentityUserFilter("Customer", marker.ToUpperInvariant());
+        var page = Success(await _store.ListUsersAsync(administrator.Id, 1, 1, default, filter));
+        var next = Success(await _store.ListUsersAsync(administrator.Id, 2, 1, default, filter));
+        Assert.Equal(2, page.TotalCount);
+        Assert.Equal(2, next.TotalCount);
+        Assert.Single(page.Items);
+        Assert.Single(next.Items);
+        Assert.Empty(page.Items.Select(x => x.Id).Intersect(next.Items.Select(x => x.Id)));
+        var couriers = Success(await _store.ListUsersAsync(administrator.Id, 1, 20, default, filter with { Role = "Courier" }));
+        Assert.Equal(first.Id, Assert.Single(couriers.Items).Id);
+        Assert.Equal(1, couriers.TotalCount);
+        var inactive = Success(await _store.ListUsersAsync(administrator.Id, 1, 20, default, filter with { IsActive = false }));
+        Assert.Equal(second.Id, Assert.Single(inactive.Items).Id);
+        Assert.Equal(1, inactive.TotalCount);
+        var literal = Success(await _store.ListUsersAsync(administrator.Id, 1, 20, default, new IdentityUserFilter(Search: marker + "%_' OR 1=1 --")));
+        Assert.Empty(literal.Items);
+        Assert.Equal(0, literal.TotalCount);
+    }
+
     [Theory]
     [InlineData(0, 20)]
     [InlineData(1, 0)]

@@ -12,6 +12,7 @@ public enum IdentityAdministrationFailure
 public sealed record IdentityAdministrationResult<T>(T? Value, IdentityAdministrationFailure? Failure = null);
 public sealed record ProfileUpdate(string FullName, string? PhoneNumber, string? Address);
 public sealed record IdentityPage<T>(IReadOnlyList<T> Items, long TotalCount, int Page, int PageSize);
+public sealed record IdentityUserFilter(string? Role = null, string? Search = null, bool? IsActive = null);
 public sealed record IdentityAuditRecord(long Id, Guid? ActorId, string Action, Guid? ResourceId,
     DateTimeOffset Timestamp, string ResultCode);
 
@@ -21,7 +22,7 @@ public interface IIdentityAdministrationStore
     Task<IdentityAdministrationResult<RegisteredProfile>> UpdateProfileAsync(Guid actor, ProfileUpdate input,
         DateTimeOffset now, string? correlation, CancellationToken cancellationToken);
     Task<IdentityAdministrationResult<IdentityPage<RegisteredProfile>>> ListUsersAsync(Guid actor, int page,
-        int pageSize, CancellationToken cancellationToken);
+        int pageSize, CancellationToken cancellationToken, IdentityUserFilter? filter = null);
     Task<IdentityAdministrationResult<RegisteredProfile>> CreateUserAsync(Guid actor, string email,
         string normalizedEmail, string fullName, bool isActive, string passwordHash, DateTimeOffset now,
         string? correlation, CancellationToken cancellationToken);
