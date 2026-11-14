@@ -98,13 +98,15 @@ public sealed class ReassignmentApiTests(PostgresFixture fixture)
     [InlineData("pickup")]
     [InlineData("reassignment")]
     [InlineData("midnight")]
+    [InlineData("midnight-explicit")]
     public async Task NormalizedReasonReplaysExactResponseAfterLaterChanges(string later)
     {
         await using var s = await StatusTestScenario.CreateAsync(fixture);
         using var factory = s.CreateFactory(Guid.NewGuid(), "Dispatcher");
         using var client = factory.CreateClient();
         var key = Guid.NewGuid().ToString();
-        using var first = await Send(client, s.ParcelId, s.OtherCourierId, key: key, reason: "  Route  blocked  ");
+        var date = later == "midnight-explicit" ? "2026-10-28" : null;
+        using var first = await Send(client, s.ParcelId, s.OtherCourierId, key: key, reason: "  Route  blocked  ", date: date);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         var exact = await first.Content.ReadAsStringAsync();
         if (later == "pickup")
@@ -122,11 +124,11 @@ public sealed class ReassignmentApiTests(PostgresFixture fixture)
         }
         else s.Clock.UtcNow = s.Clock.UtcNow.AddDays(1);
         var before = (await s.GraphAsync()).Signature();
-        using var replay = await Send(client, s.ParcelId, s.OtherCourierId, key: key, reason: "Route  blocked");
+        using var replay = await Send(client, s.ParcelId, s.OtherCourierId, key: key, reason: "Route  blocked", date: date);
         Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
         Assert.Equal(exact, await replay.Content.ReadAsStringAsync());
         Assert.Equal(before, (await s.GraphAsync()).Signature());
-        using var conflict = await Send(client, s.ParcelId, s.OtherCourierId, key: key, reason: "Route blocked");
+        using var conflict = await Send(client, s.ParcelId, s.OtherCourierId, key: key, reason: "Route blocked", date: date);
         Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
         Assert.Contains("idempotency_conflict", await conflict.Content.ReadAsStringAsync());
     }
@@ -193,6 +195,24 @@ public sealed class ReassignmentApiTests(PostgresFixture fixture)
         Assert.Empty(errors);
         Assert.Null(AssignmentValidator.Validate(input with { Reason = "not reassignment" }, "key", errors));
         Assert.Contains("reason", errors.Keys);
+    }
+
+    [Fact]
+    public async Task RetainedInitialAssignmentResponseStillReplaysAfterReassignment()
+    {
+        await using var s = await StatusTestScenario.CreateAsync(fixture, ParcelStatus.Created);
+        using var factory = s.CreateFactory(Guid.NewGuid(), "Dispatcher");
+        using var client = factory.CreateClient();
+        var key = Guid.NewGuid().ToString();
+        using var initial = await Send(client, s.ParcelId, s.CourierId, version: 1, key: key, reason: null, reassign: false);
+        Assert.Equal(HttpStatusCode.OK, initial.StatusCode);
+        using var replacement = await Send(client, s.ParcelId, s.OtherCourierId);
+        Assert.Equal(HttpStatusCode.OK, replacement.StatusCode);
+        var before = (await s.GraphAsync()).Signature();
+        using var replay = await Send(client, s.ParcelId, s.CourierId, version: 1, key: key, reason: null, reassign: false);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Equal(await initial.Content.ReadAsStringAsync(), await replay.Content.ReadAsStringAsync());
+        Assert.Equal(before, (await s.GraphAsync()).Signature());
     }
 
 }

@@ -66,7 +66,7 @@ idempotency record scoped to authenticated actor + AssignCourier + key. For a ne
 request, verify Created/no current assignment and lock the target Courier row
 before a fresh READ COMMITTED daily count. Hold a shared lock on the matching
 CourierZone row. Every allocation writer must honor the parcel-first/courier-lock
-contract; future reassignment writers must coordinate both couriers consistently.
+contract; reassignment coordinates both couriers in PostgreSQL UUID order.
 Existing completion/failure writers only release slots and preserve parcel-first
 locking. The unique Active assignment index is retained as a database guard.
 
@@ -159,3 +159,12 @@ StatusChanged v1 forbids extra properties. The reason remains in authorized
 history and is absent from broker/public tracking payloads. Contract/consumer
 expectations require their owners' review; no other role's consumer is changed.
 P4 requires no new schema migration; existing shared rollout restrictions remain.
+
+P4 validation includes retirement plus parcel/replacement/history/outbox/receipt/
+deferred-commit fault injection, exact lost-acknowledgement receipt replay,
+reassignment-versus-pickup and same-parcel replacement races, opposite-direction
+courier swaps with spare/full capacity, and initial assignment competing with
+reassignment for the last slot on one date. Golden pre-P4 fingerprint vectors and
+retained initial-assignment receipts remain covered. Normalized-reason replay is
+verified after pickup, a later reassignment and business midnight (both omitted
+and explicit dates), with changed-reason conflicts and no duplicate effects.
