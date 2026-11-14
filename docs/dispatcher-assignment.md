@@ -1,8 +1,7 @@
 # Dispatcher initial assignment
 
-This feature implements the initial assignment part of FR-D02/TC-D02. Dispatcher
-and Admin may assign a Created parcel. Reassignment remains a separate milestone;
-`reassign=true` is rejected. Courier status/proof APIs retain their authorization.
+Dispatcher and Admin may assign a Created parcel (FR-D02/TC-D02) or explicitly
+reassign an Assigned parcel before pickup (FR-D04/TC-D04). Courier status/proof APIs retain their authorization.
 
 ## Assignment rules selected for this milestone
 
@@ -41,7 +40,7 @@ The preview is advisory and never reserves capacity. Courier names are absent.
 `POST /api/v1/deliveries/assign` requires one Idempotency-Key (existing opaque
 key rules, maximum 128 characters) and JSON parcelId, courierId, expectedVersion,
 optional reassign=false and optional serviceDate. Unknown/duplicate body fields,
-noninteger versions, unsupported reassignment, bad IDs/dates and past dates are
+noninteger versions, invalid reassignment reasons, bad IDs/dates and past dates are
 400. Authorization precedes validation/storage. Missing/invalid identity is 401;
 other roles are 403. Missing parcel or operational courier is 404. Stale version,
 invalid transition, changed-body key reuse, expired key and lock contention are
@@ -67,7 +66,7 @@ idempotency record scoped to authenticated actor + AssignCourier + key. For a ne
 request, verify Created/no current assignment and lock the target Courier row
 before a fresh READ COMMITTED daily count. Hold a shared lock on the matching
 CourierZone row. Every allocation writer must honor the parcel-first/courier-lock
-contract; future reassignment writers must coordinate both couriers consistently.
+contract; reassignment coordinates both couriers in PostgreSQL UUID order.
 Existing completion/failure writers only release slots and preserve parcel-first
 locking. The unique Active assignment index is retained as a database guard.
 
@@ -111,3 +110,61 @@ rejection and safe downgrade refusal in a fixture-owned schema.
 See the EAD workspace's DISPATCHER-PLAN.md for exact tested bases, worktree
 fingerprints, tool versions, executed full checks and acceptance limits. Browser
 fixtures and image builds do not establish shared API readiness or Docker startup.
+
+## Reassignment eligibility preview (P4)
+
+GET assignment-options additionally accepts reassign=true or reassign=false.
+Omission means false; only exact lowercase true/false values are accepted.
+Empty, duplicate, unknown, whitespace-padded or alternative boolean values return
+400 validation. Reassignment mode requires Assigned and an Active assignment with
+no pickup. It excludes the current courier and returns reassign=true plus
+currentAssignment={courierId,serviceDate}; ordinary mode returns reassign=false
+and currentAssignment=null. Existing candidate and pagination fields remain.
+All context, candidates and counts share the repeatable-read snapshot.
+
+For reassignment, omitted serviceDate preserves an existing today/future date,
+or selects business today for overdue work. Top-level serviceDate is the proposed
+replacement date; nested serviceDate remains the original date. Explicit past
+dates remain invalid. The preview never reserves a reassignment slot.
+
+## Atomic reassignment (P4)
+
+POST accepts reassign=true and reason (trimmed, nonblank, 1–500 characters).
+Reason is rejected unless reassign=true. Require expectedVersion, Assigned and
+one Active unpicked-up assignment. Choosing its current courier returns 400
+validation with errors.courierId=["Choose a different courier."]. State/version
+conflicts remain 409, replacement eligibility/capacity failures 422. Omitted
+POST serviceDate still defaults to business today; the UI submits its selected
+date explicitly. The old courier need not remain active or eligible.
+
+Lock parcel, then its Active assignment, then both couriers in PostgreSQL UUID
+ORDER BY id FOR UPDATE order. This shares initial assignment's allocation lock
+and pickup's parcel-first ownership contract. Validate eligibility and dates after
+waits; flush only the old assignment's Reassigned update before adding the new
+Active row. Parcel version/time, retained ownership history with normalized reason,
+one Assigned-to-Assigned StatusChanged v1 event and the exact receipt commit in
+the same transaction. Retirement and every later write roll back together.
+
+Initial-assignment canonical bytes/fingerprints remain unchanged. Reassignment
+fingerprints additionally include the normalized reason and mode; case/internal
+whitespace remain meaningful. Changed normalized reason returns 409
+idempotency_conflict. Retained exact replay precedes current date/state/version
+checks, including after pickup, another reassignment or business midnight.
+No extra history/event is emitted on replay. Cancellation of a client request
+does not guarantee server rollback; recover an uncertain result using the same
+request/key or reload authoritative state if the local attempt was lost.
+
+The proposed state-machine narrative requests the reason in an event; strict
+StatusChanged v1 forbids extra properties. The reason remains in authorized
+history and is absent from broker/public tracking payloads. Contract/consumer
+expectations require their owners' review; no other role's consumer is changed.
+P4 requires no new schema migration; existing shared rollout restrictions remain.
+
+P4 validation includes retirement plus parcel/replacement/history/outbox/receipt/
+deferred-commit fault injection, exact lost-acknowledgement receipt replay,
+reassignment-versus-pickup and same-parcel replacement races, opposite-direction
+courier swaps with spare/full capacity, and initial assignment competing with
+reassignment for the last slot on one date. Golden pre-P4 fingerprint vectors and
+retained initial-assignment receipts remain covered. Normalized-reason replay is
+verified after pickup, a later reassignment and business midnight (both omitted
+and explicit dates), with changed-reason conflicts and no duplicate effects.
