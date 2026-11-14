@@ -63,8 +63,8 @@ public partial class Program
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<ICustomerDeliveryReadStore>(services =>
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
-        builder.Services.AddSingleton<IPrivateProofReader>(services =>
-            new S3ProofStorage(services.GetRequiredService<IConfiguration>()));
+        builder.Services.AddScoped<IPrivateProofReader>(services =>
+            new PostgresProofStorage(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<QuoteEstimator>();
         builder.Services.AddScoped<CustomerBookingHandler>();
