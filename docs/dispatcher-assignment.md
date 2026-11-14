@@ -111,3 +111,19 @@ rejection and safe downgrade refusal in a fixture-owned schema.
 See the EAD workspace's DISPATCHER-PLAN.md for exact tested bases, worktree
 fingerprints, tool versions, executed full checks and acceptance limits. Browser
 fixtures and image builds do not establish shared API readiness or Docker startup.
+
+## Reassignment eligibility preview (P4)
+
+GET assignment-options additionally accepts reassign=true or reassign=false.
+Omission means false; only exact lowercase true/false values are accepted.
+Empty, duplicate, unknown, whitespace-padded or alternative boolean values return
+400 validation. Reassignment mode requires Assigned and an Active assignment with
+no pickup. It excludes the current courier and returns reassign=true plus
+currentAssignment={courierId,serviceDate}; ordinary mode returns reassign=false
+and currentAssignment=null. Existing candidate and pagination fields remain.
+All context, candidates and counts share the repeatable-read snapshot.
+
+For reassignment, omitted serviceDate preserves an existing today/future date,
+or selects business today for overdue work. Top-level serviceDate is the proposed
+replacement date; nested serviceDate remains the original date. Explicit past
+dates remain invalid. The preview does not enable or reserve a reassignment write.

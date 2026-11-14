@@ -97,8 +97,8 @@ public sealed class AssignmentReliabilityTests(PostgresFixture fixture)
 
     private sealed class LostAcknowledgementStore(IAssignmentStore inner) : IAssignmentStore
     {
-        public Task<AssignmentOptions?> GetOptionsAsync(Guid parcelId, DateOnly today, string timeZone, DateOnly date, int page, int size, CancellationToken ct)
-            => inner.GetOptionsAsync(parcelId, today, timeZone, date, page, size, ct);
+        public Task<AssignmentOptions?> GetOptionsAsync(Guid parcelId, DateOnly today, string timeZone, DateOnly? date, int page, int size, bool reassign, CancellationToken ct)
+            => inner.GetOptionsAsync(parcelId, today, timeZone, date, page, size, reassign, ct);
         public async Task<IAssignmentTransaction> BeginAsync(CancellationToken ct) => new LostAcknowledgement(await inner.BeginAsync(ct));
     }
     private sealed class LostAcknowledgement(IAssignmentTransaction inner) : IAssignmentTransaction

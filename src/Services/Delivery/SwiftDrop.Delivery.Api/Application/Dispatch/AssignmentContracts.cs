@@ -7,11 +7,12 @@ public sealed record AssignCourierInput(string? ParcelId, string? CourierId, lon
 public sealed record AssignCourierCommand(Guid ParcelId, Guid CourierId, long ExpectedVersion,
     DateOnly? ServiceDate, string Key, string Fingerprint);
 public sealed record AssignmentOptionsInput(string? ServiceDate = null, string? Page = null,
-    string? PageSize = null, bool InvalidParameters = false);
+    string? PageSize = null, bool InvalidParameters = false, string? Reassign = null);
 public sealed record AssignmentCandidate(Guid CourierId, bool OnDuty, int ActiveCountForServiceDate, int Capacity);
+public sealed record ReassignmentContext(Guid CourierId, DateOnly ServiceDate);
 public sealed record AssignmentOptions(Guid ParcelId, long ParcelVersion, DateOnly BusinessToday,
     string OperationsTimeZone, DateOnly ServiceDate, IReadOnlyList<AssignmentCandidate> Items,
-    int TotalCount, int Page, int PageSize);
+    int TotalCount, int Page, int PageSize, bool Reassign, ReassignmentContext? CurrentAssignment);
 public sealed record AssignedResponse(int StatusCode, string Body, string Location);
 public enum AssignmentFailure
 {
@@ -30,8 +31,8 @@ public sealed record AssignmentState(Parcel Parcel, PriceSnapshot Snapshot);
 public sealed record AssignmentReservation(bool IsNew, IdempotencyRecord Record);
 public interface IAssignmentStore
 {
-    Task<AssignmentOptions?> GetOptionsAsync(Guid parcelId, DateOnly today, string timeZone, DateOnly serviceDate,
-        int page, int pageSize, CancellationToken cancellationToken);
+    Task<AssignmentOptions?> GetOptionsAsync(Guid parcelId, DateOnly today, string timeZone, DateOnly? serviceDate,
+        int page, int pageSize, bool reassign, CancellationToken cancellationToken);
     Task<IAssignmentTransaction> BeginAsync(CancellationToken cancellationToken);
 }
 public interface IAssignmentTransaction : IAsyncDisposable

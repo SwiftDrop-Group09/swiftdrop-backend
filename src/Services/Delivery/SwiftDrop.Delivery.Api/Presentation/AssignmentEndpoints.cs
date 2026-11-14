@@ -18,9 +18,9 @@ public static class AssignmentEndpoints
             AssignmentHandler handler, CancellationToken cancellationToken) =>
         {
             var query = context.Request.Query;
-            var invalid = query.Any(p => p.Value.Count != 1 || p.Key is not ("serviceDate" or "page" or "pageSize"));
+            var invalid = query.Any(p => p.Value.Count != 1 || p.Key is not ("serviceDate" or "page" or "pageSize" or "reassign"));
             string? Value(string name) => query.TryGetValue(name, out var values) && values.Count == 1 ? values[0] : null;
-            var result = await handler.OptionsAsync(parcelId, new(Value("serviceDate"), Value("page"), Value("pageSize"), invalid), cancellationToken);
+            var result = await handler.OptionsAsync(parcelId, new(Value("serviceDate"), Value("page"), Value("pageSize"), invalid, Value("reassign")), cancellationToken);
             return result.Response is { } response ? Results.Ok(response) : Problem(context, result.Failure!.Value, result.Errors);
         }).RequireAuthorization().WithName("AssignmentOptions").WithMetadata(new AssignmentEndpointMetadata())
             .Produces<AssignmentOptions>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403)
@@ -56,7 +56,7 @@ public static class AssignmentEndpoints
             AssignmentFailure.InvalidInput => (400, "validation", "The assignment request is invalid."),
             AssignmentFailure.NotFound => (404, "not_found", "The parcel or courier was not found."),
             AssignmentFailure.StaleVersion => (409, "stale_version", "Reload the parcel before assigning."),
-            AssignmentFailure.InvalidTransition => (409, "invalid_transition", "Only an unassigned Created parcel can be assigned."),
+            AssignmentFailure.InvalidTransition => (409, "invalid_transition", "The parcel no longer permits the requested assignment operation."),
             AssignmentFailure.CourierUnavailable => (422, "courier_unavailable", "The courier must be active and on duty for today's work."),
             AssignmentFailure.ZoneMismatch => (422, "zone_mismatch", "The courier does not serve this parcel's delivery zone."),
             AssignmentFailure.CapacityExceeded => (422, "capacity_exceeded", "The courier's capacity for this service date is full."),

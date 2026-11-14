@@ -10,15 +10,21 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Dispatch;
 
 public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFactory) : IAssignmentStore
 {
-    public Task<AssignmentOptions?> GetOptionsAsync(Guid parcelId, DateOnly today, string timeZone, DateOnly serviceDate,
-        int page, int pageSize, CancellationToken cancellationToken) => Protect<AssignmentOptions?>(async () =>
+    public Task<AssignmentOptions?> GetOptionsAsync(Guid parcelId, DateOnly today, string timeZone, DateOnly? requestedDate,
+        int page, int pageSize, bool reassign, CancellationToken cancellationToken) => Protect<AssignmentOptions?>(async () =>
     {
         var db = contextFactory();
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
         var parcel = await db.Parcels.AsNoTracking().SingleOrDefaultAsync(x => x.Id == parcelId, cancellationToken);
         if (parcel is null) return null;
-        if (parcel.Status != ParcelStatus.Created) throw new AssignmentException(AssignmentFailure.InvalidTransition);
-        var candidates = db.Couriers.AsNoTracking().Where(c => c.Active && (serviceDate > today || c.OnDuty)
+        var current = await db.Assignments.AsNoTracking().SingleOrDefaultAsync(x => x.ParcelId == parcelId
+            && x.Status == AssignmentStatus.Active, cancellationToken);
+        if (reassign ? parcel.Status != ParcelStatus.Assigned || current is null || current.PickedUpAt is not null
+            : parcel.Status != ParcelStatus.Created || current is not null)
+            throw new AssignmentException(AssignmentFailure.InvalidTransition);
+        var serviceDate = requestedDate ?? (reassign && current!.ServiceDate > today ? current.ServiceDate : today);
+        var excludedCourier = reassign ? current!.CourierId : Guid.Empty;
+        var candidates = db.Couriers.AsNoTracking().Where(c => (c.Id != excludedCourier) && c.Active && (serviceDate > today || c.OnDuty)
             && db.CourierZones.Any(z => z.CourierId == c.Id && z.ZoneId == parcel.ZoneId))
             .Select(c => new { CourierId = c.Id, c.OnDuty, c.Capacity,
                 ActiveCountForServiceDate = db.Assignments.Count(a => a.CourierId == c.Id && a.Status == AssignmentStatus.Active && a.ServiceDate == serviceDate) })
@@ -27,7 +33,8 @@ public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFacto
         var items = await candidates.OrderBy(c => c.CourierId).Skip((page - 1) * pageSize).Take(pageSize)
             .Select(c => new AssignmentCandidate(c.CourierId, c.OnDuty, c.ActiveCountForServiceDate, c.Capacity)).ToArrayAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return new(parcel.Id, parcel.Version, today, timeZone, serviceDate, items, total, page, pageSize);
+        return new(parcel.Id, parcel.Version, today, timeZone, serviceDate, items, total, page, pageSize, reassign,
+            current is null ? null : new(current.CourierId, current.ServiceDate));
     });
 
     public Task<IAssignmentTransaction> BeginAsync(CancellationToken cancellationToken) => Protect<IAssignmentTransaction>(async () =>

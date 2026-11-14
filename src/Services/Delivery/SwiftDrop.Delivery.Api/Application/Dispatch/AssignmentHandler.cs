@@ -14,6 +14,7 @@ public sealed class AssignmentHandler(ICurrentDeliveryUser user, IAssignmentStor
         if (!Guid.TryParse(parcelId, out var id) || id == Guid.Empty) return new(null, AssignmentFailure.NotFound);
         var errors = new Dictionary<string, string[]>();
         if (input.InvalidParameters) errors["query"] = ["Supply only documented parameters, once each."];
+        if (input.Reassign is not (null or "true" or "false")) errors["reassign"] = ["Supply true or false."];
         var date = AssignmentValidator.Date(input.ServiceDate, errors);
         var pagination = DeliveryPagination.Parse(input.Page, input.PageSize, errors);
         if (errors.Count != 0) return new(null, AssignmentFailure.InvalidInput, errors);
@@ -21,8 +22,8 @@ public sealed class AssignmentHandler(ICurrentDeliveryUser user, IAssignmentStor
         {
             var today = operations.Today();
             if (date < today) return PastDate<AssignmentOptions>();
-            var response = await store.GetOptionsAsync(id, today, operations.TimeZoneId, date ?? today,
-                pagination.Page, pagination.PageSize, cancellationToken);
+            var response = await store.GetOptionsAsync(id, today, operations.TimeZoneId, date,
+                pagination.Page, pagination.PageSize, input.Reassign == "true", cancellationToken);
             return response is null ? new(null, AssignmentFailure.NotFound) : new(response, null);
         }
         catch (AssignmentException exception) { return new(null, exception.Failure); }
