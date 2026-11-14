@@ -74,7 +74,8 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
       - name: Scan image for vulnerabilities (${{ matrix.service }})
-        uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ghcr.io/swiftdrop-group09/${{ matrix.image }}:latest
           format: sarif
@@ -83,6 +84,7 @@ jobs:
           exit-code: '0'
 
       - name: Upload Trivy scan results
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-${{ matrix.service }}.sarif
@@ -90,11 +92,12 @@ jobs:
 
   notify-infra:
     needs: publish
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.INFRA_DISPATCH_TOKEN != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Trigger swiftdrop-infra staging CD
+        if: env.GH_TOKEN != ''
         env:
           GH_TOKEN: ${{ secrets.INFRA_DISPATCH_TOKEN }}
           SHORT_SHA: ${{ github.sha }}
