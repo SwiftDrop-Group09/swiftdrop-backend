@@ -37,13 +37,14 @@ public sealed class NotificationDbContext(DbContextOptions<NotificationDbContext
             entity.HasIndex(x => new { x.EventId, x.Channel }).IsUnique()
                 .HasFilter("\"RecipientId\" IS NULL")
                 .HasDatabaseName("ux_notification_jobs_unresolved_event_channel");
-            entity.HasIndex(x => new { x.State, x.CreatedAt })
-                .HasDatabaseName("ix_notification_jobs_state_created");
+            entity.HasIndex(x => new { x.State, x.NextAttemptAt, x.CreatedAt })
+                .HasDatabaseName("ix_notification_jobs_state_next_created");
             entity.Property(x => x.Channel).HasMaxLength(24).IsRequired();
             entity.Property(x => x.State).HasMaxLength(32).IsRequired();
             entity.Property(x => x.ParcelId).HasMaxLength(160).IsRequired();
             entity.Property(x => x.CorrelationId).HasMaxLength(160).IsRequired();
             entity.Property(x => x.OccurredAt).IsRequired();
+            entity.Property(x => x.LastErrorCode).HasMaxLength(80);
             entity.Property(x => x.CreatedAt).IsRequired();
             entity.Property(x => x.UpdatedAt).IsRequired();
         });
@@ -69,14 +70,15 @@ public sealed class NotificationDbContext(DbContextOptions<NotificationDbContext
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => new { x.EventId, x.MerchantId }).IsUnique()
                 .HasDatabaseName("ux_webhook_dispatch_jobs_event_merchant");
-            entity.HasIndex(x => new { x.State, x.CreatedAt })
-                .HasDatabaseName("ix_webhook_dispatch_jobs_state_created");
+            entity.HasIndex(x => new { x.State, x.NextAttemptAt, x.CreatedAt })
+                .HasDatabaseName("ix_webhook_dispatch_jobs_state_next_created");
             entity.Property(x => x.MerchantId).HasMaxLength(160).IsRequired();
             entity.Property(x => x.ParcelId).HasMaxLength(160).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
             entity.Property(x => x.State).HasMaxLength(32).IsRequired();
             entity.Property(x => x.CorrelationId).HasMaxLength(160).IsRequired();
             entity.Property(x => x.OccurredAt).IsRequired();
+            entity.Property(x => x.LastErrorCode).HasMaxLength(80);
             entity.Property(x => x.CreatedAt).IsRequired();
             entity.Property(x => x.UpdatedAt).IsRequired();
         });
@@ -109,6 +111,10 @@ public sealed class NotificationJob
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset OccurredAt { get; set; }
     public string State { get; set; } = "Pending";
+    public int ResolutionAttempts { get; set; }
+    public DateTimeOffset? NextAttemptAt { get; set; }
+    public DateTimeOffset? LeaseUntil { get; set; }
+    public string? LastErrorCode { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
@@ -135,6 +141,10 @@ public sealed class WebhookDispatchJob
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset OccurredAt { get; set; }
     public string State { get; set; } = "Pending";
+    public int DispatchAttempts { get; set; }
+    public DateTimeOffset? NextAttemptAt { get; set; }
+    public DateTimeOffset? LeaseUntil { get; set; }
+    public string? LastErrorCode { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

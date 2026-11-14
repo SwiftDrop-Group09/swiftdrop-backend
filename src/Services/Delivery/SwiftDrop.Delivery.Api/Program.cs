@@ -7,6 +7,7 @@ using SwiftDrop.Delivery.Api.Application.Bookings;
 using SwiftDrop.Delivery.Api.Application.CourierStatus;
 using SwiftDrop.Delivery.Api.Application.CourierProof;
 using SwiftDrop.Delivery.Api.Application.DeliveryReads;
+using SwiftDrop.Delivery.Api.Application.Notifications;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Infrastructure.Admin;
 using SwiftDrop.Delivery.Api.Infrastructure.Authentication;
@@ -14,6 +15,7 @@ using SwiftDrop.Delivery.Api.Infrastructure.Bookings;
 using SwiftDrop.Delivery.Api.Infrastructure.CourierStatus;
 using SwiftDrop.Delivery.Api.Infrastructure.CourierProof;
 using SwiftDrop.Delivery.Api.Infrastructure.DeliveryReads;
+using SwiftDrop.Delivery.Api.Infrastructure.Notifications;
 using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 using SwiftDrop.Delivery.Api.Infrastructure.Quotes;
 using SwiftDrop.Delivery.Api.Presentation;
@@ -52,6 +54,8 @@ public partial class Program
             new PostgresCourierStatusStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IDeliveryReadStore>(services =>
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<INotificationContextStore, PostgresNotificationContextStore>();
+        builder.Services.AddScoped<NotificationContextHandler>();
         builder.Services.AddScoped<ICustomerDeliveryReadStore>(services =>
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddSingleton<IPrivateProofReader>(services =>
@@ -155,6 +159,7 @@ public partial class Program
         app.MapCustomerQuotes();
         app.MapCustomerBookings();
         app.MapDeliveryReads();
+        app.MapNotificationContext();
         app.MapCourierStatus();
         app.MapCourierProof();
         app.MapAdminZones();

@@ -4,6 +4,7 @@ using RabbitMQ.Client;
 using SwiftDrop.Contracts.Events.V1;
 using SwiftDrop.Notification.Worker.Messaging;
 using SwiftDrop.Notification.Worker.Persistence;
+using SwiftDrop.Notification.Worker.Routing;
 
 namespace SwiftDrop.Notification.Worker;
 
@@ -35,10 +36,37 @@ public partial class Program
         if (!string.IsNullOrWhiteSpace(database))
         {
             builder.Services.AddDbContext<NotificationDbContext>(options => options.UseNpgsql(database));
+            builder.Services.AddSingleton<ServiceJwtFileReader>();
+            builder.Services.AddHttpClient("DeliveryInternal", client =>
+                {
+                    client.BaseAddress = ServiceAddress(builder.Configuration,
+                        "Notification:ServiceEndpoints:Delivery", "http://delivery-service:8080/");
+                    client.Timeout = TimeSpan.FromSeconds(5);
+                })
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+                {
+                    AllowAutoRedirect = false,
+                    UseProxy = false
+                });
+            builder.Services.AddHttpClient("MerchantInternal", client =>
+                {
+                    client.BaseAddress = ServiceAddress(builder.Configuration,
+                        "Notification:ServiceEndpoints:Merchant", "http://merchant-service:8080/");
+                    client.Timeout = TimeSpan.FromSeconds(5);
+                })
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+                {
+                    AllowAutoRedirect = false,
+                    UseProxy = false
+                });
+            builder.Services.AddSingleton<INotificationProvider, MockSmsNotificationProvider>();
+            builder.Services.AddSingleton<NotificationProviderJobProcessor>();
+            builder.Services.AddHostedService<StatusEffectRoutingWorker>();
         }
 
         if (messagingEnabled)
         {
+            builder.Services.AddScoped<StatusNotificationProcessor>();
             builder.Services.AddMassTransit(registration =>
             {
                 registration.AddConsumer<StatusNotificationConsumer>();
@@ -55,6 +83,8 @@ public partial class Program
                     {
                         endpoint.ConfigureConsumeTopology = false;
                         endpoint.PublishFaults = false;
+                        endpoint.PrefetchCount = 16;
+                        endpoint.ConcurrentMessageLimit = 8;
                         endpoint.Bind("SwiftDrop.Contracts.V1:StatusChanged", binding =>
                             binding.ExchangeType = ExchangeType.Fanout);
                         endpoint.UseMessageRetry(retry => retry.Intervals(
@@ -95,5 +125,18 @@ public partial class Program
         }
 
         app.Run();
+    }
+
+    private static Uri ServiceAddress(IConfiguration configuration, string key, string fallback)
+    {
+        var configured = configuration[key] ?? fallback;
+        if (!Uri.TryCreate(configured, UriKind.Absolute, out var address) ||
+            address.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(address.UserInfo) ||
+            !string.IsNullOrEmpty(address.Query) || !string.IsNullOrEmpty(address.Fragment))
+        {
+            throw new InvalidOperationException($"{key} must be an absolute HTTP service URL without credentials or query parameters.");
+        }
+
+        return address;
     }
 }

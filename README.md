@@ -7,8 +7,11 @@ management are implemented. Delivery provides fee estimates, owner-bound quotes 
 Customer booking confirmation with atomic PostgreSQL persistence. Delivery now
 verifies Identity access tokens through its public JWKS endpoint; missing or
 unsafe verifier configuration fails closed. Cross-service tests exercise real
-Identity login/JWKS output through that verifier. Messaging relay and remaining
-domain integrations are separate work. See the
+Identity login/JWKS output through that verifier. The Notification Worker now
+consumes durable status events, resolves recipient context through Delivery,
+requests webhook dispatch from Merchant and records in-app/mock-SMS jobs and
+provider attempts. The Delivery outbox publisher/relay and private workload
+credential provisioning remain separate integration work. See the
 [Delivery login-loop fix](docs/delivery-identity-jwt-integration.md) for the current
 JWT configuration, validation and service boundaries. Courier Phase 1 adds operational profiles, zone memberships,
 retained assignments with one active owner per parcel, private proof metadata
@@ -82,13 +85,13 @@ tariff zone and Neon deployment, while other design decisions remain Proposed.
 | SwiftDrop.Identity.Api | src/Services/Identity/SwiftDrop.Identity.Api | Identity / swiftdrop_identity |
 | SwiftDrop.Delivery.Api | src/Services/Delivery/SwiftDrop.Delivery.Api | Delivery operations, GraphQL, SSE, internal gRPC / swiftdrop_delivery |
 | SwiftDrop.Merchant.Api | src/Services/Merchant/SwiftDrop.Merchant.Api | Merchant integration and webhook HTTP attempts / swiftdrop_merchant |
-| SwiftDrop.Notification.Worker | src/Workers/SwiftDrop.Notification.Worker | Future consumers/provider jobs; private health host only today / swiftdrop_notifications |
+| SwiftDrop.Notification.Worker | src/Workers/SwiftDrop.Notification.Worker | StatusChanged consumer, durable notification/provider and webhook-dispatch jobs / swiftdrop_notifications |
 | SwiftDrop.Contracts | src/BuildingBlocks/SwiftDrop.Contracts | Dependency-free, versioned integration contract assets |
 | SwiftDrop.Identity.Tests | tests/SwiftDrop.Identity.Tests | Identity host foundation |
 | SwiftDrop.Delivery.Tests | tests/SwiftDrop.Delivery.Tests | Delivery domain, quotes, confirmation, PostgreSQL persistence and host foundation |
 | SwiftDrop.Delivery.Harness | tests/SwiftDrop.Delivery.Harness | Test-only loopback runner; fixed fixture actors and disposable database |
 | SwiftDrop.Merchant.Tests | tests/SwiftDrop.Merchant.Tests | Merchant host foundation |
-| SwiftDrop.Notification.Tests | tests/SwiftDrop.Notification.Tests | Worker host foundation |
+| SwiftDrop.Notification.Tests | tests/SwiftDrop.Notification.Tests | Worker event, ordering, persistence and provider workflow |
 | SwiftDrop.Gateway.Tests | tests/SwiftDrop.Gateway.Tests | Documented route ownership and internal-path isolation |
 
 Each API has Domain, Application and Infrastructure folders. Namespaces follow
@@ -104,7 +107,8 @@ domain rules. No code generation or transport package is enabled yet.
 
 ## Build and test
 
-Install SDK **10.0.301**, pinned exactly in `global.json`, and Git. Delivery
+Install SDK **10.0.301**, requested in `global.json`, and Git. If it is
+unavailable, the SDK can roll forward to a newer .NET 10 feature band. Delivery
 persistence tests require installed PostgreSQL binaries for a disposable cluster
 or an explicitly configured test database with temporary-schema permission.
 They fail when PostgreSQL is unavailable. No broker/object store is required.
@@ -237,9 +241,19 @@ The current private inputs are `RABBITMQ_DEFAULT_PASS`,
 `IDENTITY_MIGRATION_CONNECTION_STRING`. The shared runner/Compose maps each
 database secret only to its owning process. Delivery also accepts its named
 secret directly, with `ConnectionStrings:Database` taking precedence when set.
-RabbitMQ's default password belongs only to the broker; application messaging
-credentials remain separate future integration work. Merchant's
-`Delivery__GrpcAddress` is a nonsecret internal endpoint.
+RabbitMQ's default password belongs only to the broker; the Notification Worker
+requires its separate `WORKER_BROKER_USERNAME` and `WORKER_BROKER_PASSWORD`
+credentials plus `NOTIFICATIONS_DATABASE_CONNECTION_STRING`. Its
+`notification-status` queue consumes the durable
+`SwiftDrop.Contracts.V1:StatusChanged` fanout exchange, records an inbox row and
+durable jobs before acknowledging, and routes invalid/exhausted messages to
+MassTransit's queue error handling. Same-parcel versions are serialized in
+PostgreSQL; stale versions are retained in the inbox without side effects.
+Provider attempts persist outcomes and retry at 5 seconds, 30 seconds, and 2
+minutes before terminal failure. Delivery recipient resolution and Merchant
+dispatch require short-lived service JWT files mounted under the Worker token
+directory; see the infrastructure README for provisioning instructions.
+Merchant's `Delivery__GrpcAddress` is a nonsecret internal endpoint.
 
 Neon is the selected PostgreSQL deployment: four privately owned logical
 databases with separate connection secrets, never a shared schema or cross-service
@@ -248,8 +262,10 @@ start a second shared PostgreSQL stack. Disposable PostgreSQL remains test-only.
 Delivery uses EF Core/Npgsql with the initial Booking migration, additive Courier
 profile/proof/assignment migrations and the status replay-constraint migration;
 Identity retains its independent SQL migrations. Merchant has its separate
-EF Core persistence/migration slice; see [Merchant alignment](docs/merchant-dev-alignment.md). RabbitMQ/MassTransit, GraphQL, gRPC and SSE
-adapters, generated clients, publishers and consumers remain future work.
+EF Core persistence/migration slice; see [Merchant alignment](docs/merchant-dev-alignment.md). Delivery's
+status outbox publisher/relay remains upstream work; this repository contains
+the downstream Notification Worker RabbitMQ consumer. GraphQL, gRPC and SSE
+adapters and generated clients remain future work.
 Docker packaging exists for the development containers. Delivery's quote and
 booking handlers are implemented; dependency-aware readiness remains later work.
 

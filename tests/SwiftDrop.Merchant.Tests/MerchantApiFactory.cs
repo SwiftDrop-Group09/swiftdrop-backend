@@ -46,6 +46,7 @@ internal sealed class MerchantApiFactory(
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(environmentName);
+        builder.ConfigureLogging(logging => logging.ClearProviders());
         builder.ConfigureTestServices(services =>
         {
             if (inMemoryDbName is not null)
@@ -62,6 +63,15 @@ internal sealed class MerchantApiFactory(
                 services.RemoveAll<IAuthenticationSchemeProvider>();
                 services.AddAuthentication(TestSchemeName)
                     .AddScheme<AuthenticationSchemeOptions, FixedPrincipalHandler>(TestSchemeName, _ => { });
+                // The internal dispatch policy normally selects the production JWT
+                // scheme. In tests, authenticate through the fixed test principal so
+                // claim-contract checks do not call Identity's live JWKS endpoint.
+                services.Configure<Microsoft.AspNetCore.Authorization.AuthorizationOptions>(options =>
+                    options.AddPolicy("MerchantWorkerService", policy =>
+                    {
+                        policy.AddAuthenticationSchemes(TestSchemeName);
+                        policy.RequireAuthenticatedUser();
+                    }));
                 services.AddSingleton<ClaimsPrincipal>(principal ?? new ClaimsPrincipal());
             }
 

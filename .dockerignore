@@ -1,9 +1,13 @@
 .git
 .vs
 .idea
-**/bin/
-**/obj/
-**/TestResults/
+.nuget/
+**/bin
+**/bin/**
+**/obj
+**/obj/**
+**/TestResults
+**/TestResults/**
 artifacts/
 .env
 .env.*

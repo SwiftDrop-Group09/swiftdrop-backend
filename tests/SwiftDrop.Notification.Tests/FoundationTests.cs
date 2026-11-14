@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Logging;
 
 namespace SwiftDrop.Notification.Tests;
 
@@ -8,7 +9,11 @@ public sealed class FoundationTests : IDisposable
 {
     private readonly WebApplicationFactory<SwiftDrop.Notification.Worker.Program> _factory =
         new WebApplicationFactory<SwiftDrop.Notification.Worker.Program>()
-            .WithWebHostBuilder(builder => builder.UseEnvironment("Testing"));
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureLogging(logging => logging.ClearProviders());
+            });
 
     [Fact]
     public async Task LivenessDoesNotRequireExternalInfrastructure()

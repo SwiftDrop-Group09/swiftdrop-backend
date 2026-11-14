@@ -6,31 +6,47 @@ using SwiftDrop.Notification.Worker.Persistence;
 namespace SwiftDrop.Notification.Worker.Messaging;
 
 public sealed class StatusNotificationConsumer(
+    StatusNotificationProcessor processor,
+    ILogger<StatusNotificationConsumer> logger) : IConsumer<StatusChangedV1>
+{
+    public async Task Consume(ConsumeContext<StatusChangedV1> context)
+    {
+        await processor.ProcessAsync(context.Message, context.CancellationToken);
+        logger.LogInformation("Processed StatusChanged event {EventId}", context.Message.EventId);
+    }
+}
+
+public sealed class StatusNotificationProcessor(
     NotificationDbContext db,
     TimeProvider clock,
-    ILogger<StatusNotificationConsumer> logger) : IConsumer<StatusChangedV1>
+    ILogger<StatusNotificationProcessor> logger)
 {
     private const string ConsumerName = "status-notification";
 
-    public async Task Consume(ConsumeContext<StatusChangedV1> context)
+    public async Task ProcessAsync(StatusChangedV1 message, CancellationToken cancellationToken)
     {
-        var message = context.Message;
         if (!message.IsValid(out var reason))
         {
             throw new InvalidOperationException(reason);
         }
 
-        await using var transaction = await db.Database.BeginTransactionAsync(context.CancellationToken);
-        var eventKey = message.EventId.ToString("D");
-        await db.Database.ExecuteSqlInterpolatedAsync(
-            $"SELECT pg_advisory_xact_lock(hashtextextended({eventKey}, 0))",
-            context.CancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        // Serialize a parcel's versions across Worker replicas. The unique inbox index
+        // remains the final guard against duplicate delivery of the same event.
+        if (db.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL")
+        {
+            var parcelKey = message.ParcelId;
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(hashtextextended({parcelKey}, 0))",
+                cancellationToken);
+        }
+
         var alreadyConsumed = await db.ConsumedStatusEvents.AnyAsync(
             x => x.Consumer == ConsumerName && x.EventId == message.EventId,
-            context.CancellationToken);
+            cancellationToken);
         if (alreadyConsumed)
         {
-            await transaction.CommitAsync(context.CancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             logger.LogInformation("Skipped duplicate status event {EventId}", message.EventId);
             return;
         }
@@ -49,6 +65,24 @@ public sealed class StatusNotificationConsumer(
             ConsumedAt = now
         });
 
+        var latestParcelVersion = await db.ConsumedStatusEvents
+            .Where(x => x.Consumer == ConsumerName && x.ParcelId == message.ParcelId && x.EventId != message.EventId)
+            .Select(x => (long?)x.ParcelVersion)
+            .MaxAsync(cancellationToken);
+        if (latestParcelVersion is not null && message.ParcelVersion <= latestParcelVersion.Value)
+        {
+            // Keep the inbox record for audit and broker replay safety, but do not
+            // create user-visible side effects from an older (or repeated) version.
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            logger.LogInformation(
+                "Recorded stale status event {EventId} at parcel version {ParcelVersion}; latest consumed version is {LatestParcelVersion}",
+                message.EventId,
+                message.ParcelVersion,
+                latestParcelVersion.Value);
+            return;
+        }
+
         if (message.MerchantId is null)
         {
             db.NotificationJobs.AddRange(
@@ -60,7 +94,7 @@ public sealed class StatusNotificationConsumer(
             db.WebhookDispatchJobs.Add(new WebhookDispatchJob
             {
                 EventId = message.EventId,
-                MerchantId = message.MerchantId!,
+                MerchantId = message.MerchantId,
                 ParcelId = message.ParcelId,
                 ParcelVersion = message.ParcelVersion,
                 Status = message.Status,
@@ -72,12 +106,12 @@ public sealed class StatusNotificationConsumer(
             });
         }
 
-        await db.SaveChangesAsync(context.CancellationToken);
-        await transaction.CommitAsync(context.CancellationToken);
+        // EF Core commits this inbox row and its derived jobs in one transaction.
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         logger.LogInformation(
-            "Recorded status event {EventId} for parcel {ParcelId} at version {ParcelVersion}",
+            "Recorded status event {EventId} at parcel version {ParcelVersion}",
             message.EventId,
-            message.ParcelId,
             message.ParcelVersion);
     }
 
