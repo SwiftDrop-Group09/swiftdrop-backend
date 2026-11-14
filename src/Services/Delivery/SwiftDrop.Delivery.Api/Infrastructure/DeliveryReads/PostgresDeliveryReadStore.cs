@@ -108,6 +108,7 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
             Currency = snapshot.Currency,
             PricingVersion = snapshot.PricingVersion,
             CreatedAt = parcel.CreatedAt,
+            UpdatedAt = parcel.UpdatedAt,
             ServiceDate = (DateOnly?)assignment.ServiceDate,
             AssignmentStatus = (AssignmentStatus?)assignment.Status,
             AssignedAt = (DateTimeOffset?)assignment.AssignedAt,
@@ -146,6 +147,39 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
         }
         catch (Exception exception) when (IsReadFailure(exception))
         { throw new DeliveryReadUnavailableException("Courier history is unavailable.", exception); }
+    }
+
+    public async Task<CustomerDeliverySummary> GetCustomerSummaryAsync(Guid customerId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var database = contextFactory();
+            await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
+            await database.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
+            var owned = database.Parcels.AsNoTracking().Where(parcel => parcel.CustomerId == customerId);
+            var counts = await owned.GroupBy(parcel => parcel.Status)
+                .Select(group => new { Status = group.Key, Count = group.Count() }).ToArrayAsync(cancellationToken);
+            var terminal = new[] { ParcelStatus.Delivered, ParcelStatus.Failed, ParcelStatus.Cancelled };
+            var activeRows = await Project(database, owned.Where(parcel => !terminal.Contains(parcel.Status)))
+                .OrderByDescending(row => row.UpdatedAt).ThenByDescending(row => row.Id).Take(5).ToArrayAsync(cancellationToken);
+            var recentRows = await Project(database, owned.Where(parcel => terminal.Contains(parcel.Status)))
+                .OrderByDescending(row => row.UpdatedAt).ThenByDescending(row => row.Id).Take(5).ToArrayAsync(cancellationToken);
+            static CustomerParcelListItem Item(ParcelRow row) => new(row.Id, row.TrackingNumber, row.Status.ToString(), row.Version,
+                Price(row), row.CreatedAt, row.UpdatedAt, Address(row.PickupAddress).City, Address(row.DeliveryAddress).City,
+                Recipient(row.Recipient).Name, new(row.WeightKg, row.Size.ToString()), row.Status == ParcelStatus.Delivered);
+            int Count(ParcelStatus status) => counts.SingleOrDefault(row => row.Status == status)?.Count ?? 0;
+            var total = counts.Sum(row => row.Count);
+            var delivered = Count(ParcelStatus.Delivered);
+            var failed = Count(ParcelStatus.Failed);
+            var cancelled = Count(ParcelStatus.Cancelled);
+            await transaction.CommitAsync(cancellationToken);
+            return new(total, total - delivered - failed - cancelled, delivered, failed, cancelled,
+                activeRows.Select(Item).ToArray(), recentRows.Select(Item).ToArray());
+        }
+        catch (Exception exception) when (IsReadFailure(exception))
+        {
+            throw new DeliveryReadUnavailableException("Customer delivery summary is unavailable.", exception);
+        }
     }
 
     public async Task<CustomerParcelPage> ListParcelsAsync(ParcelReadScope scope, CustomerParcelQuery query,
@@ -534,6 +568,7 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
         public string Currency { get; init; } = null!;
         public string PricingVersion { get; init; } = null!;
         public DateTimeOffset CreatedAt { get; init; }
+        public DateTimeOffset UpdatedAt { get; init; }
         public DateOnly? ServiceDate { get; init; }
         public AssignmentStatus? AssignmentStatus { get; init; }
         public DateTimeOffset? AssignedAt { get; init; }

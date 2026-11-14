@@ -11,6 +11,15 @@ public static class DeliveryReadEndpoints
 
     public static void MapDeliveryReads(this WebApplication app)
     {
+        app.MapGet("/api/v1/parcels/summary", async (HttpContext context, CustomerTrackingHandler handler,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await handler.GetSummaryAsync(context.Request.Query.Count != 0, cancellationToken);
+            return result.Response is { } response ? Results.Ok(response)
+                : DeliveryReadProblems.Failure(context, result.Failure!.Value, result.Errors);
+        }).RequireAuthorization().WithName("CustomerDeliverySummary").WithMetadata(new DeliveryReadEndpointMetadata())
+            .Produces<CustomerDeliverySummary>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403).ProducesProblem(503);
+
         app.MapGet("/api/v1/couriers/me/history", async (HttpContext context, CourierHistoryHandler handler,
             CancellationToken cancellationToken) =>
         {

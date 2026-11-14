@@ -23,10 +23,10 @@ status/history/outbox/replay persistence. It guards the documented pickup/transi
 out-for-delivery and reason-required Failed transitions; direct Delivered writes
 are rejected. Courier Phase 4 adds the documented multipart
 `POST /api/v1/deliveries/{id}/pod`: photo or signature (both accepted), decoded
-JPEG/PNG validation, encrypted private S3/MinIO staging and guarded atomic Delivered
+JPEG/PNG validation, private PostgreSQL staging and guarded atomic Delivered
 completion. Reference-aware daily cleanup removes old orphan uploads. Production
-writes require verified Identity tokens; proof storage also requires
-explicit private configuration. Phase 5 verifies failed-delivery acceptance through
+writes require verified Identity tokens; proof reads and writes share the Delivery
+database. The legacy S3 adapter is not selected by current composition. Phase 5 verifies failed-delivery acceptance through
 the existing status operation: a required reason, optional private notes, atomic
 terminal assignment/history/outbox/replay and no automatic reassignment. Phase 6
 adds `GET /api/v1/couriers/me/history` for the caller's historical Delivered/Failed
@@ -224,7 +224,9 @@ For the shared containerized development environment, follow the
 Delivery consumes its database setting when persistence is requested or the
 explicit `--migrate` task runs. Normal startup applies no migrations and health
 remains process liveness only. Broker integration remains later work; the
-private proof object-store adapter requires explicit Delivery-only configuration.
+private proof images use Delivery's PostgreSQL database. See the
+[Customer summary and private document contract](docs/customer-delivery-summary.md)
+for dashboard totals, storage integrity and scoped proof reads.
 
 The infra development Compose file sets explicit container Kestrel endpoints
 and Production configuration so YARP uses private service DNS. API/Worker HTTP

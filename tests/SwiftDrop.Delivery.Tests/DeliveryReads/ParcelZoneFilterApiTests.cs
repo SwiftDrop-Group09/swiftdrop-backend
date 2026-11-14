@@ -120,6 +120,66 @@ public sealed class ParcelZoneFilterApiTests(PostgresFixture fixture) : IAsyncLi
         return (await response.Content.ReadFromJsonAsync<CustomerParcelPage>())!;
     }
 
+    [Fact]
+    public async Task CustomerSummaryCountsAllOwnedStatesAndBoundsListsIndependently()
+    {
+        var seed = await SeedAsync();
+        await using var db = Context();
+        var owned = await db.Parcels.Where(parcel => parcel.CustomerId == seed.Owner).OrderBy(parcel => parcel.Id).ToArrayAsync();
+        Assert.Equal(5, owned.Length);
+        var statuses = new[] { ParcelStatus.Delivered, ParcelStatus.Failed, ParcelStatus.Cancelled };
+        for (var i = 0; i < statuses.Length; i++)
+        {
+            db.Entry(owned[i]).Property(parcel => parcel.Status).CurrentValue = statuses[i];
+            db.Entry(owned[i]).Property(parcel => parcel.Version).CurrentValue = 4;
+            db.Entry(owned[i]).Property(parcel => parcel.UpdatedAt).CurrentValue = Now.AddMinutes(i);
+        }
+        var tier = await db.PricingTiers.FirstAsync(item => item.ZoneId == seed.DeliveryZone);
+        for (var i = 0; i < 8; i++) AddParcel(db, seed.Prefix, seed.Owner, seed.PickupZone, tier, Now.AddMinutes(-i));
+        await db.SaveChangesAsync();
+        using var factory = new QuoteApiFactory(fixture.ConnectionString, QuoteApiFactory.Customer(seed.Owner));
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/api/v1/parcels/summary");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
+        var summary = (await response.Content.ReadFromJsonAsync<CustomerDeliverySummary>())!;
+        Assert.Equal(13, summary.TotalCount);
+        Assert.Equal(10, summary.ActiveCount);
+        Assert.Equal(1, summary.DeliveredCount);
+        Assert.Equal(1, summary.FailedCount);
+        Assert.Equal(1, summary.CancelledCount);
+        Assert.Equal(5, summary.ActiveDeliveries.Count);
+        Assert.Equal(3, summary.RecentDeliveries.Count);
+        Assert.All(summary.ActiveDeliveries, item => Assert.DoesNotContain(item.Status, new[] { "Delivered", "Failed", "Cancelled" }));
+        Assert.Equal(owned[2].Id, summary.RecentDeliveries[0].Id);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/v1/parcels/summary?customerId=" + Guid.NewGuid())).StatusCode);
+    }
+
+    [Theory]
+    [InlineData(null, HttpStatusCode.Unauthorized)]
+    [InlineData("Courier", HttpStatusCode.Forbidden)]
+    [InlineData("Merchant", HttpStatusCode.Forbidden)]
+    [InlineData("Dispatcher", HttpStatusCode.Forbidden)]
+    [InlineData("Admin", HttpStatusCode.Forbidden)]
+    public async Task CustomerSummaryRejectsOtherRolesBeforeQueryValidation(string? role, HttpStatusCode expected)
+    {
+        using var factory = new QuoteApiFactory(fixture.ConnectionString,
+            role is null ? null : QuoteApiFactory.Principal(Guid.NewGuid().ToString(), role));
+        using var client = factory.CreateClient();
+        Assert.Equal(expected, (await client.GetAsync("/api/v1/parcels/summary?unexpected=true")).StatusCode);
+    }
+
+    [Fact]
+    public async Task CustomerWithNoParcelsGetsAnEmptySummary()
+    {
+        using var factory = new QuoteApiFactory(fixture.ConnectionString, QuoteApiFactory.Customer(Guid.NewGuid()));
+        using var client = factory.CreateClient();
+        var summary = await client.GetFromJsonAsync<CustomerDeliverySummary>("/api/v1/parcels/summary");
+        Assert.Equal(new CustomerDeliverySummary(0, 0, 0, 0, 0, summary!.ActiveDeliveries, summary.RecentDeliveries), summary);
+        Assert.Empty(summary.ActiveDeliveries);
+        Assert.Empty(summary.RecentDeliveries);
+    }
+
     private async Task<Scenario> SeedAsync()
     {
         await using var db = Context();
