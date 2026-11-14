@@ -43,5 +43,11 @@ public sealed record PricingPage(
     int Page,
     int PageSize);
 
+public sealed record PricingZoneOverview(Guid ZoneId, string ZoneName, bool IsZoneActive,
+    int TierCount, IReadOnlyList<PricingTierDto> ActiveTiers);
+
+public sealed record PricingOverviewPage(IReadOnlyList<PricingZoneOverview> Items,
+    long TotalCount, int Page, int PageSize);
+
 public sealed record PricingResult<T>(T? Response, PricingFailure? Failure = null,
     IReadOnlyDictionary<string, string[]>? Errors = null);

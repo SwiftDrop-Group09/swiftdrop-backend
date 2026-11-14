@@ -10,6 +10,26 @@ namespace SwiftDrop.Identity.Api.Infrastructure;
 
 public sealed class PostgresIdentityAdministrationStore(NpgsqlDataSource dataSource) : IIdentityAdministrationStore
 {
+    public async Task<IdentityAdministrationResult<IReadOnlyList<CourierDirectoryEntry>>> CourierDirectoryAsync(
+        Guid actor, Guid[] ids, CancellationToken cancellationToken)
+    {
+        if (ids.Length is < 1 or > 100 || ids.Any(id => id == Guid.Empty)) throw new ArgumentException("Supply up to 100 courier identifiers.");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
+        var profile = await ReadProfileAsync(connection, transaction, actor, cancellationToken);
+        if (profile is not { IsActive: true } || !profile.Roles.Any(role => role is "Admin" or "Dispatcher"))
+            return Failure<IReadOnlyList<CourierDirectoryEntry>>(IdentityAdministrationFailure.Forbidden);
+        await using var command = new NpgsqlCommand("""
+            SELECT u.id,u.full_name FROM public.users u JOIN public.user_roles r ON r.user_id=u.id
+            WHERE u.id=ANY(@ids) AND r.role_name='Courier' ORDER BY u.id
+            """, connection, transaction);
+        command.Parameters.AddWithValue("ids", ids.Distinct().ToArray());
+        var entries = new List<CourierDirectoryEntry>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+            while (await reader.ReadAsync(cancellationToken)) entries.Add(new(reader.GetGuid(0), reader.GetString(1)));
+        await transaction.CommitAsync(cancellationToken);
+        return new(entries);
+    }
     private const string ProfileColumns = """
         u.id, u.email, u.full_name, u.phone_number, u.address, u.is_active,
         ARRAY(SELECT ur.role_name::text FROM public.user_roles ur

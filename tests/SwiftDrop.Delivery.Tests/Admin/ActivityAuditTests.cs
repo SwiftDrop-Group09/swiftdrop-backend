@@ -22,6 +22,25 @@ namespace SwiftDrop.Delivery.Tests.Admin;
 [Collection("Postgres")]
 public sealed class ActivityAuditTests(PostgresFixture fixture)
 {
+    [Fact]
+    public async Task LegacyUserActorProjectsAsHumanWithoutRewritingTheAudit()
+    {
+        var actor = Guid.NewGuid(); await using var app = await Host(actor, "Admin");
+        var operation = Guid.NewGuid();
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString); await connection.OpenAsync();
+        await using var insert = new NpgsqlCommand("""
+            INSERT INTO actor_activity_audit(event_id,operation_id,occurred_at,phase,actor_id,actor_roles,actor_type,action,method,route,ip_source,status_code,correlation_id)
+            VALUES(@id,@id,now(),'Completed',@actor,ARRAY['Admin'],'User','ImportOperationalHistory','SEED','/maintenance/operational-history','LocalMaintenance',201,@id)
+            """, connection);
+        insert.Parameters.AddWithValue("id", operation); insert.Parameters.AddWithValue("actor", actor); await insert.ExecuteNonQueryAsync();
+        var filters = QueryStringActor(actor); filters["actorType"] = "Human";
+        var result = await ActivityAudit.Read(app.Configuration, "Delivery", new QueryCollection(filters), default);
+        Assert.Equal("Human", Assert.Single(result.Items).ActorType);
+        insert.CommandText = "SELECT actor_type FROM actor_activity_audit WHERE operation_id=@id";
+        Assert.Equal("User", await insert.ExecuteScalarAsync());
+        filters.Remove("actorType"); filters["notActorType"] = "Human";
+        Assert.Empty((await ActivityAudit.Read(app.Configuration, "Delivery", new QueryCollection(filters), default)).Items);
+    }
     private async Task<WebApplication> Host(Guid actor, string role, bool trusted = false)
     {
         await using var db = new DeliveryDbContext(new DbContextOptionsBuilder<DeliveryDbContext>().UseNpgsql(fixture.ConnectionString).Options);

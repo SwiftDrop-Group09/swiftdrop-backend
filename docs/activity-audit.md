@@ -39,6 +39,12 @@ fictional event. Missing historical roles/IPs remain unavailable. Operational
 table retention also governs those historical projections. New activity rows
 reject UPDATE/DELETE, and rollback refuses to discard retained activity.
 
+Legacy maintenance rows whose stored actor type is `User` project as `Human`
+through the shared read contract. Positive and exclusion actor-type filters use
+the same normalized projection. This preserves append-only source rows and
+prevents one historical value from invalidating an entire service's audit page.
+Unknown actor types are not silently accepted by the frontend.
+
 ## IP trust
 
 The default is `HttpContext.Connection.RemoteIpAddress`. Existing Identity trusted

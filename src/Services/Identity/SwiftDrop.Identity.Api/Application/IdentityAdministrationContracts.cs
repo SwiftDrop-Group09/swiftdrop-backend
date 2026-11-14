@@ -14,11 +14,14 @@ public sealed record IdentityAdministrationResult<T>(T? Value, IdentityAdministr
 public sealed record ProfileUpdate(string FullName, string? PhoneNumber, string? Address);
 public sealed record IdentityPage<T>(IReadOnlyList<T> Items, long TotalCount, int Page, int PageSize);
 public sealed record IdentityUserFilter(string? Role = null, string? Search = null, bool? IsActive = null);
+public sealed record CourierDirectoryEntry(Guid Id, string FullName);
 public sealed record IdentityAuditRecord(long Id, Guid? ActorId, string Action, Guid? ResourceId,
     DateTimeOffset Timestamp, string ResultCode);
 
 public interface IIdentityAdministrationStore
 {
+    Task<IdentityAdministrationResult<IReadOnlyList<CourierDirectoryEntry>>> CourierDirectoryAsync(
+        Guid actor, Guid[] ids, CancellationToken cancellationToken);
     Task<IdentityAdministrationResult<RegisteredProfile>> GetProfileAsync(Guid actor, CancellationToken cancellationToken);
     Task<IdentityAdministrationResult<RegisteredProfile>> UpdateProfileAsync(Guid actor, ProfileUpdate input,
         DateTimeOffset now, string? correlation, CancellationToken cancellationToken);

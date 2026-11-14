@@ -17,6 +17,8 @@ internal static class CourierEntityConfigurations
         couriers.HasKey(x => x.Id);
         // Identity owns this ID; EF must not generate a different operational identity.
         couriers.Property(x => x.Id).ValueGeneratedNever();
+        couriers.Property(x => x.BusinessNumber).UseIdentityAlwaysColumn();
+        couriers.HasIndex(x => x.BusinessNumber).IsUnique();
         couriers.Property(x => x.Version).IsConcurrencyToken();
 
         var zones = model.Entity<CourierZone>();

@@ -35,8 +35,10 @@ public sealed class CourierProofMigrationTests(PostgresFixture fixture)
             var parcel = Parcel.ForCustomer(Guid.NewGuid(), owner, Guid.NewGuid().ToString("N"),
                 new(ParcelSize.Small, 2.5m, zone.Id, "private pickup", null, "private dropoff", "private recipient"), createdAt);
             context.AddRange(zone, tier, parcel, new PriceSnapshot(Guid.NewGuid(), parcel.Id, tier, 450m, 90m, 540m, createdAt),
-                new Api.Domain.Courier(actor, true, true, 10), new CourierZone(actor, zone.Id),
+                new CourierZone(actor, zone.Id),
                 BookingHistory.Created(Guid.NewGuid(), parcel, owner), OutboxMessage.ParcelCreated(Guid.NewGuid(), parcel, "proof-migration"));
+            // Seed the historical schema with its original columns, before the business-number migration.
+            await context.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO couriers(id,active,on_duty,capacity,version) VALUES({actor},true,true,10,1)");
             await context.SaveChangesAsync();
             context.Entry(parcel).Property(x => x.Status).CurrentValue = ParcelStatus.Assigned;
             context.Entry(parcel).Property(x => x.Version).CurrentValue = 2;
