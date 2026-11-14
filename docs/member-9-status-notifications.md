@@ -37,10 +37,11 @@ dotnet test tests\SwiftDrop.Delivery.Tests\SwiftDrop.Delivery.Tests.csproj --no-
 ```
 
 In the latest verification run, build passed with 0 warnings and 0 errors;
-Notification tests passed 13/13; Merchant tests passed 167/167; Delivery
+Notification tests passed 13/13 (including invalid payload rejection and
+failure-then-success recovery); Merchant tests passed 167/167; Delivery
 foundation tests passed 20/20. `git diff --check` passed. The Notification
 project was also run with `--collect:"XPlat Code Coverage"`; the collector did
-not produce a report in the workspace, so no coverage percentage is claimed.
+not produce a coverage report, so no coverage percentage is claimed.
 The full solution test run was attempted earlier. Identity and Delivery
 PostgreSQL integration tests require local PostgreSQL binaries or explicitly
 configured test databases; these dependencies were unavailable. A dedicated
@@ -64,6 +65,14 @@ The Worker does not mint service credentials. The Identity/team workload-token
 provisioning mechanism must supply these files. Run the Notifications migration
 with the separate migration credential before starting the Worker. See the
 infrastructure README for Compose commands and variable mapping.
+
+The local Compose file maps the Worker to RabbitMQ user `worker_bus`, but does
+not run a broker-user bootstrap service. The RabbitMQ bootstrap script is wired
+into the Kubernetes baseline. For local Docker, provision `worker_bus` and its
+least-privilege permissions for the status exchange and `notification-status*`
+queues through the broker administrator before expecting the consumer to
+connect. The infra repository's `.env.example` password is blank by default;
+the private `.env` was not inspected in this verification.
 
 ## Acceptance status
 
