@@ -36,6 +36,9 @@ public partial class Program
         builder.Services.AddScoped<OperationsClock>();
         builder.Services.AddScoped<DeliveryReadHandler>();
         builder.Services.AddScoped<CustomerTrackingHandler>();
+        builder.Services.AddScoped<AssignmentHandler>();
+        builder.Services.AddScoped<IAssignmentStore>(services =>
+            new PostgresAssignmentStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<CourierWorkloadHandler>();
         builder.Services.AddScoped<IWorkloadReadStore>(services =>
             new PostgresWorkloadReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
@@ -122,7 +125,8 @@ public partial class Program
         }));
         app.Use(async (context, next) =>
         {
-            if (context.GetEndpoint()?.Metadata.GetMetadata<DeliveryReadEndpointMetadata>() is not null
+            if (context.GetEndpoint()?.Metadata.GetMetadata<AssignmentEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<DeliveryReadEndpointMetadata>() is not null
                 || context.GetEndpoint()?.Metadata.GetMetadata<CourierStatusEndpointMetadata>() is not null
                 || context.GetEndpoint()?.Metadata.GetMetadata<CourierProofEndpointMetadata>() is not null
                 || context.GetEndpoint()?.Metadata.GetMetadata<AdminZoneEndpointMetadata>() is not null
@@ -136,6 +140,12 @@ public partial class Program
             var context = status.HttpContext;
             if (context.Response.StatusCode is 401 or 403)
             {
+                if (context.GetEndpoint()?.Metadata.GetMetadata<AssignmentEndpointMetadata>() is not null)
+                {
+                    await AssignmentEndpoints.Problem(context, context.Response.StatusCode == 401
+                        ? AssignmentFailure.Unauthenticated : AssignmentFailure.Forbidden).ExecuteAsync(context);
+                    return;
+                }
                 if (context.GetEndpoint()?.Metadata.GetMetadata<CourierStatusEndpointMetadata>() is not null
                     || context.GetEndpoint()?.Metadata.GetMetadata<CourierProofEndpointMetadata>() is not null)
                 {
@@ -163,6 +173,7 @@ public partial class Program
         app.MapCustomerBookings();
         app.MapDeliveryReads();
         app.MapDispatchReads();
+        app.MapAssignments();
         app.MapCourierStatus();
         app.MapCourierProof();
         app.MapAdminZones();

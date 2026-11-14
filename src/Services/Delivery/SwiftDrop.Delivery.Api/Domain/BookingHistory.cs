@@ -14,6 +14,18 @@ public sealed class BookingHistory
         Timestamp = parcel.CreatedAt
     };
 
+    public static BookingHistory Assigned(Guid id, Parcel parcel, Guid actor)
+    {
+        if (parcel.Status != ParcelStatus.Assigned || parcel.Version < 2)
+            throw new InvalidOperationException("Assignment history requires an assigned parcel.");
+        return new BookingHistory
+        {
+            Id = DomainGuard.Id(id, nameof(id)), ParcelId = parcel.Id,
+            FromStatus = ParcelStatus.Created, ToStatus = ParcelStatus.Assigned,
+            ChangedBy = DomainGuard.Id(actor, nameof(actor)), Timestamp = parcel.UpdatedAt
+        };
+    }
+
     public Guid Id { get; private set; }
 
     public static BookingHistory CourierChanged(Guid id, Parcel parcel, ParcelStatus previousStatus,
