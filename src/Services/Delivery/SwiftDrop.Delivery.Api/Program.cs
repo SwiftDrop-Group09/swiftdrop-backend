@@ -1,3 +1,4 @@
+using SwiftDrop.Auditing;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Admin.Pricing;
@@ -40,7 +41,8 @@ public partial class Program
         builder.Services.AddScoped<CourierStatusHandler>();
         builder.Services.AddScoped<CourierProofHandler>();
         builder.Services.AddSingleton<IProofImageValidator, SkiaProofImageValidator>();
-        builder.Services.AddSingleton<IPrivateProofStorage>(services => new S3ProofStorage(services.GetRequiredService<IConfiguration>()));
+        builder.Services.AddScoped<IPrivateProofStorage>(services =>
+            new PostgresProofStorage(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<ICourierProofStore>(services =>
             new PostgresCourierStatusStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IProofCleanupStore>(services =>
@@ -147,6 +149,7 @@ public partial class Program
             }
         });
         app.UseAuthentication();
+        app.UseActivityAudit("Delivery", "/api/v1/delivery/audit-logs");
         app.UseAuthorization();
 
         // Process liveness only; dependency readiness is a later milestone.

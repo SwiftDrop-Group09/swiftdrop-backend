@@ -77,7 +77,7 @@ public sealed class AdministrationPersistenceTests(IdentityPostgresFixture datab
         var target = await LocalAsync();
         Success(await _store.SetRolesAsync(other.Id, administrator.Id, ["Customer"], Now, null, default));
         await AssertDeniedEveryAdministrationOperationAsync(administrator.Id, target);
-        await ExecuteAsync("INSERT INTO public.user_roles (user_id,role_name) VALUES (@id,'Admin')", ("id", administrator.Id));
+        await ExecuteAsync("UPDATE public.user_roles SET role_name='Admin' WHERE user_id=@id", ("id", administrator.Id));
         await ExecuteAsync("UPDATE public.users SET is_active=FALSE WHERE id=@id", ("id", administrator.Id));
         await AssertDeniedEveryAdministrationOperationAsync(administrator.Id, target);
     }
@@ -157,17 +157,16 @@ public sealed class AdministrationPersistenceTests(IdentityPostgresFixture datab
     }
 
     [Fact]
-    public async Task RoleReplacementIsCompleteAtomicAndAllowsNoPrivileges()
+    public async Task RoleReplacementIsAtomicAndRejectsRolelessAccounts()
     {
         var administrator = await AdministratorAsync();
         var user = await LocalAsync();
         var updated = Success(await _store.SetRolesAsync(administrator.Id, user.Id,
-            ["Courier", "Dispatcher"], Now, null, default));
-        Assert.Equal(["Courier", "Dispatcher"], updated.Roles);
-        var noRoles = Success(await _store.SetRolesAsync(administrator.Id, user.Id, [], Now, null, default));
-        Assert.Empty(noRoles.Roles);
-        Assert.True(noRoles.IsActive);
-        Assert.Equal(2L, await ScalarAsync<long>(
+            ["Courier"], Now, null, default));
+        Assert.Equal(["Courier"], updated.Roles);
+        Assert.Equal(IdentityAdministrationFailure.InvalidRoles, (await _store.SetRolesAsync(administrator.Id, user.Id, [], Now, null, default)).Failure);
+        Assert.Equal(["Courier"], (await _authentication.FindByIdAsync(user.Id, default))!.Profile.Roles);
+        Assert.Equal(1L, await ScalarAsync<long>(
             "SELECT COUNT(*) FROM public.audit_logs WHERE subject_user_id=@id AND action='RolesChanged'", ("id", user.Id)));
     }
 
@@ -295,7 +294,7 @@ public sealed class AdministrationPersistenceTests(IdentityPostgresFixture datab
             async Task<IdentityAdministrationFailure?> Demote()
             {
                 await start.Task;
-                return (await _store.SetRolesAsync(second.Id, second.Id, [], Now, null, default)).Failure;
+                return (await _store.SetRolesAsync(second.Id, second.Id, ["Customer"], Now, null, default)).Failure;
             }
 
             var operations = new[] { Disable(), Demote() };
@@ -375,6 +374,34 @@ public sealed class AdministrationPersistenceTests(IdentityPostgresFixture datab
         Assert.All(audit.Items, item => Assert.Matches("^[A-Za-z][A-Za-z0-9_]{0,79}$", item.ResultCode));
         Assert.Equal(["Id", "ActorId", "Action", "ResourceId", "Timestamp", "ResultCode"],
             typeof(IdentityAuditRecord).GetProperties().Select(property => property.Name));
+    }
+
+    [Fact]
+    public async Task UserFiltersApplyBeforePaginationAndCountMultiRoleUsersOnce()
+    {
+        var administrator = await AdministratorAsync();
+        var marker = Guid.NewGuid().ToString("N");
+        var first = Success(await _store.CreateUserAsync(administrator.Id, marker + "1@example.test", Normalize(marker + "1@example.test"), "Filter " + marker, true, PasswordHash, Now, null, default));
+        var second = Success(await _store.CreateUserAsync(administrator.Id, marker + "2@example.test", Normalize(marker + "2@example.test"), "Filter " + marker, false, PasswordHash, Now, null, default));
+
+        var filter = new IdentityUserFilter("Customer", marker.ToUpperInvariant());
+        var page = Success(await _store.ListUsersAsync(administrator.Id, 1, 1, default, filter));
+        var next = Success(await _store.ListUsersAsync(administrator.Id, 2, 1, default, filter));
+        Assert.Equal(2, page.TotalCount);
+        Assert.Equal(2, next.TotalCount);
+        Assert.Single(page.Items);
+        Assert.Single(next.Items);
+        Assert.Empty(page.Items.Select(x => x.Id).Intersect(next.Items.Select(x => x.Id)));
+        Success(await _store.SetRolesAsync(administrator.Id, first.Id, ["Courier"], Now, null, default));
+        var couriers = Success(await _store.ListUsersAsync(administrator.Id, 1, 20, default, filter with { Role = "Courier" }));
+        Assert.Equal(first.Id, Assert.Single(couriers.Items).Id);
+        Assert.Equal(1, couriers.TotalCount);
+        var inactive = Success(await _store.ListUsersAsync(administrator.Id, 1, 20, default, filter with { IsActive = false }));
+        Assert.Equal(second.Id, Assert.Single(inactive.Items).Id);
+        Assert.Equal(1, inactive.TotalCount);
+        var literal = Success(await _store.ListUsersAsync(administrator.Id, 1, 20, default, new IdentityUserFilter(Search: marker + "%_' OR 1=1 --")));
+        Assert.Empty(literal.Items);
+        Assert.Equal(0, literal.TotalCount);
     }
 
     [Theory]
@@ -466,8 +493,8 @@ public sealed class AdministrationPersistenceTests(IdentityPostgresFixture datab
     private async Task<RegisteredProfile> AdministratorAsync()
     {
         var user = await LocalAsync();
-        await ExecuteAsync("INSERT INTO public.user_roles (user_id,role_name) VALUES (@id,'Admin')", ("id", user.Id));
-        return user with { Roles = ["Admin", "Customer"] };
+        await ExecuteAsync("UPDATE public.user_roles SET role_name='Admin' WHERE user_id=@id", ("id", user.Id));
+        return user with { Roles = ["Admin"] };
     }
 
     private async Task WithOnlyActiveAdministratorsAsync(Guid[] keep, Func<Task> action)

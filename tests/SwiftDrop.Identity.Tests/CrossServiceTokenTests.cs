@@ -133,22 +133,13 @@ public sealed class CrossServiceTokenTests(IdentityPostgresFixture database)
     }
 
     [Fact]
-    public async Task ActiveHumanWithEmptyRolesIsAuthenticatedWithoutCustomerPrivilege()
+    public async Task HumanTokensCannotBeIssuedForEmptyOrMultipleRoles()
     {
         using var identity = new IdentityApiFactory(database);
         var login = await RegisterAndLoginAsync(identity);
-        var encoded = identity.Services.GetRequiredService<IIdentityAccessTokens>()
-            .Issue(login.User with { Roles = [] }, DateTimeOffset.UtcNow);
-        using var delivery = await DeliveryContractFactory.FromIdentityAsync(identity);
-        using var client = delivery.CreateClient();
-        using var request = delivery.QuoteRequest(encoded);
-
-        using var response = await client.SendAsync(request);
-
-        await AssertSafeDenialAsync(response, HttpStatusCode.Forbidden, login);
-        Assert.Equal(new ObservedIdentity(login.User.Id, false, false, false), delivery.Observed);
-        Assert.Empty(delivery.Store.Saved);
-        Assert.Equal(0, delivery.Store.Reads);
+        var issuer = identity.Services.GetRequiredService<IIdentityAccessTokens>();
+        Assert.Throws<ArgumentException>(() => issuer.Issue(login.User with { Roles=[] },DateTimeOffset.UtcNow));
+        Assert.Throws<ArgumentException>(() => issuer.Issue(login.User with { Roles=["Customer","Admin"] },DateTimeOffset.UtcNow));
     }
 
     [Theory]

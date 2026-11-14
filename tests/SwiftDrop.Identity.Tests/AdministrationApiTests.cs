@@ -125,13 +125,40 @@ public sealed class AdministrationApiTests(IdentityPostgresFixture database)
         var hash = (string)(await query.ExecuteScalarAsync())!;
         Assert.NotEqual(Password, hash);
         Assert.True(await new Argon2PasswordHasher().VerifyAsync(Password, hash, default));
-        using var roles = await client.PutAsJsonAsync($"/api/v1/users/{user.Id}/roles", new { roles = new[] { "Customer", "Courier" } });
+        using var roles = await client.PutAsJsonAsync($"/api/v1/users/{user.Id}/roles", new { roles = new[] { "Courier" } });
         Assert.Equal(HttpStatusCode.OK, roles.StatusCode);
-        Assert.Equal(["Courier", "Customer"], (await roles.Content.ReadFromJsonAsync<RegisteredProfile>())!.Roles);
+        Assert.Equal(["Courier"], (await roles.Content.ReadFromJsonAsync<RegisteredProfile>())!.Roles);
         using var duplicate = await client.PostAsJsonAsync("/api/v1/users", new { email = email.ToUpperInvariant(), fullName = "Duplicate", isActive = true, password = Password });
         Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
         using var rejectedPasswordUpdate = await client.PutAsJsonAsync($"/api/v1/users/{user.Id}", new { email, fullName = "Update", isActive = true, password = Password });
         Assert.Equal(HttpStatusCode.BadRequest, rejectedPasswordUpdate.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Customer")] [InlineData("Courier")] [InlineData("Merchant")]
+    [InlineData("Dispatcher")] [InlineData("Admin")]
+    public async Task AdministratorCreatesAnAccountWithExactlyTheRequestedRole(string role)
+    {
+        using var factory=new IdentityApiFactory(database); using var client=factory.Client();
+        await Authenticate(client,admin:true);
+        using var result=await client.PostAsJsonAsync("/api/v1/users",new {
+            email=Guid.NewGuid().ToString("N")+"@example.test",fullName="Role creation",isActive=true,password=Password,role });
+        Assert.Equal(HttpStatusCode.Created,result.StatusCode);
+        var profile=await result.Content.ReadFromJsonAsync<RegisteredProfile>();
+        Assert.Equal(new[]{role},profile!.Roles);
+    }
+
+    [Theory]
+    [InlineData("{\"roles\":[]}")]
+    [InlineData("{\"roles\":[\"Customer\",\"Admin\"]}")]
+    [InlineData("{\"roles\":[\"admin\"]}")]
+    [InlineData("{\"roles\":[0]}")]
+    public async Task RoleUpdatesRejectAnythingExceptOneNamedEnum(string input)
+    {
+        using var factory = new IdentityApiFactory(database); using var client=factory.Client();
+        var user=await Authenticate(client,admin:true);
+        using var response=await client.PutAsync($"/api/v1/users/{user.Id}/roles",new StringContent(input,Encoding.UTF8,"application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest,response.StatusCode);
     }
 
     [Theory]
@@ -149,6 +176,38 @@ public sealed class AdministrationApiTests(IdentityPostgresFixture database)
         using var audit = await client.GetAsync("/api/v1/audit-logs" + query);
         Assert.Equal(HttpStatusCode.BadRequest, users.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, audit.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("?role=SuperAdmin")]
+    [InlineData("?role=customer")]
+    [InlineData("?role=Admin&role=Customer")]
+    [InlineData("?search=a&search=b")]
+    [InlineData("?status=disabled")]
+    [InlineData("?status=active&status=inactive")]
+    public async Task UserFiltersRejectInvalidOrAmbiguousInputs(string query)
+    {
+        using var factory = new IdentityApiFactory(database);
+        using var client = factory.Client();
+        await Authenticate(client, admin: true);
+        using var response = await client.GetAsync("/api/v1/users" + query);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UserFiltersReturnOnlyMatchingAccountsAndRemainAdminOnly()
+    {
+        using var factory = new IdentityApiFactory(database);
+        using var client = factory.Client();
+        var administrator = await Authenticate(client, admin: true);
+        var result = await client.GetFromJsonAsync<IdentityPage<RegisteredProfile>>("/api/v1/users?role=Admin&status=active&search=" + administrator.Email);
+        Assert.Equal(administrator.Id, Assert.Single(result!.Items).Id);
+        Assert.Equal(1, result.TotalCount);
+        using var invalid = await client.GetAsync("/api/v1/users?search=" + new string('a', 201));
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        await Authenticate(client);
+        using var denied = await client.GetAsync("/api/v1/users?role=Customer");
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
     }
 
     [Fact]
@@ -197,14 +256,14 @@ public sealed class AdministrationApiTests(IdentityPostgresFixture database)
     }
 
     [Fact]
-    public async Task DemotedAdminCannotUseStaleAdminJwtAndZeroRoleUserCanReadOwnProfile()
+    public async Task DemotedAdminCannotUseStaleAdminJwtAndSingleRoleUserCanReadOwnProfile()
     {
         using var factory = new IdentityApiFactory(database);
         using var admin = factory.Client();
         using var target = factory.Client();
         await Authenticate(admin, admin: true);
         var user = await Authenticate(target, admin: true);
-        using var removed = await admin.PutAsJsonAsync($"/api/v1/users/{user.Id}/roles", new { roles = Array.Empty<string>() });
+        using var removed = await admin.PutAsJsonAsync($"/api/v1/users/{user.Id}/roles", new { roles = new[] { "Customer" } });
         Assert.Equal(HttpStatusCode.OK, removed.StatusCode);
         using var denied = await target.GetAsync("/api/v1/users");
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
@@ -267,7 +326,7 @@ public sealed class AdministrationApiTests(IdentityPostgresFixture database)
             .RegisterAsync(email, email.ToUpperInvariant(), "Fixture", await Hash.Value, default))!;
         if (admin)
         {
-            await using var command = database.DataSource.CreateCommand("INSERT INTO public.user_roles (user_id,role_name) VALUES (@id,'Admin')");
+            await using var command = database.DataSource.CreateCommand("UPDATE public.user_roles SET role_name='Admin' WHERE user_id=@id");
             command.Parameters.AddWithValue("id", user.Id);
             await command.ExecuteNonQueryAsync();
         }

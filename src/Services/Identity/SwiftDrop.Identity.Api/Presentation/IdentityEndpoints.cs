@@ -70,6 +70,15 @@ public static class IdentityEndpoints
 
                 return await handler(context);
             }
+            catch (GoogleIdentityUnavailableException exception)
+            {
+                var recovery = exception.Reason == GoogleIdentityUnavailableReason.ProviderUnavailable
+                    ? "Check connectivity to Google's verification endpoints."
+                    : "Configure the Identity:Google client ID allowlists to match the trusted application's OAuth client IDs.";
+                context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("SwiftDrop.Identity.Google")
+                    .LogWarning("Google sign-in unavailable. Reason: {Reason}. {Recovery}", exception.Reason, recovery);
+                return Problem(503, "google_unavailable", "Google sign-in is temporarily unavailable.");
+            }
             catch (Exception exception) when (exception is JsonException or BadHttpRequestException or NotSupportedException
                 || exception is InvalidOperationException { InnerException: ArgumentException })
             {
@@ -216,6 +225,8 @@ public static class IdentityEndpoints
             return Failure(result.Failure ?? IdentityFailure.InvalidCredentials);
         }
 
+        context.Items[SwiftDrop.Auditing.ActivityAudit.ActorItem] = result.User.Id;
+        context.Items[SwiftDrop.Auditing.ActivityAudit.RolesItem] = result.User.Roles;
         var browser = BrowserAuthentication.IsBrowser(context);
         if (browser)
         {

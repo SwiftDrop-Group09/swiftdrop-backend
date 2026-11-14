@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using SwiftDrop.Identity.Api.Application;
 using SwiftDrop.Identity.Api.Infrastructure.Google;
 
 namespace SwiftDrop.Identity.Tests;
@@ -138,10 +139,41 @@ public sealed class GoogleVerifierTests : IAsyncLifetime
     public async Task GoogleConfigurationAndProviderOutagesFailClosed()
     {
         var empty = new GoogleIdentityVerifier(new ConfigurationBuilder().Build());
-        Assert.Null(await empty.VerifyAsync(Token([]), CancellationToken.None));
+        var missing = await Assert.ThrowsAsync<GoogleIdentityUnavailableException>(() => empty.VerifyAsync(Token([]), CancellationToken.None));
+        Assert.Equal(GoogleIdentityUnavailableReason.NotConfigured, missing.Reason);
         var unavailable = new GoogleIdentityVerifier(Configuration(), (_, _) =>
             Task.FromException<GoogleJsonWebSignature.Payload>(new HttpRequestException("provider unavailable")));
-        Assert.Null(await unavailable.VerifyAsync(Token([]), CancellationToken.None));
+        var outage = await Assert.ThrowsAsync<GoogleIdentityUnavailableException>(() => unavailable.VerifyAsync(Token([]), CancellationToken.None));
+        Assert.Equal(GoogleIdentityUnavailableReason.ProviderUnavailable, outage.Reason);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProviderDeadlineAndInternalCancellationAreServiceFailures(bool canceled)
+    {
+        var unavailable = new GoogleIdentityVerifier(Configuration(), (_, _) =>
+            Task.FromException<GoogleJsonWebSignature.Payload>(canceled ? new OperationCanceledException() : new TimeoutException()));
+        var failure = await Assert.ThrowsAsync<GoogleIdentityUnavailableException>(() => unavailable.VerifyAsync(Token([]), default));
+        Assert.Equal(GoogleIdentityUnavailableReason.ProviderUnavailable, failure.Reason);
+    }
+
+    [Fact]
+    public async Task InvalidAudienceConfigurationNeverReachesProviderValidation()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Identity:Google:WebClientIds:0"] = " "
+        }).Build();
+        var called = false;
+        var verifier = new GoogleIdentityVerifier(configuration, (_, _) =>
+        {
+            called = true;
+            throw new InvalidOperationException("Must not contact provider.");
+        });
+        var failure = await Assert.ThrowsAsync<GoogleIdentityUnavailableException>(() => verifier.VerifyAsync(Token([]), default));
+        Assert.Equal(GoogleIdentityUnavailableReason.InvalidConfiguration, failure.Reason);
+        Assert.False(called);
     }
 
     [Fact]

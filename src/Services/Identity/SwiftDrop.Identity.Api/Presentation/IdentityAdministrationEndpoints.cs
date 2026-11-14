@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Features;
 
 using Npgsql;
+using SwiftDrop.Contracts;
 
 using SwiftDrop.Identity.Api.Application;
 using SwiftDrop.Identity.Api.Infrastructure;
@@ -76,8 +77,17 @@ public static class IdentityAdministrationEndpoints
 
     private static async Task<IResult> ListUsersAsync(HttpContext context)
     {
-        if (!Page(context, out var page, out var size)) return Invalid();
-        return Result(await Store(context).ListUsersAsync(Actor(context), page, size, context.RequestAborted));
+        if (!Page(context, out var page, out var size, users: true)) return Invalid();
+        var query = context.Request.Query;
+        if (new[] { "role", "search", "status" }.Any(key => query[key].Count > 1)) return Invalid();
+        var role = query["role"].ToString();
+        var search = query["search"].ToString().Trim();
+        var status = query["status"].ToString();
+        if (role.Length > 0 && role is not ("Customer" or "Courier" or "Merchant" or "Dispatcher" or "Admin")
+            || search.Length > 200 || status is not ("" or "active" or "inactive")) return Invalid();
+        var filter = new IdentityUserFilter(role.Length == 0 ? null : role, search.Length == 0 ? null : search,
+            status.Length == 0 ? null : status == "active");
+        return Result(await Store(context).ListUsersAsync(Actor(context), page, size, context.RequestAborted, filter));
     }
 
     private static async Task<IResult> ListAuditAsync(HttpContext context)
@@ -99,19 +109,20 @@ public static class IdentityAdministrationEndpoints
     {
         var input = await ReadAsync<CreateInput>(context);
         if (input is null || !ValidEmail(input.Email) || !ValidName(input.FullName) || input.IsActive is null
-            || input.Password is not { Length: >= 12 and <= 128 }) return Invalid();
+            || input.Password is not { Length: >= 12 and <= 128 }
+            || !HumanRoles.TryParse(input.Role ?? "Customer", out var role)) return Invalid();
         var email = input.Email!.Trim();
         var hash = await context.RequestServices.GetRequiredService<Argon2PasswordHasher>()
             .HashAsync(input.Password, context.RequestAborted);
         var result = await Store(context).CreateUserAsync(Actor(context), email, email.ToUpperInvariant(),
-            input.FullName!.Trim(), input.IsActive.Value, hash, Now(context), Correlation(context), context.RequestAborted);
+            input.FullName!.Trim(), input.IsActive.Value, hash, Now(context), Correlation(context), context.RequestAborted, role);
         return result.Failure is { } failure ? Failure(failure) : Results.Json(result.Value, statusCode: 201);
     }
 
     private static async Task<IResult> RolesAsync(HttpContext context)
     {
         var input = await ReadAsync<RolesInput>(context);
-        if (input?.Roles is null || input.Roles.Length > 5 || input.Roles.Any(string.IsNullOrWhiteSpace)
+        if (input?.Roles is null || input.Roles.Length != 1 || input.Roles.Any(role => !HumanRoles.TryParse(role, out _))
             || input.Roles.Distinct(StringComparer.Ordinal).Count() != input.Roles.Length) return Invalid();
         return Result(await Store(context).SetRolesAsync(Actor(context), Target(context), input.Roles,
             Now(context), Correlation(context), context.RequestAborted));
@@ -131,11 +142,12 @@ public static class IdentityAdministrationEndpoints
         return await context.Request.ReadFromJsonAsync<T>(InputJson, context.RequestAborted);
     }
 
-    private static bool Page(HttpContext context, out int page, out int size)
+    private static bool Page(HttpContext context, out int page, out int size, bool users = false)
     {
         page = 1;
         size = 20;
-        if (context.Request.Query.Keys.Any(key => key is not ("page" or "pageSize"))) return false;
+        if (context.Request.Query.Keys.Any(key => key is not ("page" or "pageSize")
+            && !(users && key is "role" or "search" or "status"))) return false;
         return ReadPage("page", ref page) && ReadPage("pageSize", ref size) && page >= 1 && size is >= 1 and <= 100;
 
         bool ReadPage(string key, ref int value)
@@ -168,6 +180,6 @@ public static class IdentityAdministrationEndpoints
     private static IIdentityAdministrationStore Store(HttpContext context) => context.RequestServices.GetRequiredService<IIdentityAdministrationStore>();
     private sealed record ProfileInput(string? FullName, [property: JsonRequired] string? PhoneNumber, string? Address);
     private sealed record AdminInput(string? Email, string? FullName, bool? IsActive);
-    private sealed record CreateInput(string? Email, string? FullName, bool? IsActive, string? Password);
+    private sealed record CreateInput(string? Email, string? FullName, bool? IsActive, string? Password, string? Role = null);
     private sealed record RolesInput(string[]? Roles);
 }

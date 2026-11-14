@@ -6,8 +6,8 @@ namespace SwiftDrop.Identity.Api.Infrastructure;
 
 public static class IdentitySchemaMigrator
 {
-    public const string CurrentVersion = "003_identity_administration";
-    private static readonly string[] MigrationVersions = ["001_identity_initial", "002_identity_sessions", CurrentVersion];
+    public const string CurrentVersion = "005_single_user_role";
+    private static readonly string[] MigrationVersions = ["001_identity_initial", "002_identity_sessions", "003_identity_administration", "004_actor_activity_audit", CurrentVersion];
 
     public static async Task ApplyAsync(string connectionString, CancellationToken cancellationToken = default)
     {
