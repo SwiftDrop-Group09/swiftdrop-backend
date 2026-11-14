@@ -8,6 +8,7 @@ using SwiftDrop.Delivery.Api.Application.Bookings;
 using SwiftDrop.Delivery.Api.Application.CourierStatus;
 using SwiftDrop.Delivery.Api.Application.CourierProof;
 using SwiftDrop.Delivery.Api.Application.DeliveryReads;
+using SwiftDrop.Delivery.Api.Application.Dispatch;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Infrastructure.Admin;
 using SwiftDrop.Delivery.Api.Infrastructure.Authentication;
@@ -15,6 +16,7 @@ using SwiftDrop.Delivery.Api.Infrastructure.Bookings;
 using SwiftDrop.Delivery.Api.Infrastructure.CourierStatus;
 using SwiftDrop.Delivery.Api.Infrastructure.CourierProof;
 using SwiftDrop.Delivery.Api.Infrastructure.DeliveryReads;
+using SwiftDrop.Delivery.Api.Infrastructure.Dispatch;
 using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 using SwiftDrop.Delivery.Api.Infrastructure.Quotes;
 using SwiftDrop.Delivery.Api.Presentation;
@@ -34,6 +36,9 @@ public partial class Program
         builder.Services.AddScoped<OperationsClock>();
         builder.Services.AddScoped<DeliveryReadHandler>();
         builder.Services.AddScoped<CustomerTrackingHandler>();
+        builder.Services.AddScoped<CourierWorkloadHandler>();
+        builder.Services.AddScoped<IWorkloadReadStore>(services =>
+            new PostgresWorkloadReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddSingleton<IReceiptPdfRenderer, SkiaReceiptPdfRenderer>();
         builder.Services.AddScoped<CourierHistoryHandler>();
         builder.Services.AddScoped<ICourierHistoryStore>(services =>
@@ -157,6 +162,7 @@ public partial class Program
         app.MapCustomerQuotes();
         app.MapCustomerBookings();
         app.MapDeliveryReads();
+        app.MapDispatchReads();
         app.MapCourierStatus();
         app.MapCourierProof();
         app.MapAdminZones();
