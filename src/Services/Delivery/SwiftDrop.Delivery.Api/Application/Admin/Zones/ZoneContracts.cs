@@ -35,11 +35,14 @@ public sealed record ZoneSummaryItemDto(
 
 public sealed record ZoneSummaryResponse(IReadOnlyList<ZoneSummaryItemDto> Zones);
 
+public sealed record ZoneQuery(string? Search = null, string? City = null, string? NotCity = null, string? Status = null);
+
 public sealed record ZonePage(
     IReadOnlyList<ZoneDto> Items,
     long TotalCount,
     int Page,
-    int PageSize);
+    int PageSize,
+    IReadOnlyList<string>? Cities = null);
 
 public sealed record ZoneResult<T>(T? Response, ZoneFailure? Failure = null,
     IReadOnlyDictionary<string, string[]>? Errors = null);

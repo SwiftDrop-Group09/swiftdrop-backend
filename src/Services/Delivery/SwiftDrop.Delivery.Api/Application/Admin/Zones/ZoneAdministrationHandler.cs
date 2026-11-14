@@ -4,7 +4,7 @@ public sealed class ZoneAdministrationHandler(
     IZoneAdministrationStore store,
     ICurrentDeliveryUser user)
 {
-    public async Task<ZoneResult<ZonePage>> ListAsync(int? page, int? pageSize, CancellationToken cancellationToken)
+    public async Task<ZoneResult<ZonePage>> ListAsync(int? page, int? pageSize, CancellationToken cancellationToken, ZoneQuery? filters = null)
     {
         if (!user.IsAuthenticated)
         {
@@ -16,9 +16,14 @@ public sealed class ZoneAdministrationHandler(
             return new(null, ZoneFailure.Forbidden);
         }
 
+        filters ??= new();
+        if (filters.Search?.Length > 200 || filters.City?.Length > 200 || filters.NotCity?.Length > 200
+            || filters.Status is not (null or "" or "active" or "inactive"))
+            return new(null, ZoneFailure.InvalidInput);
         var p = Math.Max(1, page ?? 1);
         var size = Math.Clamp(pageSize ?? 20, 1, 100);
-        var result = await store.ListZonesAsync(p, size, cancellationToken);
+        if ((long)(p - 1) * size > int.MaxValue) return new(null, ZoneFailure.InvalidInput);
+        var result = await store.ListZonesAsync(p, size, cancellationToken, filters);
         return new(result);
     }
 

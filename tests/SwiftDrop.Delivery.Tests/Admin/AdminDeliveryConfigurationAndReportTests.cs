@@ -22,7 +22,7 @@ public sealed class AdminDeliveryConfigurationAndReportTests
     {
         private readonly List<ZoneDto> _zones = [];
 
-        public Task<ZonePage> ListZonesAsync(int page, int pageSize, CancellationToken cancellationToken)
+        public Task<ZonePage> ListZonesAsync(int page, int pageSize, CancellationToken cancellationToken, ZoneQuery? filters = null)
         {
             var paged = _zones.Skip((page - 1) * pageSize).Take(pageSize).ToList();
             return Task.FromResult(new ZonePage(paged, _zones.Count, page, pageSize));

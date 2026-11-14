@@ -15,12 +15,19 @@ public static class AdminZoneEndpoints
             int? page = query.TryGetValue("page", out var pVal) && int.TryParse(pVal, out var p) ? p : null;
             int? pageSize = query.TryGetValue("pageSize", out var psVal) && int.TryParse(psVal, out var ps) ? ps : null;
 
-            var result = await handler.ListAsync(page, pageSize, cancellationToken);
+            var allowed = new[] { "page", "pageSize", "search", "city", "notCity", "status" };
+            if (query.Keys.Any(key => !allowed.Contains(key, StringComparer.Ordinal)) || query.Any(pair => pair.Value.Count != 1))
+                return AdminProblems.ZoneFailureResult(context, ZoneFailure.InvalidInput);
+            if ((query.ContainsKey("page") && (!int.TryParse(query["page"],out var requestedPage) || requestedPage<1))
+                || (query.ContainsKey("pageSize") && (!int.TryParse(query["pageSize"],out var requestedSize) || requestedSize is <1 or >100)))
+                return AdminProblems.ZoneFailureResult(context, ZoneFailure.InvalidInput);
+            var filters = new ZoneQuery(query["search"].ToString(), query["city"].ToString(), query["notCity"].ToString(),query["status"].ToString());
+            var result = await handler.ListAsync(page, pageSize, cancellationToken, filters);
             return result.Response is { } response
                 ? Results.Ok(response)
                 : AdminProblems.ZoneFailureResult(context, result.Failure!.Value, result.Errors);
         }).RequireAuthorization(policy => policy.RequireRole("Admin")).WithName("ListZones").WithMetadata(new AdminZoneEndpointMetadata())
-            .Produces<ZonePage>().ProducesProblem(401).ProducesProblem(403);
+            .Produces<ZonePage>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403);
 
         app.MapPost("/api/v1/zones", async (ZoneInput input, HttpContext context, ZoneAdministrationHandler handler,
             CancellationToken cancellationToken) =>

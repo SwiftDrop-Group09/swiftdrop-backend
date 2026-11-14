@@ -19,6 +19,45 @@ public sealed class AdminDeliveryPersistenceTests(PostgresFixture fixture)
     private readonly Guid actor = Guid.NewGuid();
 
     [Fact]
+    public async Task ZoneFiltersRunBeforePaginationAndReturnGlobalCityOptions()
+    {
+        var marker = Guid.NewGuid().ToString("N"); var postal = "00"+Guid.NewGuid().ToString("N");
+        Guid last;
+        await using (var db=Context())
+        {
+            await db.Database.MigrateAsync();
+            for(var i=0;i<20;i++) db.Zones.Add(new DeliveryZone(Guid.NewGuid(),marker+i.ToString("D2"),boundaries:ZoneBoundaryHelper.SerializeBoundaries("Colombo",[])));
+            var target=new DeliveryZone(Guid.NewGuid(),marker+"ZZ",boundaries:ZoneBoundaryHelper.SerializeBoundaries("Galle",[postal]));
+            target.SetActive(false);last=target.Id;db.Zones.Add(target);await db.SaveChangesAsync();
+        }
+        var store=new PostgresZoneAdministrationStore(Context);
+        var first=await store.ListZonesAsync(1,20,default,new(Search:marker));
+        Assert.Equal(21,first.TotalCount);Assert.Equal(20,first.Items.Count);Assert.DoesNotContain(first.Items,item=>item.Id==last);
+        var city=await store.ListZonesAsync(1,20,default,new(Search:marker,City:"gALLE",Status:"inactive"));
+        Assert.Equal(1,city.TotalCount);Assert.Equal(last,Assert.Single(city.Items).Id);Assert.True(city.Items[0].Version>0);
+        Assert.Contains("Colombo",city.Cities!);Assert.Contains("Galle",city.Cities!);
+        var excluded=await store.ListZonesAsync(1,1,default,new(Search:marker,NotCity:"Galle"));
+        Assert.Equal(20,excluded.TotalCount);Assert.Single(excluded.Items);
+        var code=await store.ListZonesAsync(1,20,default,new(Search:postal));
+        Assert.Equal(last,Assert.Single(code.Items).Id);
+        var literal=await store.ListZonesAsync(1,20,default,new(Search:marker+"%_' OR 1=1 --"));
+        Assert.Empty(literal.Items);Assert.Equal(0,literal.TotalCount);Assert.Contains("Galle",literal.Cities!);
+    }
+
+    [Theory]
+    [InlineData("page=0")] [InlineData("pageSize=101")] [InlineData("page=a")]
+    [InlineData("city=Galle&city=Kandy")] [InlineData("status=unknown")]
+    [InlineData("unexpected=1")]
+    public async Task ZoneHttpReadsRejectInvalidFilters(string query)
+    {
+        await using(var db=Context()) await db.Database.MigrateAsync();
+        using var factory=new QuoteApiFactory(fixture.ConnectionString,QuoteApiFactory.Principal(actor.ToString(),"Admin"));
+        using var client=factory.CreateClient();
+        using var response=await client.GetAsync("/api/v1/zones?"+query);
+        Assert.Equal(HttpStatusCode.BadRequest,response.StatusCode);
+    }
+
+    [Fact]
     public async Task ZoneChangesUsePersistedVersionsAndRejectLostUpdatesWithoutExtraAudit()
     {
         await using (var db = Context()) await db.Database.MigrateAsync();
