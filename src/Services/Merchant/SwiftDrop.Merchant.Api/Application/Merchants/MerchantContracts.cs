@@ -55,4 +55,3 @@ public sealed record OneTimeApiKeyResponse(
     Guid KeyId,
     string ApiKey,
     IReadOnlyList<string> Scopes);
-

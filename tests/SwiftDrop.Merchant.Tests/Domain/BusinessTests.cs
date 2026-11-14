@@ -124,4 +124,3 @@ public sealed class BusinessTests
         Assert.Throws<InvalidOperationException>(() => business.Reject(adminId, "Too late"));
     }
 }
-

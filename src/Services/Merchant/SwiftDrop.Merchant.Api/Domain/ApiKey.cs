@@ -34,9 +34,9 @@ public sealed class ApiKey
         var validatedScopes = ApiKeyScopes.ParseAndValidate(requestedScopes);
         var id = Guid.NewGuid();
         var idHex = id.ToString("N");
-        var prefix = $"swd_test_{idHex[..8]}";
+        var prefix = $"swd_test_{idHex}";
 
-        var secretRandom = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+        var secretRandom = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         var plaintextKey = $"{prefix}_{secretRandom}";
 
         var salt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
@@ -61,7 +61,11 @@ public sealed class ApiKey
             return false;
         }
 
-        var candidateHash = ComputeHash(candidatePlaintextKey, Salt);
+        // Keep previously issued eight-character-prefix keys usable. New keys
+        // carry their full ID and use the documented salt || raw-key hash.
+        var candidateHash = KeyPrefix.Length == "swd_test_".Length + 8
+            ? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(candidatePlaintextKey + ":" + Salt)))
+            : ComputeHash(candidatePlaintextKey, Salt);
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(candidateHash),
             Encoding.UTF8.GetBytes(KeyHash));
@@ -94,7 +98,7 @@ public sealed class ApiKey
 
     public static string ComputeHash(string plaintextKey, string salt)
     {
-        var inputBytes = Encoding.UTF8.GetBytes(plaintextKey + ":" + salt);
+        var inputBytes = Convert.FromBase64String(salt).Concat(Encoding.UTF8.GetBytes(plaintextKey)).ToArray();
         var hashBytes = SHA256.HashData(inputBytes);
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
@@ -109,4 +113,3 @@ public sealed class ApiKey
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? RevokedAt { get; private set; }
 }
-

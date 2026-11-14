@@ -59,4 +59,31 @@ public sealed class Parcel
     public Guid ZoneId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
+
+    // Authorization and assignment locking belong to the owning transaction.
+    // Delivered is deliberately absent from the Courier status policy.
+    public void AdvanceCourierStatus(ParcelStatus next, long expectedVersion, DateTimeOffset changedAt)
+    {
+        if (Version != expectedVersion)
+            throw new CourierTransitionException(CourierTransitionFailure.StaleVersion, Version);
+        if (!CourierTransitionPolicy.IsAllowed(Status, next))
+            throw new CourierTransitionException(CourierTransitionFailure.InvalidTransition, Version);
+        var nextVersion = checked(Version + 1);
+        Status = next;
+        Version = nextVersion;
+        UpdatedAt = changedAt.ToUniversalTime();
+    }
+
+    public void CompleteWithProof(long expectedVersion, IReadOnlyList<ProofMetadata> proofs, DateTimeOffset changedAt)
+    {
+        if (Version != expectedVersion)
+            throw new CourierTransitionException(CourierTransitionFailure.StaleVersion, Version);
+        if (Status != ParcelStatus.OutForDelivery)
+            throw new CourierTransitionException(CourierTransitionFailure.InvalidTransition, Version);
+        ProofCompletionPolicy.Validate(proofs, Id);
+        var nextVersion = checked(Version + 1);
+        Status = ParcelStatus.Delivered;
+        Version = nextVersion;
+        UpdatedAt = changedAt.ToUniversalTime();
+    }
 }

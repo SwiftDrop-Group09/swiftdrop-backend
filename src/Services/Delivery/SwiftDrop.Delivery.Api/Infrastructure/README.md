@@ -1,3 +1,8 @@
+> Current authentication (12 November 2026): Program registers the production
+> DeliveryIdentityAuthentication JWT verifier. Historical unconfigured-handler
+> notes below describe earlier phase checkpoints. See the backend
+> docs/delivery-identity-jwt-integration.md for current configuration.
+
 # Delivery Infrastructure
 
 Own database and external-system adapters. Implement Application ports; this service alone may access swiftdrop_delivery.
@@ -125,3 +130,232 @@ a complete replay implementation. See the
 
 These are folders within one project; dependency direction is a review convention,
 not compiler-enforced project isolation.
+
+## Courier persistence foundation (Phase 1)
+
+`20261028110532_CourierPersistenceFoundation` adds `couriers`, `courier_zones`
+and `proof_metadata`. Courier IDs retain the separately verified Identity UUID;
+no account credentials or cross-database FK are introduced. Capacity and version
+are positive, and Courier.Version is an EF concurrency token. Zone memberships
+have a composite primary key and restrictive local Courier/DeliveryZone FKs.
+No profile is seeded or provisioned by the API.
+
+Proof metadata stores Photo/Signature, parcel FK, opaque private storage reference,
+recipient name, actor UUID and UTC upload time. Object references are unique and
+URLs are rejected. The actor is an audit UUID reference, not an Identity SQL FK.
+Metadata is not proof of an actual upload: no storage adapter, upload verification,
+assignment check, completion handler or public proof DTO is enabled here.
+Future upload code must confirm private storage before committing metadata and
+the authorized status/history/outbox transaction; staging and orphan cleanup
+remain Phase 4 work. Do not serialize persistence entities as public responses.
+
+The existing `booking_history` is now append-only through both EF SaveChanges
+and a PostgreSQL UPDATE/DELETE rejection trigger. Its schema/factory and all
+existing Booking writes are reused. The new migration leaves the initial
+migration, Parcel.Version, quote/snapshot/replay rules and event contracts intact.
+Normal startup still performs no DDL. Generate/review migration scripts with the
+existing commands above; do not apply them to a shared database without the
+team's deployment process.
+
+The user confirmed Active/Reassigned/Delivered/Failed/Cancelled assignment
+statuses and at least one photo OR signature (both accepted) for final proof.
+`20261028112000_AssignmentsPersistence` adds `assignments`, with restrictive
+parcel/Courier FKs, service-date/manifest/history indexes, timestamp/lifecycle
+checks and PostgreSQL xmin concurrency. `ux_assignments_current_parcel` uniquely
+indexes parcel_id WHERE status = 'Active'. Always use that predicate, never
+the most recent assignment timestamp, to determine current ownership.
+
+Assignments retain their original Courier, parcel, service date and assigned
+time. A SQL trigger blocks deletion, ownership/schedule rewrites, resurrection
+of a closed row and changes to an already recorded pickup time. Reassignment
+and cancellation are before pickup only; terminal assignments release the
+Active slot and remain available for historical ownership. No new closure-time
+field was invented: authoritative terminal timestamps will remain in parcel
+status history. Rescheduling is represented by the replacement assignment.
+
+The domain operations mutate only assignment records; they do not authorize a
+caller or advance a parcel. Future application handlers must lock/conditionally
+write the parcel version and current assignment, enforce Courier/zone/capacity
+rules, and persist state/history/outbox in one transaction. For replacement,
+flush the old row's Reassigned state before inserting the new Active row, inside
+that same transaction; EF insert/update ordering alone is not sufficient for a
+filtered unique index. A failed replacement must roll back the release. Actual
+dispatcher allocation and proof endpoints remain later work; the Phase 3 status
+handler now applies the parcel/assignment guard described below.
+
+Proof metadata supports photo alone, signature alone and both; the selected
+policy must be enforced by the future authorized proof-completion handler after
+private object persistence. Phase 1 supplies no successful completion endpoint.
+See the
+[assessment and actual test results](../../../../../docs/courier-phase-1-assessment.md).
+Phase 2 supplies manifest/detail handlers below; React/Flutter Courier screens
+remain Phase 7 work.
+
+## Courier reads (Phase 2)
+
+`GET /api/v1/couriers/me/assignments` accepts date (YYYY-MM-DD), includeOverdue
+(default true), page (default 1) and pageSize (default 20, max 100). Date defaults
+to the server's Operations:TimeZone service day, configured as Asia/Colombo.
+Only the authenticated Courier's current Active assignments on that date or,
+when requested, earlier service dates appear. Parcel states are limited to
+Assigned/PickedUp/InTransit/OutForDelivery. Future work is absent from today's
+manifest. isOverdue compares serviceDate with the selected day. Empty results
+are a normal page with items=[], totalCount=0. Pages sort by parcel createdAt/id
+descending; counts and rows come from the same PostgreSQL repeatable-read snapshot.
+
+`GET /api/v1/parcels/{id}` is the documented shared private read: current assigned
+Courier, owning Customer, or Dispatcher/Admin. Courier manifests remain Courier-only.
+The database query itself applies the resource predicate. Details and their real
+private history are read in one snapshot; no ownership check followed by an
+unscoped parcel lookup exists. Reads already in flight may finish from their
+authorized snapshot; requests after reassignment commit see the new owner and
+reject the former Courier with 404. This is read consistency, not a write lock or
+the Phase 3 assignment/version commit guard.
+
+Both return explicit camelCase projections, not persistence entities: existing
+id/trackingNumber/status/version/priceSnapshot/createdAt, structured pickupAddress,
+deliveryAddress, recipient, packageDetails; manifests add serviceDate/isOverdue.
+Detail additionally returns current assignment status/date/timestamps (or null)
+and real history from/to states, changeReason, deliveryNote and timestamp. Neither
+projection includes proof metadata/refs, storage URLs, previous Courier IDs,
+customer/merchant IDs, audit actor IDs, quote/replay records or outbox data.
+Manifest does not load private history. Stored structured address/contact JSON
+must follow the booking contract; malformed authorized data fails safely with 503
+instead of exposing raw text or inventing replacement data.
+
+The claims adapter requires one authenticated identity with one nonempty UUID sub;
+roles must belong to that identity. No request courierId, forwarded identity header
+or unsigned bearer grants access. Duplicate/unknown query parameters are rejected;
+malformed/overflowing dates and pages return 400 after authorization. Missing/invalid
+identity returns 401, wrong role 403, missing/foreign parcel 404, unavailable read
+dependency 503. ProblemDetails has safe code/correlationId; responses are private,
+no-store. Cancellation is propagated without retrying a read under another actor.
+
+Production still registers UnconfiguredIdentityHandler. Only tests replace it with
+the established fixed-principal fixture. Real JWT/JWKS integration is a separate
+Identity dependency; no development identity switch or alternate login was added.
+No migrations, version/history/outbox writes or storage/broker calls are introduced.
+
+## Courier status writes (Phase 3)
+
+`PUT /api/v1/deliveries/{id}/status` requires a trusted Courier, current assignment,
+`Idempotency-Key` and JSON `status`, `expectedVersion`, optional `notes` and
+`failureReason`. The central policy permits Assigned -> PickedUp -> InTransit ->
+OutForDelivery, with nonblank private notes (1-500 characters) at each stage.
+Failed is permitted from those four active states with RecipientUnavailable,
+AddressUnreachable, Damaged or Other; additional notes are optional. Direct
+Delivered, cancellation, skips, repeats and reverse transitions are rejected.
+Proof completion is implemented separately in Phase 4 below.
+
+`CourierStatus/PostgresCourierStatusStore` locks the parcel then the assignment,
+rechecking ownership after the parcel lock is acquired. It retains EF Version/xmin
+concurrency predicates and the transaction-local two-second lock timeout. The
+handler saves the incremented parcel, pickup/Failed assignment change, appended
+private history, one unchanged StatusChanged v1 payload and the exact replay
+response in one READ COMMITTED transaction. No broker or object-store call occurs.
+Dispatcher writers must use the same parcel-first locking/version contract;
+reassignment is still before pickup, with release/replacement in one transaction.
+
+Replay is scoped to principal/UpdateDeliveryStatus/key with a canonical fingerprint
+of parcel, status, expected version, notes and reason. Same-key replay precedes
+version/state checks, still requires related assignment authorization, and adds no
+event. A former Reassigned Courier gets 404; the original Failed Courier can replay
+their own terminal result through the retained Failed assignment, without gaining
+detail access or another state mutation. Results expire after 30 days with retained
+tombstones. Changed input, expired key, invalid transition or stale version returns
+409; currentVersion is disclosed only for an authorized stale write. Lock contention
+returns operation_in_progress/409 with Retry-After: 1; retry the same key after an
+unknown commit or lost response. Every response is private/no-store.
+
+`20261028170439_CourierStatusIdempotency` extends only the replay completion check:
+existing 201 envelopes remain valid, and 200 is additionally permitted only for
+UpdateDeliveryStatus. Existing migrations, immutable event/history/replay triggers,
+Booking behavior and quote consumption are preserved. Generate and review the new
+migration using the existing commands; no shared Neon migration was applied here.
+Downgrade to the previous 201-only schema fails safely if retained 200 receipts
+exist. Do not delete replay records to force a downgrade; use a reviewed forward
+migration or retain the compatible schema while rolling back application code.
+
+Production authentication remains fail-closed; positive HTTP/database tests use
+the existing test-only principals. Actual PostgreSQL tests cover same/different-key
+races, reassignment/pickup contention, cancellation, fault rollback through commit,
+lost acknowledgements/responses and upgrade compatibility with real Customer
+Booking. See the [Phase 3 report](../../../../../docs/courier-phase-3-assessment.md)
+for actual results and integration dependencies.
+
+## Private proof completion (Courier Phase 4)
+
+`POST /api/v1/deliveries/{id}/pod` accepts the documented multipart photo and/or
+signature, recipientName and expectedVersion, with Idempotency-Key. It requires
+the current Courier and OutForDelivery, fully decodes JPEG/PNG input (<=5 MiB each),
+re-encodes pixels without source metadata, confirms encrypted private MinIO/S3
+storage and rechecks authorization/version before atomically saving proof metadata,
+Delivered parcel/version, closed assignment, history, outbox and exact 200 replay.
+Status PUT remains unable to deliver. No bucket credentials/references or private
+recipient data appear in the response or event.
+
+`20261028175800_CourierProofCompletion` extends the replay constraint to accept
+CompleteDeliveryWithProof 200 and adds an immutable/retained proof metadata trigger.
+All prior 201/status receipts and migrations are preserved. EF also rejects proof
+updates/deletions. Downgrade safely fails if retained proof 200 receipts exist;
+do not remove retained data to force rollback. No shared Neon DDL was run here.
+
+The existing status store's transaction/ownership/reservation machinery is reused
+through a focused proof port. Exact earlier status receipts may now also be replayed
+by their original Courier after a Delivered assignment closure, as can proof
+completion's own receipt. This grants no detail/download or new terminal mutation.
+
+S3ProofStorage requires explicit Delivery credentials and a private encrypted bucket;
+missing configuration has no local filesystem/public fallback. Conditional object
+creation and read-back hashes confirm bytes. Daily reference-aware cleanup takes
+exclusive per-object PostgreSQL advisory locks shared with completion, skipping
+busy or committed references. Unknown commit results are never eagerly deleted.
+See the [storage runbook](../../../../../docs/courier-proof-storage.md) for exact
+configuration, decoding/multipart resource limits, privacy/encryption policy,
+24-hour staging/cleanup rules, deployment and live integration requirements.
+
+## Failed delivery reporting (Courier Phase 5)
+
+The existing PUT /api/v1/deliveries/{id}/status handles Failed through the same
+Courier identity, current-assignment, version, reservation and transaction guards.
+failureReason is required: RecipientUnavailable, AddressUnreachable, Damaged or
+Other. Additional notes are optional/private, including for Other. Failed is allowed
+from Assigned/PickedUp/InTransit/OutForDelivery and is terminal; no photo/signature,
+automatic reassignment, redelivery state or specialized DeliveryFailed event is added.
+
+The accepted request closes the retained assignment as Failed, increments parcel
+version and appends the private history reason/note, canonical StatusChanged v1
+outbox and exact replay in one commit. No storage or broker call is required.
+Identical original-key retries work after assignment closure without another event.
+History remains available only through documented private resource authorization;
+the closed Courier's replay permission does not grant parcel detail access.
+
+Phase 5 adds failure-specific HTTP/PostgreSQL acceptance and rollback/race tests;
+the production implementation and all migrations remain unchanged. See the
+[failure handoff](../../../../../docs/courier-failure-reporting.md) for client fields,
+terminal behavior and safe retry, and the
+[Phase 5 report](../../../../../docs/courier-phase-5-assessment.md) for actual results.
+
+## Courier historical deliveries (Phase 6)
+
+`GET /api/v1/couriers/me/history` is Courier-self only and accepts PageQuery
+(page default 1; pageSize default 20, maximum 100). The PostgreSQL predicate uses
+the caller's retained Delivered/Failed assignment matching the terminal parcel
+state. It never depends on an Active assignment or the most recent assignment
+timestamp, and Reassigned rows cannot grant a replacement's later result. EXISTS
+returns one parcel even when the same Courier was assigned, released and assigned
+back. Cancelled/active parcels remain excluded.
+
+The existing read adapter implements a focused history port. Count and minimal
+page projection share an explicit read-only REPEATABLE READ transaction, ordered
+by parcel createdAt/id descending. SQL reads only common Parcel/price columns
+and authorization predicates; it does not load contacts, private history or proofs.
+The response has the existing six Parcel fields and page envelope. Shared private
+GET access remains unchanged; historical summary access does not grant details.
+
+Manifest/history reuse the existing pagination rule through DeliveryPagination.
+No model, migration, event, mutation or credential change is introduced. All
+history responses use the established safe read problems and private/no-store
+metadata. Production still fails closed pending verified Identity integration.
+See the [history handoff](../../../../../docs/courier-history.md) and
+[Phase 6 report](../../../../../docs/courier-phase-6-assessment.md).

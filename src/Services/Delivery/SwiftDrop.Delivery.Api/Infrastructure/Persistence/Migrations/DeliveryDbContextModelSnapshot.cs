@@ -74,6 +74,166 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.Courier", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean")
+                        .HasColumnName("active");
+
+                    b.Property<int>("Capacity")
+                        .HasColumnType("integer")
+                        .HasColumnName("capacity");
+
+                    b.Property<bool>("OnDuty")
+                        .HasColumnType("boolean")
+                        .HasColumnName("on_duty");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("couriers", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_couriers_capacity", "capacity >= 1");
+
+                            t.HasCheckConstraint("ck_couriers_id", "id <> '00000000-0000-0000-0000-000000000000'::uuid");
+
+                            t.HasCheckConstraint("ck_couriers_version", "version >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.CourierAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AssignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("assigned_at");
+
+                    b.Property<Guid>("CourierId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("courier_id");
+
+                    b.Property<DateTimeOffset?>("DeliveredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("delivered_at");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<DateTimeOffset?>("PickedUpAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("picked_up_at");
+
+                    b.Property<DateOnly>("ServiceDate")
+                        .HasColumnType("date")
+                        .HasColumnName("service_date");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParcelId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_assignments_current_parcel")
+                        .HasFilter("status = 'Active'");
+
+                    b.HasIndex("CourierId", "ServiceDate", "AssignedAt", "Id")
+                        .HasFilter("status = 'Active'");
+
+                    b.HasIndex("CourierId", "Status", "AssignedAt", "Id");
+
+                    b.ToTable("assignments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_assignments_delivery", "(status = 'Delivered' AND delivered_at IS NOT NULL AND picked_up_at IS NOT NULL) OR (status <> 'Delivered' AND delivered_at IS NULL)");
+
+                            t.HasCheckConstraint("ck_assignments_release", "status NOT IN ('Reassigned','Cancelled') OR picked_up_at IS NULL");
+
+                            t.HasCheckConstraint("ck_assignments_status", "status IN ('Active','Reassigned','Delivered','Failed','Cancelled')");
+
+                            t.HasCheckConstraint("ck_assignments_timestamps", "(picked_up_at IS NULL OR picked_up_at >= assigned_at) AND (delivered_at IS NULL OR (picked_up_at IS NOT NULL AND delivered_at >= picked_up_at))");
+                        });
+                });
+
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.CourierZone", b =>
+                {
+                    b.Property<Guid>("CourierId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("courier_id");
+
+                    b.Property<Guid>("ZoneId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("zone_id");
+
+                    b.HasKey("CourierId", "ZoneId");
+
+                    b.HasIndex("ZoneId");
+
+                    b.ToTable("courier_zones", (string)null);
+                });
+
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.DeliveryConfigAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("action");
+
+                    b.Property<Guid>("ActorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("Details")
+                        .HasColumnType("text")
+                        .HasColumnName("details");
+
+                    b.Property<Guid>("ResourceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resource_id");
+
+                    b.Property<string>("ResourceType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("resource_type");
+
+                    b.Property<DateTimeOffset>("Timestamp")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("timestamp");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Timestamp");
+
+                    b.HasIndex("ResourceType", "ResourceId");
+
+                    b.ToTable("delivery_config_audits", (string)null);
+                });
+
             modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.DeliveryZone", b =>
                 {
                     b.Property<Guid>("Id")
@@ -97,6 +257,12 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("name");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
@@ -162,7 +328,7 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
 
                     b.ToTable("idempotency_keys", null, t =>
                         {
-                            t.HasCheckConstraint("ck_idempotency_completion", "((parcel_id IS NULL AND stored_response IS NULL) OR (parcel_id IS NOT NULL AND stored_response IS NOT NULL AND jsonb_typeof(stored_response) = 'object' AND stored_response ?& ARRAY['statusCode','body','location'] AND stored_response->'statusCode' = '201'::jsonb AND jsonb_typeof(stored_response->'body') = 'string' AND jsonb_typeof(stored_response->'location') = 'string')) IS TRUE");
+                            t.HasCheckConstraint("ck_idempotency_completion", "((parcel_id IS NULL AND stored_response IS NULL) OR (parcel_id IS NOT NULL AND stored_response IS NOT NULL AND jsonb_typeof(stored_response) = 'object' AND stored_response ?& ARRAY['statusCode','body','location'] AND (stored_response->'statusCode' = '201'::jsonb OR (operation IN ('UpdateDeliveryStatus','CompleteDeliveryWithProof') AND stored_response->'statusCode' = '200'::jsonb)) AND jsonb_typeof(stored_response->'body') = 'string' AND jsonb_typeof(stored_response->'location') = 'string')) IS TRUE");
 
                             t.HasCheckConstraint("ck_idempotency_expiry", "expires_at = created_at + INTERVAL '720 hours'");
 
@@ -426,6 +592,11 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ZoneId", "Size")
+                        .IsUnique()
+                        .HasDatabaseName("ux_pricing_active_zone_size")
+                        .HasFilter("is_active");
+
                     b.HasIndex("ZoneId", "Size", "PricingVersion")
                         .IsUnique();
 
@@ -438,6 +609,60 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_pricing_size", "size_category IN ('Small','Medium','Large')");
 
                             t.HasCheckConstraint("ck_pricing_version", "btrim(pricing_version) <> ''");
+                        });
+                });
+
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.ProofMetadata", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<string>("RecipientName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("recipient_name");
+
+                    b.Property<string>("StorageRef")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("storage_ref");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("type");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("uploaded_at");
+
+                    b.Property<Guid>("UploadedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("uploaded_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StorageRef")
+                        .IsUnique();
+
+                    b.HasIndex("ParcelId", "UploadedAt", "Id");
+
+                    b.ToTable("proof_metadata", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_proof_actor", "uploaded_by <> '00000000-0000-0000-0000-000000000000'::uuid");
+
+                            t.HasCheckConstraint("ck_proof_recipient", "btrim(recipient_name) <> ''");
+
+                            t.HasCheckConstraint("ck_proof_storage_ref", "btrim(storage_ref) <> '' AND storage_ref !~ '^[A-Za-z][A-Za-z0-9+.-]*:' AND storage_ref !~ '^//'");
+
+                            t.HasCheckConstraint("ck_proof_type", "type IN ('Photo','Signature')");
                         });
                 });
 
@@ -530,6 +755,36 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.CourierAssignment", b =>
+                {
+                    b.HasOne("SwiftDrop.Delivery.Api.Domain.Courier", null)
+                        .WithMany()
+                        .HasForeignKey("CourierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SwiftDrop.Delivery.Api.Domain.Parcel", null)
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.CourierZone", b =>
+                {
+                    b.HasOne("SwiftDrop.Delivery.Api.Domain.Courier", null)
+                        .WithMany()
+                        .HasForeignKey("CourierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SwiftDrop.Delivery.Api.Domain.DeliveryZone", null)
+                        .WithMany()
+                        .HasForeignKey("ZoneId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.IdempotencyRecord", b =>
                 {
                     b.HasOne("SwiftDrop.Delivery.Api.Domain.Parcel", null)
@@ -569,6 +824,15 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                     b.HasOne("SwiftDrop.Delivery.Api.Domain.DeliveryZone", null)
                         .WithMany()
                         .HasForeignKey("ZoneId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.ProofMetadata", b =>
+                {
+                    b.HasOne("SwiftDrop.Delivery.Api.Domain.Parcel", null)
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

@@ -1,10 +1,20 @@
-using Microsoft.AspNetCore.Authentication;
+using SwiftDrop.Auditing;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application;
+using SwiftDrop.Delivery.Api.Application.Admin.Pricing;
+using SwiftDrop.Delivery.Api.Application.Admin.Reports;
+using SwiftDrop.Delivery.Api.Application.Admin.Zones;
 using SwiftDrop.Delivery.Api.Application.Bookings;
+using SwiftDrop.Delivery.Api.Application.CourierStatus;
+using SwiftDrop.Delivery.Api.Application.CourierProof;
+using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 using SwiftDrop.Delivery.Api.Application.Quotes;
+using SwiftDrop.Delivery.Api.Infrastructure.Admin;
 using SwiftDrop.Delivery.Api.Infrastructure.Authentication;
 using SwiftDrop.Delivery.Api.Infrastructure.Bookings;
+using SwiftDrop.Delivery.Api.Infrastructure.CourierStatus;
+using SwiftDrop.Delivery.Api.Infrastructure.CourierProof;
+using SwiftDrop.Delivery.Api.Infrastructure.DeliveryReads;
 using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 using SwiftDrop.Delivery.Api.Infrastructure.Quotes;
 using SwiftDrop.Delivery.Api.Presentation;
@@ -20,6 +30,33 @@ public partial class Program
         builder.Services.AddDeliveryPersistence(builder.Configuration);
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<ICurrentCustomer, ClaimsCurrentCustomer>();
+        builder.Services.AddScoped<ICurrentDeliveryUser, ClaimsCurrentDeliveryUser>();
+        builder.Services.AddScoped<OperationsClock>();
+        builder.Services.AddScoped<DeliveryReadHandler>();
+        builder.Services.AddScoped<CustomerTrackingHandler>();
+        builder.Services.AddSingleton<IReceiptPdfRenderer, SkiaReceiptPdfRenderer>();
+        builder.Services.AddScoped<CourierHistoryHandler>();
+        builder.Services.AddScoped<ICourierHistoryStore>(services =>
+            new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<CourierStatusHandler>();
+        builder.Services.AddScoped<CourierProofHandler>();
+        builder.Services.AddSingleton<IProofImageValidator, SkiaProofImageValidator>();
+        builder.Services.AddScoped<IPrivateProofStorage>(services =>
+            new PostgresProofStorage(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<ICourierProofStore>(services =>
+            new PostgresCourierStatusStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<IProofCleanupStore>(services =>
+            new PostgresProofCleanupStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<ProofCleanup>();
+        builder.Services.AddHostedService<ProofCleanupWorker>();
+        builder.Services.AddScoped<ICourierStatusStore>(services =>
+            new PostgresCourierStatusStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<IDeliveryReadStore>(services =>
+            new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<ICustomerDeliveryReadStore>(services =>
+            new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddSingleton<IPrivateProofReader>(services =>
+            new S3ProofStorage(services.GetRequiredService<IConfiguration>()));
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<QuoteEstimator>();
         builder.Services.AddScoped<CustomerBookingHandler>();
@@ -28,11 +65,20 @@ public partial class Program
         // Invalid requests still have their proper response when DB settings are absent.
         builder.Services.AddScoped<IQuoteStore>(services =>
             new PostgresQuoteStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<IBookingZoneCatalog>(services =>
+            new PostgresBookingZoneCatalog(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IBookingStore>(services =>
             new PostgresBookingStore(() => services.GetRequiredService<DeliveryDbContext>()));
-        builder.Services.AddAuthentication(UnconfiguredIdentityHandler.SchemeName)
-            .AddScheme<AuthenticationSchemeOptions, UnconfiguredIdentityHandler>(
-                UnconfiguredIdentityHandler.SchemeName, _ => { });
+        builder.Services.AddScoped<IZoneAdministrationStore>(services =>
+            new PostgresZoneAdministrationStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<ZoneAdministrationHandler>();
+        builder.Services.AddScoped<IPricingAdministrationStore>(services =>
+            new PostgresPricingAdministrationStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<PricingAdministrationHandler>();
+        builder.Services.AddScoped<IDeliveryReportStore>(services =>
+            new PostgresDeliveryReportStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<DeliveryReportHandler>();
+        builder.Services.AddDeliveryIdentityAuthentication();
         builder.Services.AddAuthorization();
 
         // Explicit single-run migration task; normal host startup never applies DDL.
@@ -57,23 +103,65 @@ public partial class Program
             context.Response.Headers["X-Correlation-ID"] = correlation;
             await next(context);
         });
-        app.UseExceptionHandler(handler => handler.Run(context => QuoteProblems.Unexpected(context).ExecuteAsync(context)));
+        app.UseExceptionHandler(handler => handler.Run(context =>
+        {
+            var isAdmin = context.Request.Path.StartsWithSegments("/api/v1/zones")
+                || context.Request.Path.StartsWithSegments("/api/v1/pricing-tiers")
+                || context.Request.Path.StartsWithSegments("/api/v1/reports/deliveries");
+            var error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+            if (isAdmin && (error is DbUpdateConcurrencyException || error is Npgsql.PostgresException { SqlState: "23505" or "40001" or "40P01" }))
+                return AdminProblems.Conflict(context).ExecuteAsync(context);
+            if (isAdmin && error is System.Data.Common.DbException or DbUpdateException or InvalidOperationException or TimeoutException)
+                return AdminProblems.Unavailable(context).ExecuteAsync(context);
+            return QuoteProblems.Unexpected(context).ExecuteAsync(context);
+        }));
+        app.Use(async (context, next) =>
+        {
+            if (context.GetEndpoint()?.Metadata.GetMetadata<DeliveryReadEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<CourierStatusEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<CourierProofEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<AdminZoneEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<AdminPricingEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<AdminReportEndpointMetadata>() is not null)
+                context.Response.Headers.CacheControl = "private, no-store";
+            await next(context);
+        });
         app.UseStatusCodePages(async status =>
         {
             var context = status.HttpContext;
             if (context.Response.StatusCode is 401 or 403)
             {
+                if (context.GetEndpoint()?.Metadata.GetMetadata<CourierStatusEndpointMetadata>() is not null
+                    || context.GetEndpoint()?.Metadata.GetMetadata<CourierProofEndpointMetadata>() is not null)
+                {
+                    await CourierStatusProblems.Failure(context, context.Response.StatusCode == 401
+                        ? CourierStatusFailure.Unauthenticated : CourierStatusFailure.Forbidden).ExecuteAsync(context);
+                    return;
+                }
+                if (context.GetEndpoint()?.Metadata.GetMetadata<DeliveryReadEndpointMetadata>() is not null)
+                {
+                    await DeliveryReadProblems.Failure(context, context.Response.StatusCode == 401
+                        ? DeliveryReadFailure.Unauthenticated : DeliveryReadFailure.Forbidden).ExecuteAsync(context);
+                    return;
+                }
                 var failure = context.Response.StatusCode == 401 ? QuoteFailure.Unauthenticated : QuoteFailure.Forbidden;
                 await QuoteProblems.Failure(context, failure).ExecuteAsync(context);
             }
         });
         app.UseAuthentication();
+        app.UseActivityAudit("Delivery", "/api/v1/delivery/audit-logs");
         app.UseAuthorization();
 
         // Process liveness only; dependency readiness is a later milestone.
         app.MapHealthChecks("/health");
         app.MapCustomerQuotes();
         app.MapCustomerBookings();
+        app.MapDeliveryReads();
+        app.MapCourierStatus();
+        app.MapCourierProof();
+        app.MapAdminZones();
+        app.MapAdminPricing();
+        app.MapAdminReports();
 
         app.Run();
     }

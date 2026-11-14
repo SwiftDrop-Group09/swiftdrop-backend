@@ -31,7 +31,7 @@ public sealed class ApiKeyApiTests
     }
 
     [Fact]
-    public async Task NonMerchantAdminCannotCreateApiKeyReturns403()
+    public async Task AuthenticatedUserWithoutBusinessCannotCreateApiKeyReturns404()
     {
         using var factory = CreateFactory(MerchantApiFactory.Admin());
         using var client = factory.CreateClient();
@@ -39,8 +39,8 @@ public sealed class ApiKeyApiTests
         using var response = await client.PostAsJsonAsync("/api/v1/merchants/api-keys",
             new { scopes = new[] { "orders:read" } });
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        await AssertProblemAsync(response, 403, "forbidden");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await AssertProblemAsync(response, 404, "business_not_found");
     }
 
     // ── Pending merchant cannot create API key ──────────────────────────────────

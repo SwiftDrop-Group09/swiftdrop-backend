@@ -159,11 +159,9 @@ public sealed class MerchantHandler(
             return (null, MerchantFailure.Unauthenticated, null);
         }
 
-        if (!currentUser.IsMerchant)
-        {
-            return (null, MerchantFailure.Forbidden, null);
-        }
-
+        // Approval and ownership are authoritative in the Merchant service.
+        // A static Merchant role in the Identity JWT may be missing when the
+        // token was issued before administrator approval.
         var business = await db.Businesses.FirstOrDefaultAsync(b => b.UserId == userId, cancellationToken);
         if (business is null)
         {
@@ -208,11 +206,6 @@ public sealed class MerchantHandler(
             return (null, MerchantFailure.Unauthenticated, null);
         }
 
-        if (!currentUser.IsMerchant)
-        {
-            return (null, MerchantFailure.Forbidden, null);
-        }
-
         var business = await db.Businesses.FirstOrDefaultAsync(b => b.UserId == userId, cancellationToken);
         if (business is null)
         {
@@ -239,11 +232,6 @@ public sealed class MerchantHandler(
         if (!currentUser.IsAuthenticated || currentUser.UserId is not { } userId || userId == Guid.Empty)
         {
             return (false, MerchantFailure.Unauthenticated, null);
-        }
-
-        if (!currentUser.IsMerchant)
-        {
-            return (false, MerchantFailure.Forbidden, null);
         }
 
         var business = await db.Businesses.FirstOrDefaultAsync(b => b.UserId == userId, cancellationToken);
@@ -334,4 +322,3 @@ public sealed class MerchantHandler(
         return errors.Count > 0 ? errors : null;
     }
 }
-

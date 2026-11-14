@@ -17,6 +17,7 @@ internal static partial class DeliveryEntityConfigurations
         zones.HasIndex(x => x.Name).IsUnique();
         zones.Property(x => x.Name).IsRequired();
         zones.Property(x => x.Boundaries).HasColumnType("jsonb");
+        zones.Property<uint>("xmin").IsRowVersion();
 
         var tiers = model.Entity<PricingTier>();
         tiers.ToTable("pricing_tiers", table =>
@@ -30,6 +31,7 @@ internal static partial class DeliveryEntityConfigurations
         tiers.HasAlternateKey(x => new { x.Id, x.PricingVersion, x.Currency });
         tiers.HasAlternateKey(x => new { x.Id, x.ZoneId, x.PricingVersion, x.Currency });
         tiers.HasIndex(x => new { x.ZoneId, x.Size, x.PricingVersion }).IsUnique();
+        tiers.HasIndex(x => new { x.ZoneId, x.Size }).IsUnique().HasFilter("is_active").HasDatabaseName("ux_pricing_active_zone_size");
         tiers.HasOne<DeliveryZone>().WithMany().HasForeignKey(x => x.ZoneId).OnDelete(DeleteBehavior.Restrict);
         tiers.Property(x => x.Size).HasConversion<string>();
         tiers.Property(x => x.BaseRate).HasPrecision(18, 2);
@@ -116,7 +118,7 @@ internal static partial class DeliveryEntityConfigurations
         {
             table.HasCheckConstraint("ck_idempotency_scope", "btrim(principal_id) <> '' AND btrim(operation) <> '' AND btrim(key) <> '' AND btrim(request_fingerprint) <> ''");
             table.HasCheckConstraint("ck_idempotency_expiry", "expires_at = created_at + INTERVAL '720 hours'");
-            table.HasCheckConstraint("ck_idempotency_completion", "((parcel_id IS NULL AND stored_response IS NULL) OR (parcel_id IS NOT NULL AND stored_response IS NOT NULL AND jsonb_typeof(stored_response) = 'object' AND stored_response ?& ARRAY['statusCode','body','location'] AND stored_response->'statusCode' = '201'::jsonb AND jsonb_typeof(stored_response->'body') = 'string' AND jsonb_typeof(stored_response->'location') = 'string')) IS TRUE");
+            table.HasCheckConstraint("ck_idempotency_completion", "((parcel_id IS NULL AND stored_response IS NULL) OR (parcel_id IS NOT NULL AND stored_response IS NOT NULL AND jsonb_typeof(stored_response) = 'object' AND stored_response ?& ARRAY['statusCode','body','location'] AND (stored_response->'statusCode' = '201'::jsonb OR (operation IN ('UpdateDeliveryStatus','CompleteDeliveryWithProof') AND stored_response->'statusCode' = '200'::jsonb)) AND jsonb_typeof(stored_response->'body') = 'string' AND jsonb_typeof(stored_response->'location') = 'string')) IS TRUE");
         });
         keys.HasKey(x => x.Id);
         keys.Property(x => x.Key).HasMaxLength(128);
@@ -132,6 +134,14 @@ internal static partial class DeliveryEntityConfigurations
         outbox.HasKey(x => x.Id);
         outbox.Property(x => x.Payload).HasColumnType("jsonb");
         outbox.HasIndex(x => new { x.CreatedAt, x.Id }).HasFilter("published_at IS NULL");
+
+        CourierEntityConfigurations.Configure(model);
+
+        var audits = model.Entity<DeliveryConfigAudit>();
+        audits.ToTable("delivery_config_audits");
+        audits.HasKey(x => x.Id);
+        audits.HasIndex(x => new { x.ResourceType, x.ResourceId });
+        audits.HasIndex(x => x.Timestamp);
 
         // One convention, no extra naming package. Explicit ER aliases follow it.
         foreach (var entity in model.Model.GetEntityTypes())

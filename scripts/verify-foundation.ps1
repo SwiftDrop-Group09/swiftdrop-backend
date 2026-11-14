@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$env:Audit__Enabled = 'false'
 Add-Type -AssemblyName System.Net.Http
 $backendRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 
@@ -16,12 +17,14 @@ Get-ChildItem -LiteralPath (Join-Path $backendRoot 'src'), (Join-Path $backendRo
     ForEach-Object { $projects[$_.BaseName] = $_ }
 $allowed = @{
     'SwiftDrop.Contracts' = @()
+    'SwiftDrop.Auditing' = @()
     'SwiftDrop.Gateway' = @()
-    'SwiftDrop.Identity.Api' = @('SwiftDrop.Contracts')
-    'SwiftDrop.Delivery.Api' = @('SwiftDrop.Contracts')
-    'SwiftDrop.Merchant.Api' = @('SwiftDrop.Contracts')
+    'SwiftDrop.Identity.Api' = @('SwiftDrop.Contracts', 'SwiftDrop.Auditing')
+    'SwiftDrop.Delivery.Api' = @('SwiftDrop.Contracts', 'SwiftDrop.Auditing')
+    'SwiftDrop.Merchant.Api' = @('SwiftDrop.Contracts', 'SwiftDrop.Auditing')
     'SwiftDrop.Notification.Worker' = @('SwiftDrop.Contracts')
-    'SwiftDrop.Identity.Tests' = @('SwiftDrop.Identity.Api')
+    # Cross-service cryptographic contract harness; runtime services stay isolated.
+    'SwiftDrop.Identity.Tests' = @('SwiftDrop.Identity.Api', 'SwiftDrop.Delivery.Api')
     'SwiftDrop.Delivery.Tests' = @('SwiftDrop.Delivery.Api')
     # Local client fixture runner; never referenced or published by a service.
     'SwiftDrop.Delivery.Harness' = @('SwiftDrop.Delivery.Tests')
@@ -106,14 +109,25 @@ try {
             'NOTIFICATIONS_DATABASE_CONNECTION_STRING',
             'IDENTITY_MIGRATION_CONNECTION_STRING',
             'ConnectionStrings__Database',
-            'ConnectionStrings__MigrationDatabase'
+            'ConnectionStrings__MigrationDatabase',
+            'ProofStorage__Endpoint',
+            'ProofStorage__Bucket',
+            'ProofStorage__Region',
+            'ProofStorage__AccessKey',
+            'ProofStorage__SecretKey',
+            'ProofStorage__SessionToken'
         )) {
             $startInfo.EnvironmentVariables.Remove($secretName)
         }
         $startInfo.EnvironmentVariables['Logging__EventLog__LogLevel__Default'] = 'None'
         if ($hostInfo.Name -eq 'SwiftDrop.Identity.Api') {
             # Command-line configuration also overrides Development user secrets.
-            $startInfo.Arguments += ' --ConnectionStrings:Database='
+            $startInfo.Arguments += ' --ConnectionStrings:Database= --Identity:Tokens:PrivateKeyPath='
+        }
+        if ($hostInfo.Name -eq 'SwiftDrop.Delivery.Api') {
+            # Keep the proof cleanup worker offline even if Development user secrets
+            # configure a real bucket; this script is a fail-closed host smoke only.
+            $startInfo.Arguments += ' --ProofStorage:Bucket= --ProofStorage:Endpoint='
         }
         $process = New-Object Diagnostics.Process
         $process.StartInfo = $startInfo
@@ -146,10 +160,7 @@ try {
     }
 
     $probes = @(
-        'http://127.0.0.1:5000/api/v1/auth/login',
-        'http://127.0.0.1:5000/api/v1/merchant/orders',
         'http://127.0.0.1:5000/graphql',
-        'http://127.0.0.1:5000/api/v1/parcels/example/events',
         'http://127.0.0.1:5000/internal/v1/webhook-dispatches',
         'http://127.0.0.1:5000/swiftdrop.delivery.v1.DeliveryService/CreateBooking'
     )
@@ -170,6 +181,31 @@ try {
     }
     Write-Output "PASS: $($probes.Count) missing-feature/internal/readiness probes; real gateway destinations reachable."
 
+    # Merchant orders are implemented: without a credential both routes must fail closed with 401.
+    $orderRequests = @(
+        @{ Method = [System.Net.Http.HttpMethod]::Get; Path = '/api/v1/merchant/orders' },
+        @{ Method = [System.Net.Http.HttpMethod]::Post; Path = '/api/v1/merchant/orders' }
+    )
+    foreach ($orderRequest in $orderRequests) {
+        $request = [System.Net.Http.HttpRequestMessage]::new($orderRequest.Method, "http://127.0.0.1:5000$($orderRequest.Path)")
+        if ($orderRequest.Method -eq [System.Net.Http.HttpMethod]::Post) {
+            $request.Content = [System.Net.Http.StringContent]::new('{}', [System.Text.Encoding]::UTF8, 'application/json')
+            $request.Headers.Add('Idempotency-Key', 'foundation-probe')
+        }
+        try {
+            $orderResponse = $client.SendAsync($request).GetAwaiter().GetResult()
+            try {
+                $orderProblem = ConvertFrom-Json $orderResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if ([int]$orderResponse.StatusCode -ne 401 -or $orderProblem.code -ne 'unauthorized') {
+                    throw "Expected $($orderRequest.Method) $($orderRequest.Path) through Gateway to require a credential (HTTP 401); got $([int]$orderResponse.StatusCode)."
+                }
+            }
+            finally { $orderResponse.Dispose() }
+        }
+        finally { $request.Dispose() }
+    }
+    Write-Output 'PASS: merchant order GET/POST through Gateway require a verified credential (HTTP 401).'
+
     $identityReadiness = $client.GetAsync('http://127.0.0.2:8080/ready').GetAwaiter().GetResult()
     try {
         $readinessBody = $identityReadiness.Content.ReadAsStringAsync().GetAwaiter().GetResult()
@@ -181,6 +217,18 @@ try {
     }
     finally { $identityReadiness.Dispose() }
     Write-Output 'PASS: Identity /ready returns database-not-configured/503 without database access.'
+
+    $identityLogin = $client.GetAsync('http://127.0.0.1:5000/api/v1/auth/login').GetAwaiter().GetResult()
+    try {
+        if ([int]$identityLogin.StatusCode -ne 405) { throw 'Expected HTTP 405 for GET at the POST-only Identity login route.' }
+    }
+    finally { $identityLogin.Dispose() }
+    $identityJwks = $client.GetAsync('http://127.0.0.1:5000/.well-known/jwks.json').GetAwaiter().GetResult()
+    try {
+        if ([int]$identityJwks.StatusCode -ne 503) { throw 'Expected Identity JWKS to fail closed without configured signing keys.' }
+    }
+    finally { $identityJwks.Dispose() }
+    Write-Output 'PASS: Identity login is POST-only and unconfigured JWKS fails closed through Gateway.'
 
     foreach ($writePath in @('/api/v1/quotes', '/api/v1/parcels')) {
         $writeRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Post), ('http://127.0.0.1:5000' + $writePath)
@@ -203,12 +251,79 @@ try {
     }
     Write-Output 'PASS: real Gateway quote and booking POSTs fail closed with HTTP 401 despite caller-supplied identity.'
 
+    foreach ($readPath in @('/api/v1/couriers/me/assignments', '/api/v1/couriers/me/history', '/api/v1/parcels/11111111-1111-4111-8111-111111111111')) {
+        $readRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Get), ('http://127.0.0.1:5000' + $readPath)
+        $readRequest.Headers.Add('X-User-Id', '11111111-1111-4111-8111-111111111111')
+        $readRequest.Headers.Add('X-User-Role', 'Courier')
+        $readRequest.Headers.Authorization = New-Object Net.Http.Headers.AuthenticationHeaderValue 'Bearer', 'unverified-read-token'
+        try {
+            $readResponse = $client.SendAsync($readRequest).GetAwaiter().GetResult()
+            try {
+                $readProblem = ConvertFrom-Json $readResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if ([int]$readResponse.StatusCode -ne 401 -or $readProblem.code -ne 'unauthorized' -or
+                    -not $readResponse.Headers.CacheControl.NoStore -or -not $readResponse.Headers.CacheControl.Private) {
+                    throw "Expected $readPath through Gateway to reject unverified identity with private/no-store HTTP 401."
+                }
+            }
+            finally { $readResponse.Dispose() }
+        }
+        finally { $readRequest.Dispose() }
+    }
+    Write-Output 'PASS: real Gateway manifest/history/detail GETs require verified authentication and return private/no-store HTTP 401.'
+
+    foreach ($statusBody in @(
+        '{"status":"PickedUp","expectedVersion":2,"notes":"Gateway smoke"}',
+        '{"status":"Failed","expectedVersion":2,"failureReason":"RecipientUnavailable"}'
+    )) {
+        $statusRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Put), 'http://127.0.0.1:5000/api/v1/deliveries/11111111-1111-4111-8111-111111111111/status'
+        $statusRequest.Content = New-Object Net.Http.StringContent $statusBody, ([Text.Encoding]::UTF8), 'application/json'
+        $statusRequest.Headers.Add('Idempotency-Key', 'gateway-status-smoke')
+        $statusRequest.Headers.Add('X-User-Id', '11111111-1111-4111-8111-111111111111')
+        $statusRequest.Headers.Add('X-User-Role', 'Courier')
+        $statusRequest.Headers.Authorization = New-Object Net.Http.Headers.AuthenticationHeaderValue 'Bearer', 'unverified-status-token'
+        try {
+            $statusResponse = $client.SendAsync($statusRequest).GetAwaiter().GetResult()
+            try {
+                $statusProblem = ConvertFrom-Json $statusResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if ([int]$statusResponse.StatusCode -ne 401 -or $statusProblem.code -ne 'unauthorized' -or
+                    [string]::IsNullOrWhiteSpace($statusProblem.correlationId) -or
+                    -not $statusResponse.Headers.CacheControl.NoStore -or -not $statusResponse.Headers.CacheControl.Private) {
+                    throw 'Expected status PUT through Gateway to reject unverified identity with private/no-store HTTP 401.'
+                }
+            }
+            finally { $statusResponse.Dispose() }
+        }
+        finally { $statusRequest.Dispose() }
+    }
+    Write-Output 'PASS: real Gateway pickup and failure PUTs require verified authentication and return private/no-store HTTP 401.'
+
+    $proofRequest = New-Object Net.Http.HttpRequestMessage ([Net.Http.HttpMethod]::Post), 'http://127.0.0.1:5000/api/v1/deliveries/11111111-1111-4111-8111-111111111111/pod'
+    $proofRequest.Content = New-Object Net.Http.StringContent '{}', ([Text.Encoding]::UTF8), 'application/json'
+    $proofRequest.Headers.Add('Idempotency-Key', 'gateway-proof-smoke')
+    $proofRequest.Headers.Add('X-User-Id', '11111111-1111-4111-8111-111111111111')
+    $proofRequest.Headers.Add('X-User-Role', 'Courier')
+    $proofRequest.Headers.Authorization = New-Object Net.Http.Headers.AuthenticationHeaderValue 'Bearer', 'unverified-proof-token'
+    try {
+        $proofResponse = $client.SendAsync($proofRequest).GetAwaiter().GetResult()
+        try {
+            $proofProblem = ConvertFrom-Json $proofResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            if ([int]$proofResponse.StatusCode -ne 401 -or $proofProblem.code -ne 'unauthorized' -or
+                [string]::IsNullOrWhiteSpace($proofProblem.correlationId) -or
+                -not $proofResponse.Headers.CacheControl.NoStore -or -not $proofResponse.Headers.CacheControl.Private) {
+                throw 'Expected proof POST through Gateway to reject unverified identity with private/no-store HTTP 401.'
+            }
+        }
+        finally { $proofResponse.Dispose() }
+    }
+    finally { $proofRequest.Dispose() }
+    Write-Output 'PASS: real Gateway proof POST requires verified authentication and returns private/no-store HTTP 401.'
+
     $parcelRead = $client.GetAsync('http://127.0.0.1:5000/api/v1/parcels').GetAwaiter().GetResult()
     try {
-        if ([int]$parcelRead.StatusCode -ne 405) { throw 'Parcel listing remains unimplemented; expected HTTP 405 at the POST-only route.' }
+        if ([int]$parcelRead.StatusCode -ne 401) { throw 'Expected parcel listing GET through Gateway to require authentication (HTTP 401).' }
     }
     finally { $parcelRead.Dispose() }
-    Write-Output 'PASS: parcel collection GET has no handler (HTTP 405 at the POST-only route).'
+    Write-Output 'PASS: parcel collection GET requires verified authentication (HTTP 401).'
 
     $grpcConnection = New-Object Net.Sockets.TcpClient
     try { $grpcConnection.Connect('127.0.0.3', 8081) }

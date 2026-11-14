@@ -142,4 +142,3 @@ public static class MerchantEndpoints
                 ["body"] = ["Supply a valid JSON request body."]
             });
 }
-

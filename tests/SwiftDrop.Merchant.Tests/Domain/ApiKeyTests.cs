@@ -17,12 +17,32 @@ public sealed class ApiKeyTests
         Assert.True(apiKey.IsActive);
         Assert.StartsWith("swd_test_", apiKey.KeyPrefix, StringComparison.Ordinal);
         Assert.StartsWith(apiKey.KeyPrefix, plaintextKey, StringComparison.Ordinal);
+        Assert.Matches("^swd_test_[0-9a-f]{32}_[0-9a-f]{64}$", plaintextKey);
+        var expectedHash = System.Security.Cryptography.SHA256.HashData(
+            Convert.FromBase64String(apiKey.Salt).Concat(System.Text.Encoding.UTF8.GetBytes(plaintextKey)).ToArray());
+        Assert.Equal(Convert.ToHexStringLower(expectedHash), apiKey.KeyHash);
         Assert.NotNull(apiKey.KeyHash);
         Assert.NotNull(apiKey.Salt);
         Assert.Null(apiKey.RevokedAt);
         Assert.True(apiKey.HasScope(ApiKeyScopes.OrdersWrite));
         Assert.True(apiKey.HasScope(ApiKeyScopes.OrdersRead));
         Assert.False(apiKey.HasScope(ApiKeyScopes.WebhooksManage));
+    }
+
+    [Fact]
+    public void ExistingShortPrefixKeysKeepTheirOriginalVerificationAndRevocation()
+    {
+        var (apiKey, _) = ApiKey.Create(_businessId, [ApiKeyScopes.OrdersRead]);
+        var prefix = $"swd_test_{apiKey.Id.ToString("N")[..8]}";
+        var raw = prefix + "_fictional-legacy-test-secret";
+        var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(raw + ":" + apiKey.Salt)));
+        typeof(ApiKey).GetProperty(nameof(ApiKey.KeyPrefix))!.SetValue(apiKey, prefix);
+        typeof(ApiKey).GetProperty(nameof(ApiKey.KeyHash))!.SetValue(apiKey, hash);
+        Assert.True(apiKey.Verify(raw));
+        Assert.False(apiKey.Verify(raw + "wrong"));
+        apiKey.Revoke();
+        Assert.False(apiKey.Verify(raw));
     }
 
     [Fact]
@@ -76,4 +96,3 @@ public sealed class ApiKeyTests
         Assert.False(apiKey.Verify(plaintextKey));
     }
 }
-
