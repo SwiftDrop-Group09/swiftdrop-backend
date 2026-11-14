@@ -72,3 +72,26 @@ schema is present, but this checkout's worker still exposes only its host health
 surface. Delivery writes proofs to PostgreSQL, while `IPrivateProofReader` is
 currently registered to S3 in `Program.cs`; stored evidence was verified directly
 and image download through that separate adapter is not claimed.
+
+## Coverage and variety refinement
+
+All pre-refinement accounts, parcels, snapshots, proofs and history are retained.
+Each of the nine imported courier profiles now covers three zones, keeping every
+active assignment's zone. Historical assignment ownership and schedules remain
+unchanged; historical coverage does not freeze current operating areas.
+All 25 zones have their own name as `city` and three postal codes with leading
+zeros preserved. Configuration changes have retained audit entries.
+
+Forty additional linked parcels bring the total to 268 and history to 1,333
+entries. They add inter-zone routes, weights from 0.2 to 12 kg, 15–35 minute
+transition intervals, overdue/future service dates, and RecipientUnavailable,
+AddressUnreachable and Damaged failures. Current states are 155 Delivered,
+31 Failed, 21 Cancelled, 14 Created, 13 Assigned, 12 PickedUp, 11 InTransit and
+11 OutForDelivery. Capacities accommodate retained active work. Integration
+records remain settled/published and new notification attempts suppressed.
+Read-only preservation checks cover earlier accounts and business history,
+apart from the requested courier configuration/membership and zone edits.
+Live checks also produce normal audited login timestamps and token rotations.
+The single pre-existing unconfigured Merchant order remains retained; its worker
+continues advancing retry metadata. These operational updates are distinguished
+from rewriting imported orders, account fields or delivery history.
