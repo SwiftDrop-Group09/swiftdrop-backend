@@ -1,5 +1,10 @@
 # Private Courier proof storage
 
+Current production composition stores and reads private proof images in Delivery's
+PostgreSQL `proof_objects` table. It requires only the Delivery database connection;
+the S3 configuration below documents the legacy adapter, which is not selected by
+`Program.cs`. See [current storage alignment](customer-delivery-summary.md#private-proof-storage-alignment).
+
 Phase 4 implements POST /api/v1/deliveries/{id}/pod, operation
 CompleteDeliveryWithProof. Human Courier only, current assignment and
 OutForDelivery required. Supply Idempotency-Key and multipart fields:

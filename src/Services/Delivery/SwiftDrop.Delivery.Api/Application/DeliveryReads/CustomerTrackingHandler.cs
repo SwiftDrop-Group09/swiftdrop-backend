@@ -13,6 +13,26 @@ public sealed class CustomerTrackingHandler(
     IReceiptPdfRenderer pdfRenderer,
     IPrivateProofReader proofReader)
 {
+    public async Task<DeliveryReadResult<CustomerDeliverySummary>> GetSummaryAsync(
+        bool invalidParameters = false, CancellationToken cancellationToken = default)
+    {
+        if (!currentUser.IsAuthenticated || currentUser.UserId is not { } userId || userId == Guid.Empty)
+            return new(null, DeliveryReadFailure.Unauthenticated);
+        if (!currentUser.IsCustomer)
+            return new(null, DeliveryReadFailure.Forbidden);
+        if (invalidParameters)
+            return new(null, DeliveryReadFailure.InvalidInput,
+                new Dictionary<string, string[]> { ["query"] = ["This operation has no query parameters."] });
+        try
+        {
+            return new(await store.GetCustomerSummaryAsync(userId, cancellationToken), null);
+        }
+        catch (DeliveryReadUnavailableException)
+        {
+            return new(null, DeliveryReadFailure.Unavailable);
+        }
+    }
+
     public async Task<DeliveryReadResult<CustomerParcelPage>> ListParcelsAsync(
         CustomerParcelQueryInput input, CancellationToken cancellationToken = default)
     {
