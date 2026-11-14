@@ -25,6 +25,7 @@ public static class IdentityAdministrationEndpoints
     {
         Map(app, "GET", "/api/v1/users/me", async context => Result(await Store(context)
             .GetProfileAsync(Actor(context), context.RequestAborted)));
+        Map(app, "GET", "/api/v1/users/courier-directory", CourierDirectoryAsync);
         Map(app, "PUT", "/api/v1/users/me", UpdateProfileAsync);
         Map(app, "GET", "/api/v1/users", ListUsersAsync, admin: true);
         Map(app, "POST", "/api/v1/users", CreateUserAsync, admin: true);
@@ -73,6 +74,23 @@ public static class IdentityAdministrationEndpoints
         return Result(await Store(context).UpdateProfileAsync(Actor(context),
             new ProfileUpdate(input.FullName!.Trim(), Clean(input.PhoneNumber), Clean(input.Address)),
             Now(context), Correlation(context), context.RequestAborted));
+    }
+
+    private static async Task<IResult> CourierDirectoryAsync(HttpContext context)
+    {
+        if (!context.User.IsInRole("Admin") && !context.User.IsInRole("Dispatcher"))
+            return IdentityEndpoints.Problem(403, "forbidden", "Operations access is required.");
+        var query = context.Request.Query;
+        if (query.Keys.Any(key => key != "ids") || query["ids"].Count != 1) return Invalid();
+        var values = query["ids"].ToString().Split(',');
+        if (values.Length is < 1 or > 100) return Invalid();
+        var ids = new List<Guid>();
+        foreach (var value in values)
+        {
+            if (!Guid.TryParseExact(value, "D", out var id) || id == Guid.Empty) return Invalid();
+            ids.Add(id);
+        }
+        return Result(await Store(context).CourierDirectoryAsync(Actor(context), ids.ToArray(), context.RequestAborted));
     }
 
     private static async Task<IResult> ListUsersAsync(HttpContext context)

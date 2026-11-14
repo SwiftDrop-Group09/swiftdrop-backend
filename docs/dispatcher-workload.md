@@ -13,6 +13,7 @@ the authenticated Courier and retains its separate service-day behavior.
   "items": [
     {
       "courierId": "11111111-1111-4111-8111-111111111111",
+      "courierCode": "COU-0001",
       "active": false,
       "onDuty": false,
       "activeCount": 3,
@@ -33,6 +34,19 @@ future work. Delivered, Failed, Cancelled and Reassigned records do not count.
 Zone memberships do not multiply the count. `capacity` is the existing profile
 configuration; this read does not decide whether a particular parcel can be
 assigned. It supplies no daily-capacity reservation policy or available flag.
+
+Courier codes come from the persisted, unique `couriers.business_number` identity
+column added by `CourierBusinessNumbers`. Codes stay stable across paging,
+profile changes and restarts; a trigger rejects number updates. UUIDs remain
+the API identifiers and foreign keys.
+
+The client resolves visible-page names through Identity's authenticated
+`GET /api/v1/users/courier-directory?ids=<comma-separated-UUIDs>` endpoint.
+Admin and Dispatcher may request up to 100 IDs. Identity rechecks the caller's
+active account and role and returns only requested Courier-role users as
+`{ id, fullName }` entries, omitting missing/non-Courier IDs. Other roles are
+denied. No email, phone, address or credentials are exposed; no service reads
+another service's database. The existing Gateway users route forwards this read.
 Courier IDs refer to Delivery's operational profiles; no Identity database or
 privileged user-directory query supplies names.
 
