@@ -215,7 +215,9 @@ public static class ActivityAudit
         var prefix = """
             WITH latest AS (SELECT DISTINCT ON (operation_id) * FROM actor_activity_audit
                 ORDER BY operation_id, CASE WHEN phase='Completed' THEN 1 ELSE 0 END DESC), all_records AS (
-                SELECT operation_id AS id,occurred_at,actor_id,actor_roles,actor_type,action,method,route,resource_id,ip_address,ip_source,status_code,
+                SELECT operation_id AS id,occurred_at,actor_id,actor_roles,
+                    CASE actor_type WHEN 'User' THEN 'Human' ELSE actor_type END AS actor_type,
+                    action,method,route,resource_id,ip_address,ip_source,status_code,
                     CASE WHEN phase='Started' THEN 'InProgress' WHEN status_code < 400 THEN 'Success' WHEN status_code IN (401,403) THEN 'Denied' ELSE 'Failed' END AS outcome,
                     correlation_id,duration_ms,'Request' AS kind FROM latest
             """ + "\n" + legacy + "\n) SELECT * FROM all_records";
