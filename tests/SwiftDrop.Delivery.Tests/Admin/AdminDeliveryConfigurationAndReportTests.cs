@@ -226,6 +226,21 @@ public sealed class AdminDeliveryConfigurationAndReportTests
         var admin = new TestDeliveryUser(isAuthenticated: true, isAdmin: true, isOperations: true);
         var handler = new DeliveryReportHandler(new MockReportStore(0, 0, 0), admin);
 
+        Assert.Equal(ReportFailure.InvalidDateRange,
+            (await handler.ExecuteAsync(null, null, CancellationToken.None)).Failure);
+        Assert.Equal(ReportFailure.InvalidDateRange,
+            (await handler.ExecuteAsync("2026-10-01T00:00:00Z", null, CancellationToken.None)).Failure);
+        Assert.Equal(ReportFailure.InvalidDateRange,
+            (await handler.ExecuteAsync(null, "2026-10-02T00:00:00Z", CancellationToken.None)).Failure);
+
+        var localOffset = await handler.ExecuteAsync(
+            "2026-10-01T00:00:00+05:30", "2026-10-02T00:00:00+05:30", CancellationToken.None);
+        Assert.Equal(ReportFailure.InvalidDateRange, localOffset.Failure);
+
+        var invalidCalendarDate = await handler.ExecuteAsync(
+            "2026-02-30T00:00:00Z", "2026-03-01T00:00:00Z", CancellationToken.None);
+        Assert.Equal(ReportFailure.InvalidDateRange, invalidCalendarDate.Failure);
+
         // to <= from
         var reversedDates = await handler.ExecuteAsync("2026-10-31T00:00:00Z", "2026-10-01T00:00:00Z", CancellationToken.None);
         Assert.Equal(ReportFailure.InvalidDateRange, reversedDates.Failure);

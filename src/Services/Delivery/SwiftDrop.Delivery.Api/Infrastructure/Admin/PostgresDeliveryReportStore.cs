@@ -20,17 +20,12 @@ public sealed class PostgresDeliveryReportStore(Func<DeliveryDbContext> database
 
         var daysMap = new SortedDictionary<string, (int Delivered, int Failed, int Cancelled)>(StringComparer.Ordinal);
 
-        // Pre-seed calendar days between from and to if range is <= 31 days for clean charting,
-        // or just populate active transition days.
         var curDate = from.UtcDateTime.Date;
-        var endDate = to.UtcDateTime.Date;
-        if ((endDate - curDate).TotalDays <= 31)
+        var endDate = to.AddTicks(-1).UtcDateTime.Date;
+        while (curDate <= endDate)
         {
-            while (curDate <= endDate && curDate < to.UtcDateTime)
-            {
-                daysMap[curDate.ToString("yyyy-MM-dd")] = (0, 0, 0);
-                curDate = curDate.AddDays(1);
-            }
+            daysMap[curDate.ToString("yyyy-MM-dd")] = (0, 0, 0);
+            curDate = curDate.AddDays(1);
         }
 
         foreach (var r in records)
