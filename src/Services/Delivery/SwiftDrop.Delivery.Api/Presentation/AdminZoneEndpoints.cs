@@ -53,14 +53,16 @@ public static class AdminZoneEndpoints
             CancellationToken cancellationToken) =>
         {
             var query = context.Request.Query;
-            DateTimeOffset? from = query.TryGetValue("from", out var fVal) && DateTimeOffset.TryParse(fVal, out var f) ? f : null;
-            DateTimeOffset? to = query.TryGetValue("to", out var tVal) && DateTimeOffset.TryParse(tVal, out var t) ? t : null;
+            if (query.Keys.Any(key => key is not ("from" or "to")) || query.Any(pair => pair.Value.Count != 1))
+                return AdminProblems.ZoneFailureResult(context, ZoneFailure.InvalidInput);
+            string? from = query.TryGetValue("from", out var fVal) ? fVal.ToString() : null;
+            string? to = query.TryGetValue("to", out var tVal) ? tVal.ToString() : null;
 
             var result = await handler.GetSummaryAsync(from, to, cancellationToken);
             return result.Response is { } response
                 ? Results.Ok(response)
                 : AdminProblems.ZoneFailureResult(context, result.Failure!.Value, result.Errors);
         }).RequireAuthorization(policy => policy.RequireRole("Admin", "Dispatcher")).WithName("ZoneSummary").WithMetadata(new AdminZoneEndpointMetadata())
-            .Produces<ZoneSummaryResponse>().ProducesProblem(401).ProducesProblem(403);
+            .Produces<ZoneSummaryResponse>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403);
     }
 }
