@@ -22,7 +22,7 @@ public sealed class AdminDeliveryConfigurationAndReportTests
     {
         private readonly List<ZoneDto> _zones = [];
 
-        public Task<ZonePage> ListZonesAsync(int page, int pageSize, CancellationToken cancellationToken)
+        public Task<ZonePage> ListZonesAsync(int page, int pageSize, CancellationToken cancellationToken, ZoneQuery? filters = null)
         {
             var paged = _zones.Skip((page - 1) * pageSize).Take(pageSize).ToList();
             return Task.FromResult(new ZonePage(paged, _zones.Count, page, pageSize));
@@ -80,6 +80,8 @@ public sealed class AdminDeliveryConfigurationAndReportTests
 
     private sealed class MockPricingStore : IPricingAdministrationStore
     {
+        public Task<PricingOverviewPage> ListOverviewAsync(int page, int pageSize, Guid? zoneId, CancellationToken cancellationToken)
+            => Task.FromResult(new PricingOverviewPage([], 0, page, pageSize));
         private readonly List<PricingTierDto> _tiers = [];
 
         public Task<PricingPage> ListPricingAsync(int page, int pageSize, Guid? zoneId, CancellationToken cancellationToken)

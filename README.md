@@ -265,3 +265,6 @@ Delivery's former unconfigured authentication scheme is no longer registered.
 See [Delivery Identity JWT integration](docs/delivery-identity-jwt-integration.md)
 for current host/Docker configuration and login-loop regression evidence. Older
 phase checkpoints describe their historical baselines.
+
+The linked Sri Lankan development records, preservation checks and remaining
+integration limits are recorded in [Operational development data](docs/development-data.md).

@@ -16,6 +16,7 @@ public sealed class Courier
     }
 
     public Guid Id { get; private set; }
+    public long BusinessNumber { get; private set; }
     public bool Active { get; private set; }
     public bool OnDuty { get; private set; }
     public int Capacity { get; private set; }

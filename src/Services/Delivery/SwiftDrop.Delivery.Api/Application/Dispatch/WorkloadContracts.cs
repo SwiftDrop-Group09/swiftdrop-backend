@@ -3,7 +3,7 @@ namespace SwiftDrop.Delivery.Api.Application.Dispatch;
 public sealed record WorkloadQueryInput(string? Page = null, string? PageSize = null,
     bool InvalidParameters = false);
 public sealed record CourierWorkloadResponse(Guid CourierId, bool Active, bool OnDuty,
-    int ActiveCount, int Capacity, IReadOnlyList<Guid> ZoneIds);
+    int ActiveCount, int Capacity, IReadOnlyList<Guid> ZoneIds, string CourierCode);
 public sealed record WorkloadPage(IReadOnlyList<CourierWorkloadResponse> Items,
     int TotalCount, int Page, int PageSize);
 public sealed record DispatchAssignmentResponse(Guid ParcelId, string TrackingNumber,

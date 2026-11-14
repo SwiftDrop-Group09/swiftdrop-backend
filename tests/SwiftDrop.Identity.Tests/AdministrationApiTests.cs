@@ -17,7 +17,43 @@ public sealed class AdministrationApiTests(IdentityPostgresFixture database)
     private static readonly Lazy<Task<string>> Hash = new(() => new Argon2PasswordHasher().HashAsync(Password, default));
 
     [Theory]
+    [InlineData("Admin", HttpStatusCode.OK)]
+    [InlineData("Dispatcher", HttpStatusCode.OK)]
+    [InlineData("Customer", HttpStatusCode.Forbidden)]
+    [InlineData("Courier", HttpStatusCode.Forbidden)]
+    [InlineData("Merchant", HttpStatusCode.Forbidden)]
+    public async Task CourierDirectoryIsOperationsOnlyAndReturnsOnlyRequestedCourierNames(string role, HttpStatusCode expected)
+    {
+        using var factory = new IdentityApiFactory(database);
+        using var courierClient = factory.Client(); var courier = await Authenticate(courierClient, role: "Courier");
+        using var client = factory.Client(); var actor = await Authenticate(client, role: role);
+        using var response = await client.GetAsync($"/api/v1/users/courier-directory?ids={courier.Id},{actor.Id}");
+        Assert.Equal(expected, response.StatusCode);
+        if (expected != HttpStatusCode.OK) return;
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var entry = Assert.Single(json.RootElement.EnumerateArray());
+        Assert.Equal(courier.Id, entry.GetProperty("id").GetGuid());
+        Assert.Equal("Fixture", entry.GetProperty("fullName").GetString());
+        Assert.Equal(2, entry.EnumerateObject().Count());
+        foreach (var ids in new[] { "", "not-a-guid", Guid.Empty.ToString(), string.Join(',', Enumerable.Repeat(courier.Id,101)) })
+        {
+            using var invalid = await client.GetAsync("/api/v1/users/courier-directory?ids=" + ids);
+            Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        }
+        Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
+        if (role == "Dispatcher")
+        {
+            await using var change = database.DataSource.CreateCommand("UPDATE public.user_roles SET role_name='Customer' WHERE user_id=@id");
+            change.Parameters.AddWithValue("id", actor.Id);
+            await change.ExecuteNonQueryAsync();
+            using var revoked = await client.GetAsync($"/api/v1/users/courier-directory?ids={courier.Id}");
+            Assert.Equal(HttpStatusCode.Forbidden, revoked.StatusCode);
+        }
+    }
+
+    [Theory]
     [InlineData("GET", "/api/v1/users/me")]
+    [InlineData("GET", "/api/v1/users/courier-directory?ids=11111111-1111-4111-8111-111111111111")]
     [InlineData("PUT", "/api/v1/users/me")]
     [InlineData("GET", "/api/v1/users")]
     [InlineData("POST", "/api/v1/users")]
@@ -319,14 +355,15 @@ public sealed class AdministrationApiTests(IdentityPostgresFixture database)
         Assert.NotEqual("-unsafe-prefix", safe.Headers.GetValues("X-Correlation-ID").Single());
     }
 
-    private async Task<RegisteredProfile> Authenticate(HttpClient client, bool admin = false)
+    private async Task<RegisteredProfile> Authenticate(HttpClient client, bool admin = false, string? role = null)
     {
         var email = Guid.NewGuid().ToString("N") + "@example.test";
         var user = (await new PostgresUserRegistrationStore(database.DataSource)
             .RegisterAsync(email, email.ToUpperInvariant(), "Fixture", await Hash.Value, default))!;
-        if (admin)
+        if (admin || role is not null)
         {
-            await using var command = database.DataSource.CreateCommand("UPDATE public.user_roles SET role_name='Admin' WHERE user_id=@id");
+            await using var command = database.DataSource.CreateCommand("UPDATE public.user_roles SET role_name=@role::user_role WHERE user_id=@id");
+            command.Parameters.AddWithValue("role", role ?? "Admin");
             command.Parameters.AddWithValue("id", user.Id);
             await command.ExecuteNonQueryAsync();
         }

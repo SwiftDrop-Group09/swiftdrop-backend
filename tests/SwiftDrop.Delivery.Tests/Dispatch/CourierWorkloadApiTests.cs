@@ -42,7 +42,11 @@ public sealed class CourierWorkloadApiTests(PostgresFixture fixture) : IAsyncLif
         Assert.Equal(await db.Couriers.CountAsync(), result.TotalCount);
         Assert.Equal(all.Select(row => row.CourierId).Order(), all.Select(row => row.CourierId));
         Assert.Equal(all.Count, all.Select(row => row.CourierId).Distinct().Count());
+        Assert.All(all, row => Assert.Matches("^COU-[0-9]{4,}$", row.CourierCode));
+        Assert.Equal(all.Count, all.Select(row => row.CourierCode).Distinct().Count());
         var busy = Assert.Single(all, row => row.CourierId == seed.Busy);
+        var busyPage = all.FindIndex(row => row.CourierId == seed.Busy) / 100 + 1;
+        Assert.Equal(busy.CourierCode, (await Read<WorkloadPage>(client, Workload+$"?page={busyPage}&pageSize=100")).Items.Single(row=>row.CourierId==seed.Busy).CourierCode);
         Assert.True(busy.Active);
         Assert.True(busy.OnDuty);
         Assert.Equal(3, busy.ActiveCount);
