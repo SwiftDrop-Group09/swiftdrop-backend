@@ -48,6 +48,13 @@ There are no schema, migration, persistence-model or response-shape changes.
 Frontend period controls must send the midnight after their inclusive Through
 day. Undated callers continue to omit both bounds.
 
+Docker authentication depends on Identity's persisted signing and Data
+Protection keys. The backend runtime image prepares both key directories for
+the non-root application user, so newly initialized named volumes are writable
+without running the service as root. Existing root-owned key volumes need their
+ownership corrected to the configured application UID while preserving the key
+files; no key deletion, authentication bypass or database change is required.
+
 Dedicated handler and PostgreSQL/HTTP tests cover all eight lifecycle statuses,
 both origins, different pickup/delivery zones, inactive and zero-count zones,
 exact booking boundaries, current statuses updated outside the booking period,
