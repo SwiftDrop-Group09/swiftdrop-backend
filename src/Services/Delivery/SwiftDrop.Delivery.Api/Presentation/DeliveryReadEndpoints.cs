@@ -50,11 +50,11 @@ public static class DeliveryReadEndpoints
         {
             var query = context.Request.Query;
             var invalid = query.Any(pair => pair.Value.Count != 1
-                || pair.Key is not ("status" or "from" or "to" or "search" or "page" or "pageSize"));
+                || pair.Key is not ("status" or "from" or "to" or "search" or "page" or "pageSize" or "zoneId"));
             string? Value(string name) => query.TryGetValue(name, out var values) && values.Count == 1 ? values[0] : null;
             var result = await handler.ListParcelsAsync(new CustomerParcelQueryInput(
                 Value("status"), Value("from"), Value("to"), Value("search"),
-                Value("page"), Value("pageSize"), invalid), cancellationToken);
+                Value("page"), Value("pageSize"), invalid, ZoneId: Value("zoneId")), cancellationToken);
             return result.Response is { } response ? Results.Ok(response)
                 : DeliveryReadProblems.Failure(context, result.Failure!.Value, result.Errors);
         }).RequireAuthorization().WithName("ListParcels").WithMetadata(new DeliveryReadEndpointMetadata())

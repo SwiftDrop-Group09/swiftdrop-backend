@@ -37,9 +37,10 @@ public interface IDeliveryReadStore
 }
 
 public sealed record CustomerParcelQueryInput(string? Status = null, string? From = null, string? To = null,
-    string? Search = null, string? Page = null, string? PageSize = null, bool InvalidParameters = false);
+    string? Search = null, string? Page = null, string? PageSize = null, bool InvalidParameters = false,
+    string? ZoneId = null);
 public sealed record CustomerParcelQuery(Domain.ParcelStatus? Status, DateTimeOffset? From, DateTimeOffset? To,
-    string? Search, int Page, int PageSize);
+    string? Search, int Page, int PageSize, Guid? ZoneId = null);
 
 public sealed record CustomerParcelListItem(Guid Id, string TrackingNumber, string Status, long Version,
     BookingPriceSnapshotResponse PriceSnapshot, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,

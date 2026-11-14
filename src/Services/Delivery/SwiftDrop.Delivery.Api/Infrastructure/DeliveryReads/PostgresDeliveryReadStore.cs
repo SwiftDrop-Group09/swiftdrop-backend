@@ -162,6 +162,8 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
 
             if (query.Status is { } status)
                 authorized = authorized.Where(parcel => parcel.Status == status);
+            if (query.ZoneId is { } zoneId)
+                authorized = authorized.Where(parcel => parcel.ZoneId == zoneId);
             if (query.From is { } from)
                 authorized = authorized.Where(parcel => parcel.CreatedAt >= from);
             if (query.To is { } to)
