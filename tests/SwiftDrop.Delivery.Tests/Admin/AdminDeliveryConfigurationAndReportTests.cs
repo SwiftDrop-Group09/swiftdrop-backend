@@ -80,6 +80,8 @@ public sealed class AdminDeliveryConfigurationAndReportTests
 
     private sealed class MockPricingStore : IPricingAdministrationStore
     {
+        public Task<PricingOverviewPage> ListOverviewAsync(int page, int pageSize, Guid? zoneId, CancellationToken cancellationToken)
+            => Task.FromResult(new PricingOverviewPage([], 0, page, pageSize));
         private readonly List<PricingTierDto> _tiers = [];
 
         public Task<PricingPage> ListPricingAsync(int page, int pageSize, Guid? zoneId, CancellationToken cancellationToken)
