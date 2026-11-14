@@ -23,6 +23,13 @@ public sealed class OutboxMessage
         return Create(eventId, parcel, "Assigned", "Created", parcel.UpdatedAt, correlationId);
     }
 
+    public static OutboxMessage Reassigned(Guid eventId, Parcel parcel, string correlationId)
+    {
+        if (parcel.Status != ParcelStatus.Assigned || parcel.Version < 3)
+            throw new InvalidOperationException("Reassignment event requires a reassigned parcel.");
+        return Create(eventId, parcel, "Assigned", "Assigned", parcel.UpdatedAt, correlationId);
+    }
+
     private static OutboxMessage Create(Guid eventId, Parcel parcel, string status, string? previousStatus,
         DateTimeOffset occurredAt, string correlationId)
     {
