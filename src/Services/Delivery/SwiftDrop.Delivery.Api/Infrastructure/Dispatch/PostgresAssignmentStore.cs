@@ -75,16 +75,39 @@ public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFacto
             return new AssignmentReservation(inserted == 1, record);
         });
 
-        public async Task CheckEligibilityAsync(Parcel parcel, Guid courierId, DateOnly date, DateOnly today, CancellationToken cancellationToken)
+        public Task<CourierAssignment?> LockCurrentAssignmentAsync(Guid parcelId, CancellationToken cancellationToken) => Protect<CourierAssignment?>(async () =>
+        {
+            var rows = await db.Assignments.FromSqlInterpolated($"""
+                SELECT *, xmin FROM assignments WHERE parcel_id = {parcelId} AND status = 'Active' FOR UPDATE
+                """).ToListAsync(cancellationToken);
+            return rows.SingleOrDefault();
+        });
+
+        public async Task RetireAsync(CourierAssignment assignment, CancellationToken cancellationToken)
         {
             await Protect(async () =>
             {
-                if (await db.Assignments.AnyAsync(x => x.ParcelId == parcel.Id && x.Status == AssignmentStatus.Active, cancellationToken))
+                if (db.Database.CurrentTransaction != transaction || db.Entry(assignment).State == EntityState.Detached)
+                    throw new InvalidOperationException("Retirement must belong to the owning transaction.");
+                assignment.MarkReassigned();
+                return await db.SaveChangesAsync(cancellationToken);
+            });
+        }
+
+        public async Task CheckEligibilityAsync(Parcel parcel, Guid courierId, DateOnly date, DateOnly today, CancellationToken cancellationToken, Guid? originalCourierId = null)
+        {
+            await Protect(async () =>
+            {
+                if (originalCourierId is null && await db.Assignments.AnyAsync(x => x.ParcelId == parcel.Id && x.Status == AssignmentStatus.Active, cancellationToken))
                     throw new AssignmentException(AssignmentFailure.InvalidTransition);
                 // Every allocation writer takes parcel first, then courier. The courier row
                 // serializes counts across different parcels; count is a fresh READ COMMITTED statement.
-                var rows = await db.Couriers.FromSqlInterpolated($"SELECT * FROM couriers WHERE id = {courierId} FOR UPDATE").ToListAsync(cancellationToken);
-                if (rows.SingleOrDefault() is not { } courier) throw new AssignmentException(AssignmentFailure.NotFound);
+                var previousCourierId = originalCourierId ?? courierId;
+                // PostgreSQL uuid order is the allocation lock order, including opposite-direction swaps.
+                var rows = await db.Couriers.FromSqlInterpolated($"""
+                    SELECT * FROM couriers WHERE id = {courierId} OR id = {previousCourierId} ORDER BY id FOR UPDATE
+                    """).ToListAsync(cancellationToken);
+                if (rows.SingleOrDefault(x => x.Id == courierId) is not { } courier) throw new AssignmentException(AssignmentFailure.NotFound);
                 if (!courier.Active || (date == today && !courier.OnDuty)) throw new AssignmentException(AssignmentFailure.CourierUnavailable);
                 var memberships = await db.CourierZones.FromSqlInterpolated($"""
                     SELECT * FROM courier_zones WHERE courier_id = {courierId} AND zone_id = {parcel.ZoneId} FOR SHARE

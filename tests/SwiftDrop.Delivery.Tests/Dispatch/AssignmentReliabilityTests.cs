@@ -105,7 +105,9 @@ public sealed class AssignmentReliabilityTests(PostgresFixture fixture)
     {
         public Task<AssignmentState?> LockParcelAsync(Guid id, CancellationToken ct) => inner.LockParcelAsync(id, ct);
         public Task<AssignmentReservation> ReserveAsync(Guid actor, AssignCourierCommand command, DateTimeOffset now, CancellationToken ct) => inner.ReserveAsync(actor, command, now, ct);
-        public Task CheckEligibilityAsync(Parcel parcel, Guid courier, DateOnly date, DateOnly today, CancellationToken ct) => inner.CheckEligibilityAsync(parcel, courier, date, today, ct);
+        public Task<CourierAssignment?> LockCurrentAssignmentAsync(Guid id, CancellationToken ct) => inner.LockCurrentAssignmentAsync(id, ct);
+        public Task RetireAsync(CourierAssignment assignment, CancellationToken ct) => inner.RetireAsync(assignment, ct);
+        public Task CheckEligibilityAsync(Parcel parcel, Guid courier, DateOnly date, DateOnly today, CancellationToken ct, Guid? originalCourierId = null) => inner.CheckEligibilityAsync(parcel, courier, date, today, ct, originalCourierId);
         public Task SaveAsync(AssignmentState state, CourierAssignment assignment, BookingHistory history, OutboxMessage outbox, IdempotencyRecord record, CancellationToken ct)
             => inner.SaveAsync(state, assignment, history, outbox, record, ct);
         public async Task CommitAsync(CancellationToken ct)

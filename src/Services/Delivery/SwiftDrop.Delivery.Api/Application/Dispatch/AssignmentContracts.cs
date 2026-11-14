@@ -3,9 +3,9 @@ using SwiftDrop.Delivery.Api.Domain;
 namespace SwiftDrop.Delivery.Api.Application.Dispatch;
 
 public sealed record AssignCourierInput(string? ParcelId, string? CourierId, long? ExpectedVersion,
-    bool Reassign = false, string? ServiceDate = null);
+    bool Reassign = false, string? ServiceDate = null, string? Reason = null);
 public sealed record AssignCourierCommand(Guid ParcelId, Guid CourierId, long ExpectedVersion,
-    DateOnly? ServiceDate, string Key, string Fingerprint);
+    DateOnly? ServiceDate, string Key, string Fingerprint, bool Reassign = false, string? Reason = null);
 public sealed record AssignmentOptionsInput(string? ServiceDate = null, string? Page = null,
     string? PageSize = null, bool InvalidParameters = false, string? Reassign = null);
 public sealed record AssignmentCandidate(Guid CourierId, bool OnDuty, int ActiveCountForServiceDate, int Capacity);
@@ -39,7 +39,9 @@ public interface IAssignmentTransaction : IAsyncDisposable
 {
     Task<AssignmentState?> LockParcelAsync(Guid parcelId, CancellationToken cancellationToken);
     Task<AssignmentReservation> ReserveAsync(Guid actor, AssignCourierCommand command, DateTimeOffset now, CancellationToken cancellationToken);
-    Task CheckEligibilityAsync(Parcel parcel, Guid courierId, DateOnly date, DateOnly today, CancellationToken cancellationToken);
+    Task<CourierAssignment?> LockCurrentAssignmentAsync(Guid parcelId, CancellationToken cancellationToken);
+    Task RetireAsync(CourierAssignment assignment, CancellationToken cancellationToken);
+    Task CheckEligibilityAsync(Parcel parcel, Guid courierId, DateOnly date, DateOnly today, CancellationToken cancellationToken, Guid? originalCourierId = null);
     Task SaveAsync(AssignmentState state, CourierAssignment assignment, BookingHistory history,
         OutboxMessage outbox, IdempotencyRecord record, CancellationToken cancellationToken);
     Task CommitAsync(CancellationToken cancellationToken);
