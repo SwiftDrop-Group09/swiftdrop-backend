@@ -253,6 +253,12 @@ public sealed class CustomerTrackingApplicationTests
 
     private sealed class FakeCustomerReadStore : ICustomerDeliveryReadStore
     {
+        public Task<CustomerDeliverySummary> GetCustomerSummaryAsync(Guid customerId, CancellationToken cancellationToken)
+        {
+            Calls++;
+            LastScope = new(customerId, false, true, false);
+            return Task.FromResult(new CustomerDeliverySummary(0, 0, 0, 0, 0, [], []));
+        }
         public int Calls { get; private set; }
         public ParcelReadScope? LastScope { get; private set; }
         public CustomerParcelQuery? LastQuery { get; private set; }

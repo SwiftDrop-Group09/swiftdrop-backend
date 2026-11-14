@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application.CourierProof;
+using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 
 namespace SwiftDrop.Delivery.Api.Infrastructure.CourierProof;
@@ -11,7 +12,7 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.CourierProof;
 /// Stores private courier proof images as bytea rows in the <c>swiftdrop_delivery</c>
 /// database (Neon PostgreSQL), eliminating external object storage dependencies.
 /// </summary>
-public sealed class PostgresProofStorage : IPrivateProofStorage
+public sealed class PostgresProofStorage : IPrivateProofStorage, IPrivateProofReader
 {
     private readonly Func<DeliveryDbContext> _contextFactory;
 
@@ -46,7 +47,7 @@ public sealed class PostgresProofStorage : IPrivateProofStorage
             var sha256 = Convert.ToHexStringLower(SHA256.HashData(proof.Content));
             var now = DateTimeOffset.UtcNow;
 
-            await using var db = _contextFactory();
+            var db = _contextFactory();
             await db.Database.ExecuteSqlRawAsync(
                 """
                 INSERT INTO proof_objects (storage_ref, content_type, sha256, length, data, stored_at)
@@ -59,7 +60,7 @@ public sealed class PostgresProofStorage : IPrivateProofStorage
             // Re-read canonical stored_at so idempotent ON CONFLICT no-ops still return consistent metadata.
             var row = await db.Database
                 .SqlQueryRaw<ProofRow>(
-                    "SELECT sha256, length, stored_at FROM proof_objects WHERE storage_ref = {0}",
+                    "SELECT sha256 AS \"Sha256\", length AS \"Length\", stored_at AS \"StoredAt\" FROM proof_objects WHERE storage_ref = {0}",
                     storageRef)
                 .FirstOrDefaultAsync(token)
                 ?? throw new ProofStorageException();
@@ -85,10 +86,10 @@ public sealed class PostgresProofStorage : IPrivateProofStorage
 
         return ProtectAsync(async token =>
         {
-            await using var db = _contextFactory();
+            var db = _contextFactory();
             var row = await db.Database
                 .SqlQueryRaw<ProofVerifyRow>(
-                    "SELECT length, data FROM proof_objects WHERE storage_ref = {0}",
+                    "SELECT length AS \"Length\", data AS \"Data\" FROM proof_objects WHERE storage_ref = {0}",
                     proof.StorageRef)
                 .FirstOrDefaultAsync(token)
                 ?? throw new ProofStorageException();
@@ -112,10 +113,10 @@ public sealed class PostgresProofStorage : IPrivateProofStorage
     {
         var rows = await ProtectAsync(async token =>
         {
-            await using var db = _contextFactory();
+            var db = _contextFactory();
             return await db.Database
                 .SqlQueryRaw<ProofListRow>(
-                    "SELECT storage_ref, stored_at FROM proof_objects ORDER BY stored_at")
+                    "SELECT storage_ref AS \"StorageRef\", stored_at AS \"StoredAt\" FROM proof_objects ORDER BY stored_at")
                 .ToListAsync(token);
         }, cancellationToken);
 
@@ -135,12 +136,30 @@ public sealed class PostgresProofStorage : IPrivateProofStorage
 
         return ProtectAsync(async token =>
         {
-            await using var db = _contextFactory();
+            var db = _contextFactory();
             await db.Database.ExecuteSqlRawAsync(
                 "DELETE FROM proof_objects WHERE storage_ref = {0}",
                 [storageRef],
                 token);
             return true;
+        }, cancellationToken);
+    }
+
+    public Task<(byte[] Content, string ContentType)?> ReadObjectAsync(string storageRef, CancellationToken cancellationToken)
+    {
+        RequireValidKey(storageRef);
+        return ProtectAsync<(byte[] Content, string ContentType)?>(async token =>
+        {
+            // Authorization is performed by CustomerTrackingHandler before this private lookup.
+            var db = _contextFactory();
+            var row = await db.Database.SqlQueryRaw<ProofReadRow>(
+                "SELECT content_type AS \"ContentType\", sha256 AS \"Sha256\", length AS \"Length\", data AS \"Data\" FROM proof_objects WHERE storage_ref = {0}", storageRef)
+                .SingleOrDefaultAsync(token);
+            if (row is null) return null;
+            if (row.ContentType is not ("image/png" or "image/jpeg") || row.Data.LongLength != row.Length
+                || Convert.ToHexStringLower(SHA256.HashData(row.Data)) != row.Sha256)
+                throw new ProofStorageException();
+            return (row.Data, row.ContentType);
         }, cancellationToken);
     }
 
@@ -174,4 +193,5 @@ public sealed class PostgresProofStorage : IPrivateProofStorage
     private sealed record ProofRow(string Sha256, long Length, DateTimeOffset StoredAt);
     private sealed record ProofVerifyRow(long Length, byte[] Data);
     private sealed record ProofListRow(string StorageRef, DateTimeOffset StoredAt);
+    private sealed record ProofReadRow(string ContentType, string Sha256, long Length, byte[] Data);
 }
