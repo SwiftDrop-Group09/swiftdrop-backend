@@ -239,3 +239,22 @@ The user explicitly deferred real user-assisted whole-workflow acceptance. P6
 therefore remains pending that two-parcel run; startup/health, anonymous refusal
 and fixture results do not establish real signed-in workflow acceptance. Missing
 other-role workflows remain owner dependencies. No publication was performed.
+
+## Frontend integration follow-up
+
+Frontend normal merge `797242e` integrates current dev `17aaa30` with the unchanged
+P6 tests. No backend production/test source changed. At backend `265e2dc`, frontend
+`797242e` and infra `785f0dc`, fresh full foundation and canonical Docker build/start
+checks pass: seven expected service images, six configured healthy container
+checks, 14 HTTP/trusted-JWKS probes and anonymous operations refusal. Preflight
+found the earlier stack stopped; the canonical runner finished in non-watch host
+mode, with all nine host/page/bootstrap/refusal probes passing. Read-only schema
+histories remain Identity 5/5, Delivery 11/11, Merchant 7/7 before/during/after,
+with no pending migrations, schema reset/downgrade or shared test-parcel mutation.
+
+The frontend's unchanged complete standard check passes all 735 tests and build
+in a two-CPU-affinity child process. Its unrestricted local run retains an Identity
+heading timeout; upstream dev CI and the entire Identity file separately pass.
+See the frontend integration handoff for the exact environment and stability
+limit. No Identity source, assertions or test settings were changed to obtain
+these results. Signed-in two-parcel acceptance remains explicitly deferred.
