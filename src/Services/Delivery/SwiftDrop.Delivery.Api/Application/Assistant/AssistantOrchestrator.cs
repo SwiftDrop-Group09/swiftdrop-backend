@@ -111,9 +111,7 @@ public sealed partial class AssistantOrchestrator(
                 quoteCard = qc;
             }
 
-            var reply = result.Success
-                ? result.TextSummary
-                : $"Unable to calculate fee: {result.TextSummary}";
+            var reply = result.TextSummary;
 
             return new AssistantChatResponse(
                 Reply: reply,
@@ -324,15 +322,17 @@ public sealed partial class AssistantOrchestrator(
             history.LastOrDefault(h => h.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) || h.Role.Equals("model", StringComparison.OrdinalIgnoreCase)) is { } lastAssistant &&
             (lastAssistant.Content.Contains("starting position", StringComparison.OrdinalIgnoreCase) || lastAssistant.Content.Contains("picked up from", StringComparison.OrdinalIgnoreCase));
 
-        // If history had a quote or fee inquiry, a follow-up mentioning a city, "how about", "what about", "for ...", weight or size is a fee intent
+        // If history had a quote or fee inquiry, a follow-up mentioning a city, "how about", "what about", "for ...", "if ...", weight or size is a fee intent
         var isFollowUpInquiry = hasHistoryQuote && (
             lower.StartsWith("how about") ||
             lower.StartsWith("what about") ||
             lower.StartsWith("and ") ||
             lower.StartsWith("for ") ||
+            lower.StartsWith("if ") ||
+            lower.Contains("possible to send") ||
             Regex.IsMatch(lower, @"\b(from|to)\s+[a-z]+\b") ||
-            Regex.IsMatch(lower, @"\b\d+(\.\d+)?\s*(kg|kilo)\b") ||
-            Regex.IsMatch(lower, @"\b(small|medium|large)\b"));
+            Regex.IsMatch(lower, @"\b\d+(\.\d+)?\s*(kg|kilo|k|kn)?\b") ||
+            Regex.IsMatch(lower, @"\b(small|medium|large|medim|medum|smal|sml|larg|lrg)\b"));
 
         if (!hasPricingKeyword && !hasRoute && !lastAssistantAskedPickup && !isFollowUpInquiry)
         {
@@ -341,9 +341,14 @@ public sealed partial class AssistantOrchestrator(
             return false;
         }
 
-        // 1. Resolve weight (check current message first, then inspect history)
+        // 1. Resolve weight (check current message first, including typos like 25kn, 25k, or standalone digits after follow-up words)
         decimal weight = 2.0m;
-        var weightMatch = Regex.Match(lower, @"\b(\d+(?:\.\d+)?)\s*(?:kg|kilo(?:gram)?s?)\b");
+        var weightMatch = Regex.Match(lower, @"\b(\d+(?:\.\d+)?)\s*(?:kg|kilo(?:gram)?s?|k|kn|kgs|kilos)\b");
+        if (!weightMatch.Success)
+        {
+            weightMatch = Regex.Match(lower, @"\b(?:how about|what about|if|for|send|parcel of|a)\s+(\d+(?:\.\d+)?)\b");
+        }
+
         if (weightMatch.Success && decimal.TryParse(weightMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var parsedWeight) && parsedWeight > 0)
         {
             weight = parsedWeight;
@@ -353,7 +358,7 @@ public sealed partial class AssistantOrchestrator(
             for (var i = history.Count - 1; i >= 0; i--)
             {
                 var hLower = history[i].Content.ToLowerInvariant();
-                var hWeight = Regex.Match(hLower, @"\b(\d+(?:\.\d+)?)\s*(?:kg|kilo(?:gram)?s?)\b");
+                var hWeight = Regex.Match(hLower, @"\b(\d+(?:\.\d+)?)\s*(?:kg|kilo(?:gram)?s?|k|kn|kgs|kilos)\b");
                 if (hWeight.Success && decimal.TryParse(hWeight.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var prevW) && prevW > 0)
                 {
                     weight = prevW;
@@ -411,19 +416,19 @@ public sealed partial class AssistantOrchestrator(
             deliveryCity ??= histDelivery;
         }
 
-        // Extract size
+        // Extract size (handling typos like medim, smal, etc.)
         string? size = null;
-        if (lower.Contains("small")) size = "Small";
-        else if (lower.Contains("medium")) size = "Medium";
-        else if (lower.Contains("large")) size = "Large";
+        if (Regex.IsMatch(lower, @"\b(sma?ll?|sml)\b")) size = "Small";
+        else if (Regex.IsMatch(lower, @"\b(medi?u?m|med)\b")) size = "Medium";
+        else if (Regex.IsMatch(lower, @"\b(la?rge?|lrg)\b")) size = "Large";
         else if (history != null)
         {
             for (var i = history.Count - 1; i >= 0; i--)
             {
                 var hLower = history[i].Content.ToLowerInvariant();
-                if (hLower.Contains("small")) { size = "Small"; break; }
-                if (hLower.Contains("medium")) { size = "Medium"; break; }
-                if (hLower.Contains("large")) { size = "Large"; break; }
+                if (Regex.IsMatch(hLower, @"\b(sma?ll?|sml)\b")) { size = "Small"; break; }
+                if (Regex.IsMatch(hLower, @"\b(medi?u?m|med)\b")) { size = "Medium"; break; }
+                if (Regex.IsMatch(hLower, @"\b(la?rge?|lrg)\b")) { size = "Large"; break; }
             }
         }
 

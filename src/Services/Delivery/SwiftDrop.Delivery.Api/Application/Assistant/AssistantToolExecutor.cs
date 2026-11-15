@@ -245,11 +245,15 @@ public sealed class AssistantToolExecutor(
 
         if (input.WeightKg is null or <= 0 or > 30)
         {
+            var msg = input.WeightKg > 30
+                ? $"SwiftDrop currently supports parcels up to 30 kg. We cannot process or estimate delivery fees for a {input.WeightKg:G29} kg parcel."
+                : "Invalid parcel weight. Weight must be greater than zero and at most 30 kg.";
+
             return new ToolExecutionResult(
                 AssistantToolNames.EstimateDeliveryFee,
                 false,
                 null,
-                "Invalid parcel weight. Weight must be greater than zero and at most 30 kg.",
+                msg,
                 "invalid_weight");
         }
 
@@ -423,9 +427,9 @@ public sealed class AssistantToolExecutor(
         if (!string.IsNullOrWhiteSpace(requestedSize))
         {
             var trimmed = requestedSize.Trim();
-            if (trimmed.Equals("Small", StringComparison.OrdinalIgnoreCase)) return "Small";
-            if (trimmed.Equals("Medium", StringComparison.OrdinalIgnoreCase)) return "Medium";
-            if (trimmed.Equals("Large", StringComparison.OrdinalIgnoreCase)) return "Large";
+            if (Regex.IsMatch(trimmed, @"\b(sma?ll?|sml)\b", RegexOptions.IgnoreCase)) return "Small";
+            if (Regex.IsMatch(trimmed, @"\b(medi?u?m|med)\b", RegexOptions.IgnoreCase)) return "Medium";
+            if (Regex.IsMatch(trimmed, @"\b(la?rge?|lrg)\b", RegexOptions.IgnoreCase)) return "Large";
         }
 
         return weightKg switch
