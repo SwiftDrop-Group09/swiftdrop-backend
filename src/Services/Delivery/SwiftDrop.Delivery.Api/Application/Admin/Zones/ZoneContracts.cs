@@ -9,7 +9,8 @@ public enum ZoneFailure
     NotFound,
     Conflict,
     InvalidInput,
-    OverlappingPostalCodes
+    OverlappingPostalCodes,
+    InvalidDateRange
 }
 
 public sealed record ZoneInput(
