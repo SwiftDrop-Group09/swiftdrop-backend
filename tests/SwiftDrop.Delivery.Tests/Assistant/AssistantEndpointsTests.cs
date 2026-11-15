@@ -110,6 +110,55 @@ public sealed class AssistantEndpointsTests
         Assert.False(chatResult.Cards.Tracking.CanViewReceipt);
         Assert.Contains("Colombo", chatResult.Cards.Tracking.OriginCity);
         Assert.Contains("Kandy", chatResult.Cards.Tracking.DestinationCity);
+        Assert.True(chatResult.Cards.Tracking.IsPublic);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_BareTrackingNumber_TracksParcelDirectly()
+    {
+        var readStore = new TestCustomerReadStore();
+        readStore.PublicSummary = new PublicTrackingSummary(
+            "TRK-D1A0EF770ED17A719931A84645D68016",
+            "InTransit",
+            "Colombo",
+            "Kandy",
+            DateTimeOffset.UtcNow,
+            [
+                new PublicTimelineEntry("Booked", DateTimeOffset.UtcNow.AddHours(-2), "Order Placed"),
+                new PublicTimelineEntry("InTransit", DateTimeOffset.UtcNow.AddHours(-1), "In Transit")
+            ]);
+
+        using var factory = CreateFactory(null, readStore);
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("TRK-D1A0EF770ED17A719931A84645D68016");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Single(chatResult!.ToolCalls);
+        Assert.Equal(AssistantToolNames.TrackParcel, chatResult.ToolCalls[0].ToolName);
+        Assert.NotNull(chatResult.Cards?.Tracking);
+        Assert.Equal("TRK-D1A0EF770ED17A719931A84645D68016", chatResult.Cards!.Tracking!.TrackingNumber);
+        Assert.True(chatResult.Cards.Tracking.IsPublic);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_OffTopicQuery_ReturnsPoliteBoundaryReply()
+    {
+        using var factory = CreateFactory(null);
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("What is football?");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Contains("SwiftDrop Delivery Assistant", chatResult!.Reply);
+        Assert.Empty(chatResult.ToolCalls);
+        Assert.Null(chatResult.Cards);
     }
 
     [Fact]
@@ -147,6 +196,7 @@ public sealed class AssistantEndpointsTests
         Assert.NotNull(chatResult.Cards?.Tracking);
         Assert.Equal("SD-2026-1234", chatResult.Cards!.Tracking!.TrackingNumber);
         Assert.True(chatResult.Cards.Tracking.CanViewReceipt);
+        Assert.False(chatResult.Cards.Tracking.IsPublic);
     }
 
     [Fact]

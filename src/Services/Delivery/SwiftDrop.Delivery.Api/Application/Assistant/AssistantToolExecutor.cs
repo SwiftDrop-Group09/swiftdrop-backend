@@ -16,6 +16,19 @@ public sealed class AssistantToolExecutor(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    public static string ToFriendlyStatus(string? status) => status?.ToLowerInvariant() switch
+    {
+        "created" or "booked" => "Booked",
+        "assigned" => "Assigned",
+        "pickedup" => "Collected",
+        "intransit" => "In transit",
+        "outfordelivery" => "Out for delivery",
+        "delivered" => "Delivered",
+        "failed" => "Delivery unsuccessful",
+        "cancelled" => "Cancelled",
+        _ => status ?? "Booked"
+    };
+
     public async Task<ToolExecutionResult> ExecuteAsync(
         string toolName,
         JsonElement? arguments,
@@ -94,7 +107,8 @@ public sealed class AssistantToolExecutor(
                     parcel.UpdatedAt,
                     steps,
                     parcel.Status.Equals("Delivered", StringComparison.OrdinalIgnoreCase),
-                    parcel.Id.ToString());
+                    parcel.Id.ToString(),
+                    IsPublic: false);
 
                 return new ToolExecutionResult(
                     AssistantToolNames.TrackParcel,
@@ -107,10 +121,12 @@ public sealed class AssistantToolExecutor(
                         deliveryCity = parcel.DeliveryCity,
                         updatedAt = parcel.UpdatedAt,
                         isOwner = true,
+                        isPublic = false,
                         hasReceipt = parcel.Status.Equals("Delivered", StringComparison.OrdinalIgnoreCase),
-                        milestones = steps
+                        milestones = steps,
+                        parcelId = parcel.Id.ToString()
                     },
-                    $"Parcel {parcel.TrackingNumber} is currently **{parcel.Status}** from {parcel.PickupCity} to {parcel.DeliveryCity}. Last updated: {parcel.UpdatedAt:yyyy-MM-dd HH:mm UTC}.",
+                    $"Your parcel **{parcel.TrackingNumber}** from **{parcel.PickupCity}** to **{parcel.DeliveryCity}** is currently **{ToFriendlyStatus(parcel.Status)}**.",
                     null);
             }
         }
@@ -127,7 +143,9 @@ public sealed class AssistantToolExecutor(
                 publicSummary.DestinationCity,
                 publicSummary.LastUpdatedAt,
                 steps,
-                false);
+                false,
+                null,
+                IsPublic: true);
 
             return new ToolExecutionResult(
                 AssistantToolNames.TrackParcel,
@@ -140,9 +158,10 @@ public sealed class AssistantToolExecutor(
                     destinationCity = publicSummary.DestinationCity,
                     lastUpdatedAt = publicSummary.LastUpdatedAt,
                     isOwner = false,
+                    isPublic = true,
                     milestones = steps
                 },
-                $"Parcel {publicSummary.TrackingNumber} is currently **{publicSummary.Status}** from {publicSummary.OriginCity} to {publicSummary.DestinationCity}. (Public tracking mode - contact recipient details redacted).",
+                $"Parcel **{publicSummary.TrackingNumber}** from **{publicSummary.OriginCity}** to **{publicSummary.DestinationCity}** is currently **{ToFriendlyStatus(publicSummary.Status)}**.",
                 null);
         }
 
@@ -264,7 +283,8 @@ public sealed class AssistantToolExecutor(
                 "unsupported_zone");
         }
 
-        var pickupCity = !string.IsNullOrWhiteSpace(input.PickupCity) ? input.PickupCity.Trim() : pickupZone.Name;
+        var assumedPickup = string.IsNullOrWhiteSpace(input.PickupCity);
+        var pickupCity = !assumedPickup ? input.PickupCity!.Trim() : (pickupZone.Name.Contains("Western", StringComparison.OrdinalIgnoreCase) ? "Colombo" : pickupZone.Name);
         var deliveryCity = !string.IsNullOrWhiteSpace(input.DeliveryCity) ? input.DeliveryCity.Trim() : deliveryZone.Name;
 
         // If authenticated Customer, calculate and persist an owner-bound quote via QuoteEstimator
@@ -293,11 +313,15 @@ public sealed class AssistantToolExecutor(
                     deliveryCity,
                     deepLink);
 
+                var expiryText = quote.ExpiresAt.ToString("h:mm tt");
+                var pickupNote = assumedPickup ? " (assuming pickup from Colombo)" : "";
+                var summaryText = $"Sending a **{weight} kg ({resolvedSize})** parcel from **{pickupCity}** to **{deliveryCity}** costs **{quote.Currency} {quote.Total:N2}**{pickupNote}. This quote is locked until {expiryText}—you can proceed to book directly below.";
+
                 return new ToolExecutionResult(
                     AssistantToolNames.EstimateDeliveryFee,
                     true,
                     card,
-                    $"Sending a **{weight} kg ({resolvedSize})** parcel from **{pickupCity}** to **{deliveryCity}** costs **{quote.Total:N2} {quote.Currency}** (Tariff Version: {quote.PricingVersion}). Quote is locked until {quote.ExpiresAt:yyyy-MM-dd HH:mm UTC}. [Click to Book]({deepLink})",
+                    summaryText,
                     null);
             }
 
@@ -335,11 +359,14 @@ public sealed class AssistantToolExecutor(
                     deliveryCity,
                     deepLink);
 
+                var pickupNote = assumedPickup ? " (assuming pickup from Colombo)" : "";
+                var summaryText = $"Estimated delivery fee for a **{weight} kg ({resolvedSize})** parcel from **{pickupCity}** to **{deliveryCity}** is approximately **{tier.Currency} {calculated.Total:N2}**{pickupNote}. Sign in to lock an official quote.";
+
                 return new ToolExecutionResult(
                     AssistantToolNames.EstimateDeliveryFee,
                     true,
                     card,
-                    $"Estimated delivery fee for **{weight} kg ({resolvedSize})** from **{pickupCity}** to **{deliveryCity}** is approximately **{calculated.Total:N2} {tier.Currency}** (Base: {tier.BaseRate:N2}, Per-kg: {tier.PerKgRate:N2}). Sign in to lock an official quote.",
+                    summaryText,
                     null);
             }
         }
@@ -446,8 +473,21 @@ public sealed class AssistantToolExecutor(
         // If no match but only one zone exists, use it
         if (zones.Count == 1) return zones[0];
 
-        // Default pickup to first zone if unspecified, or delivery to second/first
-        if (isPickup) return zones[0];
+        // Default pickup to Colombo/Western zone if available, else first zone
+        if (isPickup)
+        {
+            var colombo = zones.FirstOrDefault(z =>
+                z.Name.Contains("Colombo", StringComparison.OrdinalIgnoreCase) ||
+                z.Name.Contains("Western", StringComparison.OrdinalIgnoreCase));
+            if (colombo is not null) return colombo;
+            return zones[0];
+        }
+
+        // For delivery, if unspecified, prefer non-pickup zone if available
+        var nonColombo = zones.FirstOrDefault(z =>
+            !z.Name.Contains("Colombo", StringComparison.OrdinalIgnoreCase) &&
+            !z.Name.Contains("Western", StringComparison.OrdinalIgnoreCase));
+        if (nonColombo is not null) return nonColombo;
         return zones.Count > 1 ? zones[1] : zones[0];
     }
 

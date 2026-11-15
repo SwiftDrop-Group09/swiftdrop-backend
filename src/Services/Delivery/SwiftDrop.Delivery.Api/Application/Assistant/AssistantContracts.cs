@@ -73,7 +73,8 @@ public sealed record TrackingCardData(
     DateTimeOffset LastUpdatedAt,
     IReadOnlyList<MilestoneStep> Steps,
     bool CanViewReceipt,
-    string? ParcelId = null);
+    string? ParcelId = null,
+    bool IsPublic = false);
 
 public sealed record ParcelSummaryItem(
     string TrackingNumber,

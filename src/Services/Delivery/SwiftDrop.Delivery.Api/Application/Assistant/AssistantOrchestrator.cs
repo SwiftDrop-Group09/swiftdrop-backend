@@ -39,7 +39,14 @@ public sealed partial class AssistantOrchestrator(
                 Guardrail: new GuardrailResult(Blocked: true, Reason: guardrailReason));
         }
 
-        // 2. Check if external LLM mode is configured and reachable
+        // 2. Pre-check explicit tracking numbers (e.g. TRK-..., SD-...) for deterministic, immediate tracking
+        var trackingMatch = Regex.Match(rawMessage, @"\b((?:TRK|SD)-[A-Za-z0-9-]+)\b", RegexOptions.IgnoreCase);
+        if (trackingMatch.Success)
+        {
+            return await ProcessWithBuiltInEngineAsync(rawMessage, cancellationToken);
+        }
+
+        // 3. Check if external LLM mode is configured and reachable
         var apiKey = configuration["AI:ApiKey"]
             ?? configuration["DELIVERY_AI_API_KEY"]
             ?? configuration["GEMINI_API_KEY"]
@@ -49,7 +56,7 @@ public sealed partial class AssistantOrchestrator(
         {
             try
             {
-                var geminiResponse = await ProcessWithGeminiAsync(rawMessage, apiKey.Trim(), cancellationToken);
+                var geminiResponse = await ProcessWithGeminiAsync(request, apiKey.Trim(), cancellationToken);
                 if (geminiResponse != null)
                 {
                     return geminiResponse;
@@ -61,7 +68,7 @@ public sealed partial class AssistantOrchestrator(
             }
         }
 
-        // 3. Built-In Resilient Deterministic Tool-Calling Engine
+        // 4. Built-In Resilient Deterministic Tool-Calling Engine
         return await ProcessWithBuiltInEngineAsync(rawMessage, cancellationToken);
     }
 
@@ -94,11 +101,8 @@ public sealed partial class AssistantOrchestrator(
             }
 
             var reply = result.Success
-                ? $"### Delivery Fee Estimate\n\n{result.TextSummary}\n\n" +
-                  (quoteCard?.QuoteId is not null
-                      ? "Your quote has been calculated and locked against our versioned tariff. You can confirm your booking directly below:"
-                      : "This is an uncommitted fee preview. Sign in to your Customer account to lock this rate and book your delivery.")
-                : $"### Delivery Fee Estimate\n\nUnable to calculate fee: {result.TextSummary}";
+                ? result.TextSummary
+                : $"Unable to calculate fee: {result.TextSummary}";
 
             return new AssistantChatResponse(
                 Reply: reply,
@@ -131,7 +135,11 @@ public sealed partial class AssistantOrchestrator(
             TrackingCardData? trackingCard = null;
             ParcelListCardData? listCard = null;
 
-            if (result.Success && result.Data is not null)
+            if (result.Success && result.Data is TrackingCardData directTc)
+            {
+                trackingCard = directTc;
+            }
+            else if (result.Success && result.Data is not null)
             {
                 var json = JsonSerializer.Serialize(result.Data, JsonOptions);
                 var doc = JsonDocument.Parse(json);
@@ -144,6 +152,8 @@ public sealed partial class AssistantOrchestrator(
                     var origin = root.TryGetProperty("pickupCity", out var oc) ? oc.GetString() : root.TryGetProperty("originCity", out var orig) ? orig.GetString() : "Colombo";
                     var dest = root.TryGetProperty("deliveryCity", out var dc) ? dc.GetString() : root.TryGetProperty("destinationCity", out var dst) ? dst.GetString() : "Kandy";
                     var hasReceipt = root.TryGetProperty("hasReceipt", out var hr) && hr.GetBoolean();
+                    var isPub = root.TryGetProperty("isPublic", out var ip) && ip.GetBoolean();
+                    var pId = root.TryGetProperty("parcelId", out var pi) ? pi.GetString() : null;
 
                     var steps = new List<MilestoneStep>();
                     if (root.TryGetProperty("milestones", out var ms) && ms.ValueKind == JsonValueKind.Array)
@@ -166,13 +176,13 @@ public sealed partial class AssistantOrchestrator(
                         dest ?? "Destination",
                         DateTimeOffset.UtcNow,
                         steps,
-                        hasReceipt);
+                        hasReceipt,
+                        pId,
+                        isPub);
                 }
             }
 
-            var reply = result.Success
-                ? $"### Parcel Tracking\n\n{result.TextSummary}"
-                : $"### Tracking Lookup\n\n{result.TextSummary}";
+            var reply = result.TextSummary;
 
             return new AssistantChatResponse(
                 Reply: reply,
@@ -205,7 +215,7 @@ public sealed partial class AssistantOrchestrator(
             ParcelListCardData? listCard = result.Data as ParcelListCardData;
 
             return new AssistantChatResponse(
-                Reply: $"### Your Deliveries\n\n{result.TextSummary}",
+                Reply: result.TextSummary,
                 Mode: "mcp-local-agent",
                 ToolCalls: toolCalls,
                 Cards: new AssistantCards(ParcelList: listCard),
@@ -234,7 +244,7 @@ public sealed partial class AssistantOrchestrator(
             ZonesCardData? zonesCard = result.Data as ZonesCardData;
 
             return new AssistantChatResponse(
-                Reply: $"### Service Coverage\n\n{result.TextSummary}",
+                Reply: result.TextSummary,
                 Mode: "mcp-local-agent",
                 ToolCalls: toolCalls,
                 Cards: new AssistantCards(Zones: zonesCard),
@@ -246,15 +256,16 @@ public sealed partial class AssistantOrchestrator(
                 ]);
         }
 
-        // 5. Default Greeting & Capabilities
+        // 5. General Greeting vs Off-Topic Handling
+        var lower = message.ToLowerInvariant();
+        var isGreeting = string.IsNullOrWhiteSpace(message) || Regex.IsMatch(lower, @"\b(hi|hello|hey|good (morning|afternoon|evening)|greetings|start|help)\b");
+
+        var replyText = isGreeting
+            ? "Hello! I am your SwiftDrop Delivery Assistant. I can help you track parcels, calculate shipping rates, and check service zones across Sri Lanka. How can I help you today?"
+            : "I'm the SwiftDrop Delivery Assistant, so I can only help with parcel tracking, shipping rate estimates, and delivery coverage across Sri Lanka. Let me know if you'd like to track a parcel or calculate delivery fees!";
+
         return new AssistantChatResponse(
-            Reply: "Hello! I am your **SwiftDrop AI Delivery Assistant**, powered by backend **Model Context Protocol (MCP)** tools.\n\n" +
-                   "Here are a few things I can assist you with:\n\n" +
-                   "- 📦 **Track a Delivery**: Ask *\"Where is my parcel?\"* or *\"Track SD-2026-0001\"* for real-time status and milestone progress.\n" +
-                   "- 💰 **Estimate Fees**: Ask *\"How much to send 2 kg to Kandy?\"* for instant, versioned price quotes.\n" +
-                   "- 📋 **View Deliveries**: Ask *\"List my active deliveries\"* to see your shipments.\n" +
-                   "- 🗺️ **Coverage & Zones**: Ask *\"What delivery zones do you cover?\"* to check our active delivery regions.\n\n" +
-                   "How can I help you today?",
+            Reply: replyText,
             Mode: "mcp-local-agent",
             ToolCalls: Array.Empty<AssistantToolCallTrace>(),
             Cards: null,
@@ -370,7 +381,7 @@ public sealed partial class AssistantOrchestrator(
 
     private static bool IsTrackingIntent(string text, out TrackParcelInput args)
     {
-        var trackingMatch = Regex.Match(text, @"(SD-\d{4}-\d+|[A-Z0-9]{4,10}-\d{4,})", RegexOptions.IgnoreCase);
+        var trackingMatch = Regex.Match(text, @"\b((?:TRK|SD)-[A-Za-z0-9-]+)\b", RegexOptions.IgnoreCase);
         if (trackingMatch.Success)
         {
             args = new TrackParcelInput(TrackingNumber: trackingMatch.Groups[1].Value.ToUpperInvariant());
@@ -378,7 +389,7 @@ public sealed partial class AssistantOrchestrator(
         }
 
         var lower = text.ToLowerInvariant();
-        if (Regex.IsMatch(lower, @"\b(where is my parcel|track|status of|where is delivery|track parcel)\b"))
+        if (Regex.IsMatch(lower, @"\b(where is my parcel|track|status of|where is delivery|track parcel|when is my delivery going to come)\b"))
         {
             args = new TrackParcelInput();
             return true;
@@ -410,98 +421,126 @@ public sealed partial class AssistantOrchestrator(
     private static readonly HttpClient GeminiClient = new() { Timeout = TimeSpan.FromSeconds(15) };
 
     private async Task<AssistantChatResponse?> ProcessWithGeminiAsync(
-        string message,
+        AssistantChatRequest request,
         string apiKey,
         CancellationToken cancellationToken)
     {
         var model = configuration["GEMINI_MODEL"] ?? "gemini-2.5-flash";
         var endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
 
-        var requestBody = new
+        var contentsList = new List<object>();
+        if (request.History != null)
         {
-            contents = new object[]
+            foreach (var h in request.History)
             {
-                new
+                if (!string.IsNullOrWhiteSpace(h.Content))
                 {
-                    role = "user",
-                    parts = new object[]
+                    var role = h.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) || h.Role.Equals("model", StringComparison.OrdinalIgnoreCase)
+                        ? "model"
+                        : "user";
+                    contentsList.Add(new
                     {
-                        new { text = message }
-                    }
+                        role = role,
+                        parts = new object[] { new { text = h.Content } }
+                    });
                 }
-            },
-            system_instruction = new
+            }
+        }
+
+        contentsList.Add(new
+        {
+            role = "user",
+            parts = new object[] { new { text = request.Message } }
+        });
+
+        var systemInstruction = new
+        {
+            parts = new object[]
             {
-                parts = new object[]
-                {
-                    new { text = "You are the SwiftDrop AI Delivery Assistant, helping users in Sri Lanka with parcel tracking, delivery rate quotes, and service zones. Always call the provided tools when real parcel status or fee calculations are needed. Never invent tracking milestones or prices without calling tools. Never execute write operations or impersonate admins. Format currency as LKR." }
-                }
-            },
-            tools = new object[]
+                new { text = "You are the SwiftDrop AI Delivery Assistant, helping users in Sri Lanka with parcel tracking, delivery rate quotes, and service zones. Always call the provided tools when real parcel status or fee calculations are needed. Never invent tracking milestones or prices without calling tools. Never execute write operations or impersonate admins. Format currency as LKR. Keep answers concise and friendly without raw markdown headers." }
+            }
+        };
+
+        var toolsDeclaration = new object[]
+        {
+            new
             {
-                new
+                function_declarations = new object[]
                 {
-                    function_declarations = new object[]
+                    new
                     {
-                        new
+                        name = AssistantToolNames.EstimateDeliveryFee,
+                        description = "Estimates delivery fee based on package weight in kg, pickup city, and delivery city in Sri Lanka.",
+                        parameters = new
                         {
-                            name = AssistantToolNames.EstimateDeliveryFee,
-                            description = "Estimates delivery fee based on package weight in kg, pickup city, and delivery city in Sri Lanka.",
-                            parameters = new
+                            type = "OBJECT",
+                            properties = new Dictionary<string, object>
                             {
-                                type = "OBJECT",
-                                properties = new Dictionary<string, object>
-                                {
-                                    ["weightKg"] = new { type = "NUMBER", description = "Weight in kilograms (e.g. 2.0)" },
-                                    ["pickupCity"] = new { type = "STRING", description = "Origin city in Sri Lanka (default Colombo)" },
-                                    ["deliveryCity"] = new { type = "STRING", description = "Destination city in Sri Lanka (e.g. Kandy, Galle, Jaffna)" },
-                                    ["size"] = new { type = "STRING", @enum = new[] { "Small", "Medium", "Large", "ExtraLarge" }, description = "Package size tier" }
-                                },
-                                required = new[] { "weightKg" }
-                            }
-                        },
-                        new
+                                ["weightKg"] = new { type = "NUMBER", description = "Weight in kilograms (e.g. 2.0)" },
+                                ["pickupCity"] = new { type = "STRING", description = "Origin city in Sri Lanka (default Colombo)" },
+                                ["deliveryCity"] = new { type = "STRING", description = "Destination city in Sri Lanka (e.g. Kandy, Galle, Jaffna)" },
+                                ["size"] = new { type = "STRING", @enum = new[] { "Small", "Medium", "Large", "ExtraLarge" }, description = "Package size tier" }
+                            },
+                            required = new[] { "weightKg" }
+                        }
+                    },
+                    new
+                    {
+                        name = AssistantToolNames.TrackParcel,
+                        description = "Tracks parcel delivery status, location, and milestone timeline by tracking number (e.g. TRK-..., SD-...).",
+                        parameters = new
                         {
-                            name = AssistantToolNames.TrackParcel,
-                            description = "Tracks parcel delivery status, location, and milestone timeline by tracking number (e.g. SD-...).",
-                            parameters = new
+                            type = "OBJECT",
+                            properties = new Dictionary<string, object>
                             {
-                                type = "OBJECT",
-                                properties = new Dictionary<string, object>
-                                {
-                                    ["trackingNumber"] = new { type = "STRING", description = "Tracking number" }
-                                }
+                                ["trackingNumber"] = new { type = "STRING", description = "Tracking number" }
                             }
-                        },
-                        new
+                        }
+                    },
+                    new
+                    {
+                        name = AssistantToolNames.ListMyParcels,
+                        description = "Lists active and recent parcels for the authenticated customer.",
+                        parameters = new
                         {
-                            name = AssistantToolNames.ListMyParcels,
-                            description = "Lists active and recent parcels for the authenticated customer.",
-                            parameters = new
+                            type = "OBJECT",
+                            properties = new Dictionary<string, object>
                             {
-                                type = "OBJECT",
-                                properties = new Dictionary<string, object>
-                                {
-                                    ["limit"] = new { type = "INTEGER", description = "Max parcels to return (1-10)" }
-                                }
+                                ["limit"] = new { type = "INTEGER", description = "Max parcels to return (1-10)" }
                             }
-                        },
-                        new
+                        }
+                    },
+                    new
+                    {
+                        name = AssistantToolNames.ListServiceZones,
+                        description = "Lists active bookable delivery zones, supported cities, and postal codes in Sri Lanka.",
+                        parameters = new
                         {
-                            name = AssistantToolNames.ListServiceZones,
-                            description = "Lists active bookable delivery zones, supported cities, and postal codes in Sri Lanka.",
-                            parameters = new
-                            {
-                                type = "OBJECT",
-                                properties = new Dictionary<string, object>()
-                            }
+                            type = "OBJECT",
+                            properties = new Dictionary<string, object>()
                         }
                     }
                 }
             }
         };
 
-        var response = await GeminiClient.PostAsJsonAsync(endpoint, requestBody, JsonOptions, cancellationToken);
+        var requestBody = new
+        {
+            contents = contentsList,
+            system_instruction = systemInstruction,
+            tools = toolsDeclaration
+        };
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await GeminiClient.PostAsJsonAsync(endpoint, requestBody, JsonOptions, cancellationToken);
+        }
+        catch
+        {
+            return null;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             return null;
@@ -533,7 +572,9 @@ public sealed partial class AssistantOrchestrator(
             else if (part.TryGetProperty("functionCall", out var fc))
             {
                 var toolName = fc.GetProperty("name").GetString() ?? "";
-                var args = fc.TryGetProperty("args", out var a) ? a : JsonSerializer.SerializeToElement(new { });
+                var args = fc.TryGetProperty("args", out var a) && a.ValueKind == JsonValueKind.Object
+                    ? a
+                    : JsonSerializer.SerializeToElement(new { });
 
                 var sw = Stopwatch.StartNew();
                 var result = await toolExecutor.ExecuteAsync(toolName, args, cancellationToken);
@@ -552,11 +593,104 @@ public sealed partial class AssistantOrchestrator(
                     else if (result.Data is TrackingCardData tc) cards = cards with { Tracking = tc };
                     else if (result.Data is ParcelListCardData plc) cards = cards with { ParcelList = plc };
                     else if (result.Data is ZonesCardData zc) cards = cards with { Zones = zc };
+                    else
+                    {
+                        try
+                        {
+                            var json = JsonSerializer.Serialize(result.Data, JsonOptions);
+                            var d = JsonDocument.Parse(json);
+                            if (d.RootElement.TryGetProperty("trackingNumber", out var tnProp))
+                            {
+                                var tn = tnProp.GetString() ?? "";
+                                var st = d.RootElement.TryGetProperty("status", out var sp) ? sp.GetString() ?? "" : "";
+                                var orig = d.RootElement.TryGetProperty("pickupCity", out var oc) ? oc.GetString() : d.RootElement.TryGetProperty("originCity", out var origC) ? origC.GetString() : "Colombo";
+                                var dest = d.RootElement.TryGetProperty("deliveryCity", out var dc) ? dc.GetString() : d.RootElement.TryGetProperty("destinationCity", out var dstC) ? dstC.GetString() : "Kandy";
+                                var hr = d.RootElement.TryGetProperty("hasReceipt", out var hrP) && hrP.GetBoolean();
+                                var isPub = d.RootElement.TryGetProperty("isPublic", out var ipP) && ipP.GetBoolean();
+                                var pId = d.RootElement.TryGetProperty("parcelId", out var piP) ? piP.GetString() : null;
+
+                                var steps = new List<MilestoneStep>();
+                                if (d.RootElement.TryGetProperty("milestones", out var ms) && ms.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var m in ms.EnumerateArray())
+                                    {
+                                        var sName = m.GetProperty("status").GetString() ?? "";
+                                        var label = m.GetProperty("label").GetString() ?? "";
+                                        var completed = m.GetProperty("completed").GetBoolean();
+                                        var current = m.GetProperty("current").GetBoolean();
+                                        DateTimeOffset? ts = m.TryGetProperty("timestamp", out var tProp) && tProp.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(tProp.GetString(), out var parsedTs) ? parsedTs : null;
+                                        steps.Add(new MilestoneStep(sName, label, ts, completed, current));
+                                    }
+                                }
+
+                                cards = cards with
+                                {
+                                    Tracking = new TrackingCardData(tn, st, orig ?? "Origin", dest ?? "Destination", DateTimeOffset.UtcNow, steps, hr, pId, isPub)
+                                };
+                            }
+                        }
+                        catch { }
+                    }
                 }
 
-                if (string.IsNullOrWhiteSpace(replyText))
+                // Default reply text to result summary
+                replyText = result.TextSummary;
+
+                // Attempt multi-turn synthesis with Gemini
+                try
                 {
-                    replyText = result.TextSummary;
+                    var functionResultData = result.Data ?? new { summary = result.TextSummary };
+                    var followUpContents = new List<object>(contentsList)
+                    {
+                        new
+                        {
+                            role = "model",
+                            parts = new object[] { fc }
+                        },
+                        new
+                        {
+                            role = "function",
+                            parts = new object[]
+                            {
+                                new
+                                {
+                                    functionResponse = new
+                                    {
+                                        name = toolName,
+                                        response = new { result = functionResultData }
+                                    }
+                                }
+                            }
+                        }
+                    };
+
+                    var secondRequestBody = new
+                    {
+                        contents = followUpContents,
+                        system_instruction = systemInstruction
+                    };
+
+                    var secondResponse = await GeminiClient.PostAsJsonAsync(endpoint, secondRequestBody, JsonOptions, cancellationToken);
+                    if (secondResponse.IsSuccessStatusCode)
+                    {
+                        using var secondDoc = await JsonDocument.ParseAsync(await secondResponse.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+                        if (secondDoc.RootElement.TryGetProperty("candidates", out var sc2) && sc2.GetArrayLength() > 0 &&
+                            sc2[0].TryGetProperty("content", out var sContent) && sContent.TryGetProperty("parts", out var sParts))
+                        {
+                            var synthesized = string.Join("\n", sParts.EnumerateArray()
+                                .Where(p => p.TryGetProperty("text", out _))
+                                .Select(p => p.GetProperty("text").GetString()));
+
+                            if (!string.IsNullOrWhiteSpace(synthesized))
+                            {
+                                replyText = synthesized.Trim();
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Fail-safe: Keep result.TextSummary
                 }
             }
         }
