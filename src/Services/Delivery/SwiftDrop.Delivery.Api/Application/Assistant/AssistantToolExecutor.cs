@@ -299,8 +299,8 @@ public sealed class AssistantToolExecutor(
                 "unsupported_zone");
         }
 
-        var pickupCity = !string.IsNullOrWhiteSpace(input.PickupCity) ? input.PickupCity.Trim() : pickupZone.Name;
-        var deliveryCity = !string.IsNullOrWhiteSpace(input.DeliveryCity) ? input.DeliveryCity.Trim() : deliveryZone.Name;
+        var pickupCity = pickupZone.Name;
+        var deliveryCity = deliveryZone.Name;
 
         // If authenticated Customer, calculate and persist an owner-bound quote via QuoteEstimator
         if (currentCustomer.IsAuthenticated && currentCustomer.IsCustomer)

@@ -307,7 +307,7 @@ public sealed partial class AssistantOrchestrator(
         out bool needsPickupCity)
     {
         var lower = text.ToLowerInvariant();
-        var hasPricingKeyword = Regex.IsMatch(lower, @"\b(how much|cost|price|fee|rate|quote|estimate|send.*to|send.*kg|how about|what about|parcel)\b");
+        var hasPricingKeyword = Regex.IsMatch(lower, @"\b(how much|cost|price|fee|rate|quote|estimate|send.*to|send.*kg|how about|what about)\b");
         var hasRoute = Regex.IsMatch(lower, @"\bfrom\s+[a-z]+\s+to\s+[a-z]+\b");
 
         // Check if there is existing fee/quote discussion in conversation history

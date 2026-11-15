@@ -103,7 +103,7 @@ public sealed class AssistantEndpointsTests
         };
 
         // Turn 2: Follow-up query "How about from Kandy to Jafna"
-        var request = new AssistantChatRequest("How about from Kandy to Jafna", history);
+        var request = new AssistantChatRequest("How about from Kandy to Jafna", History: history);
         var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -132,7 +132,7 @@ public sealed class AssistantEndpointsTests
         };
 
         // Turn 2: User only changes destination: "How about to Galle?"
-        var request = new AssistantChatRequest("How about to Galle?", history);
+        var request = new AssistantChatRequest("How about to Galle?", History: history);
         var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -160,7 +160,7 @@ public sealed class AssistantEndpointsTests
         };
 
         // Turn 2: User changes weight and size only: "for a parcel of 25kg of size medium"
-        var request = new AssistantChatRequest("for a parcel of 25kg of size medium", history);
+        var request = new AssistantChatRequest("for a parcel of 25kg of size medium", History: history);
         var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
