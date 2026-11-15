@@ -195,10 +195,12 @@ warnings/errors and all **2,127** solution tests pass, none skipped: Delivery
 disposable PostgreSQL 18.6 with external database fallbacks unset and .NET SDK
 10.0.301. `DOTNET_USE_POLLING_FILE_WATCHER=1` was scoped to the check process after
 the initial baseline hit the host's inotify-instance limit in Merchant test hosts.
-Foundation's 13-project boundary/cycle audit passes; its real startup probes remain
-pending because the existing development stack occupies the fixed listeners.
-The canonical infra runner also built all six current application images; this
-does not establish startup, database readiness or live workflow acceptance.
+After the user authorized a coordinated runtime switch, the full foundation
+script passed at `9e5a2ba`: 13-project reference/cycle audit, five real host starts,
+Gateway forwarding, internal-route isolation and fail-closed read/write probes.
+The script's last private-listener output still says no gRPC methods are
+implemented; that historical label establishes TCP binding only. The newer
+Merchant RPC exists and remains outside this Dispatcher acceptance scope.
 
 The implementation preserves the proposed design's service-owned transactions,
 expectedVersion/current-ownership guards and outbox boundary. Contract-owner
@@ -217,9 +219,23 @@ canonical reason. Keep races/fault injection in disposable fixtures.
 
 A fresh read-only preflight on 15 November found Identity 5/5, Delivery 11/11 and
 Merchant 7/7 migrations applied, no pending migrations, and nine active/on-duty
-Courier profiles with zone memberships. No shared data/schema or account changes
-were made during this P6 work. The earlier rollout notes above describe their
-original milestones. A canonical startup still executes migration tasks and
-requires task-specific authorization. Current-revision Docker startup and real
-user-assisted whole-workflow acceptance remain pending; health and fixture
-results do not satisfy them. Missing other-role workflows are owner dependencies.
+Courier profiles with zone memberships. The user then authorized canonical startup
+and restoration. With backend `9e5a2ba`, frontend `6b33c39` and infra `785f0dc`,
+`run.sh up --mode docker --build` passed. All seven expected containers used the
+expected images; the six configured container health checks were healthy. Web
+deep routes, Identity bootstrap and internal trusted JWKS returned 200. Anonymous
+queue/workload/summary/options reads and assignment/status/proof writes returned
+401. These anonymous refusal probes performed no authorized parcel operation.
+
+Non-watch host mode was restored through the canonical runner; all six service
+health endpoints, the workload deep page and CSRF bootstrap returned 200, and
+anonymous summary returned 401. Read-only migration histories matched before
+Docker, during Docker and after host restoration: Identity 5/5, Delivery 11/11,
+Merchant 7/7, with no pending versions. No schema reset/downgrade, account
+provisioning or shared test-parcel mutation was performed. Earlier rollout notes
+above describe their original milestones.
+
+The user explicitly deferred real user-assisted whole-workflow acceptance. P6
+therefore remains pending that two-parcel run; startup/health, anonymous refusal
+and fixture results do not establish real signed-in workflow acceptance. Missing
+other-role workflows remain owner dependencies. No publication was performed.
