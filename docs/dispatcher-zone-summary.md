@@ -65,11 +65,28 @@ private disposable fixture with external fallback unset.
 Shared-environment acceptance must compare authorized API/page output against a
 known persisted dataset. Historical development-data and missing-schema reports
 do not establish current counts or current audit/schema readiness. Keep real
-authentication and auditing enabled. Shared migrations and canonical startup
-remain deferred under the workspace's existing instruction; do not run `up` as
-an incidental check because it applies migrations.
+authentication and auditing enabled. Canonical startup applies pending migrations
+and requires authorization for the target environment.
 
-## Local verification — 14 November 2026
+## Shared acceptance — 15 November 2026
+
+Canonical Docker build/startup passed at backend `706cfd1` and frontend
+`3930c1c`: all seven containers used the expected images, six defined health
+checks passed, web/gateway/bootstrap returned 200 and anonymous summary reads
+returned 401. Identity 5/5, Delivery 10/10 and Merchant 6/6 migration histories
+were unchanged before/after startup, with no pending versions. No acceptance
+accounts, roles or parcels were created.
+
+Following manual sign-in, user-saved API bodies matched independent read-only
+SQL for every zone ID/name, total and status count: 25 zones / 268 parcels for
+all booking dates, and 25 zones / 33 parcels for 14 November UTC (`from` 14
+November inclusive, `to` 15 November exclusive). The user confirmed rendered
+all-date sample totals after Clear dates and Refresh without errors. Browser
+actions are user-reported manual evidence; response/SQL comparisons were checked
+independently. This evidence applies to the tested revisions and does not
+establish the whole booking/assignment/Courier workflow or a deployment.
+
+## Historical local verification — 14 November 2026
 
 Tested the uncommitted feature patch based on
 `11bef3f1982b0262280eb3f8bc11b949771e1966` on Linux, .NET SDK 10.0.301 and private
