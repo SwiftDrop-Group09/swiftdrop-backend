@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Domain;
@@ -447,38 +448,110 @@ public sealed class AssistantToolExecutor(
             if (match is not null) return match;
         }
 
-        if (!string.IsNullOrWhiteSpace(cityName))
+        if (string.IsNullOrWhiteSpace(cityName))
         {
-            var city = cityName.Trim();
-            var exact = zones.FirstOrDefault(z => z.Name.Equals(city, StringComparison.OrdinalIgnoreCase));
-            if (exact is not null) return exact;
+            return null;
+        }
 
-            var partial = zones.FirstOrDefault(z =>
-                z.Name.Contains(city, StringComparison.OrdinalIgnoreCase) ||
-                city.Contains(z.Name, StringComparison.OrdinalIgnoreCase));
-            if (partial is not null) return partial;
+        var rawCity = cityName.Trim();
 
-            // Province / region aliases
-            if (city.Equals("Colombo", StringComparison.OrdinalIgnoreCase) || city.Equals("Negombo", StringComparison.OrdinalIgnoreCase) || city.Equals("Gampaha", StringComparison.OrdinalIgnoreCase))
+        // 1. Exact match (case-insensitive)
+        var exact = zones.FirstOrDefault(z => z.Name.Equals(rawCity, StringComparison.OrdinalIgnoreCase));
+        if (exact is not null) return exact;
+
+        // 2. Substring match
+        var partial = zones.FirstOrDefault(z =>
+            z.Name.Contains(rawCity, StringComparison.OrdinalIgnoreCase) ||
+            rawCity.Contains(z.Name, StringComparison.OrdinalIgnoreCase));
+        if (partial is not null) return partial;
+
+        // 3. Normalized alphanumeric match
+        var normInput = NormalizeCityName(rawCity);
+        var normMatch = zones.FirstOrDefault(z => NormalizeCityName(z.Name).Equals(normInput, StringComparison.OrdinalIgnoreCase));
+        if (normMatch is not null) return normMatch;
+
+        // 4. Common Sri Lankan city aliases & province fallbacks
+        var aliasTarget = ResolveCommonAlias(normInput);
+        if (aliasTarget != null)
+        {
+            var aliasZone = zones.FirstOrDefault(z => z.Name.Equals(aliasTarget, StringComparison.OrdinalIgnoreCase)
+                || z.Name.Contains(aliasTarget, StringComparison.OrdinalIgnoreCase));
+            if (aliasZone is not null) return aliasZone;
+        }
+
+        // 5. Fuzzy matching with Levenshtein distance against active zones
+        BookableZone? closestZone = null;
+        var minDistance = int.MaxValue;
+
+        foreach (var z in zones)
+        {
+            var normZone = NormalizeCityName(z.Name);
+            var dist = LevenshteinDistance(normInput, normZone);
+            var maxAllowedDist = normZone.Length switch
             {
-                var western = zones.FirstOrDefault(z => z.Name.Contains("Western", StringComparison.OrdinalIgnoreCase) || z.Name.Contains("Colombo", StringComparison.OrdinalIgnoreCase));
-                if (western is not null) return western;
-            }
+                <= 4 => 1,
+                <= 7 => 2, // e.g. "jafna" (5) vs "jaffna" (6) -> dist 1 <= 2
+                _ => 3    // e.g. "rathnapura" (11) vs "ratnapura" (10) -> dist 1 <= 3
+            };
 
-            if (city.Equals("Kandy", StringComparison.OrdinalIgnoreCase) || city.Equals("Matale", StringComparison.OrdinalIgnoreCase))
+            if (dist <= maxAllowedDist && dist < minDistance)
             {
-                var central = zones.FirstOrDefault(z => z.Name.Contains("Central", StringComparison.OrdinalIgnoreCase) || z.Name.Contains("Kandy", StringComparison.OrdinalIgnoreCase));
-                if (central is not null) return central;
-            }
-
-            if (city.Equals("Galle", StringComparison.OrdinalIgnoreCase) || city.Equals("Matara", StringComparison.OrdinalIgnoreCase))
-            {
-                var southern = zones.FirstOrDefault(z => z.Name.Contains("Southern", StringComparison.OrdinalIgnoreCase) || z.Name.Contains("Galle", StringComparison.OrdinalIgnoreCase));
-                if (southern is not null) return southern;
+                minDistance = dist;
+                closestZone = z;
             }
         }
 
-        return null;
+        return closestZone;
+    }
+
+    private static string NormalizeCityName(string text)
+    {
+        return Regex.Replace(text.ToLowerInvariant(), @"[^a-z0-9]", "");
+    }
+
+    private static string? ResolveCommonAlias(string norm)
+    {
+        return norm switch
+        {
+            "jafna" or "yaalpnam" or "jaffna" => "Jaffna",
+            "colambo" or "kolombo" or "colombo" or "moratuwa" or "dehiwala" or "kotte" or "nugegoda" or "maharagama" => "Colombo",
+            "kandi" or "nuwara" or "kandy" => "Kandy",
+            "gale" or "galle" => "Galle",
+            "trinco" or "trincomale" or "trincomalee" => "Trincomalee",
+            "batti" or "batticoloa" or "batticaloa" => "Batticaloa",
+            "kurunagala" or "kurunagale" or "kurunegale" or "kurunegala" => "Kurunegala",
+            "rathnapura" or "ratnapure" or "ratnapura" => "Ratnapura",
+            "anuradapura" or "anuradhapure" or "anuradhapura" => "Anuradhapura",
+            "polonnaruwe" or "polonnaruwa" => "Polonnaruwa",
+            "matare" or "matara" => "Matara",
+            "nuwaraeliya" or "eliya" => "Nuwara Eliya",
+            "negombo" or "katunayake" or "kelaniya" or "jaela" or "gampaha" => "Gampaha",
+            _ => null
+        };
+    }
+
+    private static int LevenshteinDistance(string s, string t)
+    {
+        if (string.IsNullOrEmpty(s)) return t?.Length ?? 0;
+        if (string.IsNullOrEmpty(t)) return s.Length;
+
+        var d = new int[s.Length + 1, t.Length + 1];
+
+        for (var i = 0; i <= s.Length; i++) d[i, 0] = i;
+        for (var j = 0; j <= t.Length; j++) d[0, j] = j;
+
+        for (var i = 1; i <= s.Length; i++)
+        {
+            for (var j = 1; j <= t.Length; j++)
+            {
+                var cost = (s[i - 1] == t[j - 1]) ? 0 : 1;
+                d[i, j] = Math.Min(
+                    Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                    d[i - 1, j - 1] + cost);
+            }
+        }
+
+        return d[s.Length, t.Length];
     }
 
     private static IReadOnlyList<MilestoneStep> BuildMilestones(

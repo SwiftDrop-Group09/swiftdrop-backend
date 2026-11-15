@@ -309,23 +309,39 @@ public sealed partial class AssistantOrchestrator(
         out bool needsPickupCity)
     {
         var lower = text.ToLowerInvariant();
-        var hasPricingKeyword = Regex.IsMatch(lower, @"\b(how much|cost|price|fee|rate|quote|estimate|send.*to|send.*kg)\b");
+        var hasPricingKeyword = Regex.IsMatch(lower, @"\b(how much|cost|price|fee|rate|quote|estimate|send.*to|send.*kg|how about|what about)\b");
+        var hasRoute = Regex.IsMatch(lower, @"\bfrom\s+[a-z]+\s+to\s+[a-z]+\b");
+
+        // Check if there is existing fee/quote discussion in conversation history
+        var hasHistoryQuote = history != null && history.Any(h =>
+            h.Content.Contains("costs LKR", StringComparison.OrdinalIgnoreCase) ||
+            h.Content.Contains("quote is locked", StringComparison.OrdinalIgnoreCase) ||
+            h.Content.Contains("delivery fee", StringComparison.OrdinalIgnoreCase) ||
+            Regex.IsMatch(h.Content, @"\b(how much|shipping rate|calculate delivery fee)\b", RegexOptions.IgnoreCase));
 
         // Check if the user is replying with a pickup city after the assistant asked for one
         var lastAssistantAskedPickup = history != null && history.Count > 0 &&
             history.LastOrDefault(h => h.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) || h.Role.Equals("model", StringComparison.OrdinalIgnoreCase)) is { } lastAssistant &&
             (lastAssistant.Content.Contains("starting position", StringComparison.OrdinalIgnoreCase) || lastAssistant.Content.Contains("picked up from", StringComparison.OrdinalIgnoreCase));
 
-        if (!hasPricingKeyword && !lastAssistantAskedPickup)
+        // If history had a quote or fee inquiry, a follow-up mentioning a city ("to Jaffna", "from Kandy", etc.), "how about", "what about", or weight is a fee intent
+        var isFollowUpInquiry = hasHistoryQuote && (
+            lower.StartsWith("how about") ||
+            lower.StartsWith("what about") ||
+            lower.StartsWith("and ") ||
+            Regex.IsMatch(lower, @"\b(from|to)\s+[a-z]+\b") ||
+            Regex.IsMatch(lower, @"\b\d+(\.\d+)?\s*(kg|kilo)\b"));
+
+        if (!hasPricingKeyword && !hasRoute && !lastAssistantAskedPickup && !isFollowUpInquiry)
         {
             args = new EstimateFeeInput();
             needsPickupCity = false;
             return false;
         }
 
-        // 1. Resolve weight
+        // 1. Resolve weight (check current message first, then inspect history)
         decimal weight = 2.0m;
-        var weightMatch = Regex.Match(lower, @"(\d+(\.\d+)?)\s*(kg|kilo|kilogram)?");
+        var weightMatch = Regex.Match(lower, @"\b(\d+(?:\.\d+)?)\s*(?:kg|kilo(?:gram)?s?)\b");
         if (weightMatch.Success && decimal.TryParse(weightMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var parsedWeight) && parsedWeight > 0)
         {
             weight = parsedWeight;
@@ -334,9 +350,8 @@ public sealed partial class AssistantOrchestrator(
         {
             for (var i = history.Count - 1; i >= 0; i--)
             {
-                if (!history[i].Role.Equals("user", StringComparison.OrdinalIgnoreCase)) continue;
                 var hLower = history[i].Content.ToLowerInvariant();
-                var hWeight = Regex.Match(hLower, @"(\d+(\.\d+)?)\s*(kg|kilo|kilogram)?");
+                var hWeight = Regex.Match(hLower, @"\b(\d+(?:\.\d+)?)\s*(?:kg|kilo(?:gram)?s?)\b");
                 if (hWeight.Success && decimal.TryParse(hWeight.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var prevW) && prevW > 0)
                 {
                     weight = prevW;
@@ -345,53 +360,7 @@ public sealed partial class AssistantOrchestrator(
             }
         }
 
-        // 2. Resolve delivery city (destination)
-        string? deliveryCity = null;
-        var toMatches = Regex.Matches(text, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
-        if (toMatches.Count > 0)
-        {
-            deliveryCity = toMatches[^1].Groups[1].Value;
-        }
-        else
-        {
-            var knownCities = new[] { "Kandy", "Colombo", "Galle", "Negombo", "Jaffna", "Kurunegala", "Matara", "Gampaha", "Moratuwa", "Batticaloa", "Trincomalee" };
-            foreach (var city in knownCities)
-            {
-                if (lower.Contains(city.ToLowerInvariant()))
-                {
-                    deliveryCity = city;
-                    break;
-                }
-            }
-        }
-
-        if (deliveryCity == null && history != null)
-        {
-            for (var i = history.Count - 1; i >= 0; i--)
-            {
-                if (!history[i].Role.Equals("user", StringComparison.OrdinalIgnoreCase)) continue;
-                var hText = history[i].Content;
-                var hTo = Regex.Matches(hText, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
-                if (hTo.Count > 0)
-                {
-                    deliveryCity = hTo[^1].Groups[1].Value;
-                    break;
-                }
-                var hLower = hText.ToLowerInvariant();
-                var knownCities = new[] { "Kandy", "Colombo", "Galle", "Negombo", "Jaffna", "Kurunegala", "Matara", "Gampaha", "Moratuwa" };
-                foreach (var city in knownCities)
-                {
-                    if (hLower.Contains(city.ToLowerInvariant()))
-                    {
-                        deliveryCity = city;
-                        break;
-                    }
-                }
-                if (deliveryCity != null) break;
-            }
-        }
-
-        // 3. Resolve pickup city (starting position)
+        // 2. Resolve pickup city (starting position)
         string? pickupCity = null;
         var fromMatch = Regex.Match(text, @"\bfrom\s+([A-Za-z]+)", RegexOptions.IgnoreCase);
         if (fromMatch.Success)
@@ -411,12 +380,84 @@ public sealed partial class AssistantOrchestrator(
                 }
             }
         }
+        else if (hasHistoryQuote && history != null)
+        {
+            // Inherit previous pickup city if user only changed destination (e.g. "How about to Galle?")
+            for (var i = history.Count - 1; i >= 0; i--)
+            {
+                var hText = history[i].Content;
+                var hFrom = Regex.Match(hText, @"\bfrom\s+([A-Za-z]+)", RegexOptions.IgnoreCase);
+                if (hFrom.Success)
+                {
+                    pickupCity = hFrom.Groups[1].Value;
+                    break;
+                }
+            }
+        }
+
+        // 3. Resolve delivery city (destination)
+        string? deliveryCity = null;
+        var toMatches = Regex.Matches(text, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
+        if (toMatches.Count > 0)
+        {
+            deliveryCity = toMatches[^1].Groups[1].Value;
+        }
+        else if (hasHistoryQuote && history != null)
+        {
+            // Inherit previous delivery city if user only changed pickup or weight (e.g. "What about from Galle?", "What about 5 kg?")
+            for (var i = history.Count - 1; i >= 0; i--)
+            {
+                var hText = history[i].Content;
+                var hTo = Regex.Matches(hText, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
+                if (hTo.Count > 0)
+                {
+                    deliveryCity = hTo[^1].Groups[1].Value;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            var knownCities = new[] { "Kandy", "Colombo", "Galle", "Negombo", "Jaffna", "Kurunegala", "Matara", "Gampaha", "Moratuwa", "Batticaloa", "Trincomalee" };
+            foreach (var city in knownCities)
+            {
+                if (lower.Contains(city.ToLowerInvariant()))
+                {
+                    deliveryCity = city;
+                    break;
+                }
+            }
+        }
+
+        if (deliveryCity == null && history != null)
+        {
+            for (var i = history.Count - 1; i >= 0; i--)
+            {
+                var hText = history[i].Content;
+                var hTo = Regex.Matches(hText, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
+                if (hTo.Count > 0)
+                {
+                    deliveryCity = hTo[^1].Groups[1].Value;
+                    break;
+                }
+            }
+        }
 
         // Extract size
         string? size = null;
         if (lower.Contains("small")) size = "Small";
         else if (lower.Contains("medium")) size = "Medium";
         else if (lower.Contains("large")) size = "Large";
+        else if (history != null)
+        {
+            for (var i = history.Count - 1; i >= 0; i--)
+            {
+                var hLower = history[i].Content.ToLowerInvariant();
+                if (hLower.Contains("small")) { size = "Small"; break; }
+                if (hLower.Contains("medium")) { size = "Medium"; break; }
+                if (hLower.Contains("large")) { size = "Large"; break; }
+            }
+        }
 
         deliveryCity ??= "Kandy";
 
@@ -520,9 +561,11 @@ public sealed partial class AssistantOrchestrator(
             {
                 new { text = "You are the SwiftDrop AI Delivery Assistant, helping users in Sri Lanka with parcel tracking, delivery rate quotes, and service zones. " +
                              "CRITICAL RULES: " +
-                             "1. Delivery Fee Inquiries: When a user asks for shipping fees or quotes without providing BOTH starting position (pickup city) and destination (delivery city), ALWAYS ask them for their starting position (pickup city) first before calculating, because destination alone is not enough to calculate shipping rates. Never assume Colombo or any default origin. Once both starting position (pickup city) and destination (delivery city) are known, ALWAYS invoke the estimate_delivery_fee tool to calculate the real price using SwiftDrop's configured rates in the application. Never invent prices or guess rates. " +
-                             "2. Tracking Inquiries: If an authenticated customer asks where their parcel is without giving a tracking number, call list_my_parcels. " +
-                             "3. Security: Never execute write operations or impersonate admins. Format currency as LKR. Keep answers concise and friendly without raw markdown headers." }
+                             "1. Conversational Context & Memory: Maintain conversation context across turns. When a user asks a follow-up query like 'How about from Kandy to Jaffna', 'What about to Galle', or 'How much for 5kg', inherit any missing details (such as weight, pickup city, or destination) from the previous conversation turns rather than asking again or treating it as unrelated. " +
+                             "2. Typo Resilience: Recognize common typos and phonetic variants of Sri Lankan city names (e.g. 'jafna' -> Jaffna, 'colambo' -> Colombo, 'kandi' -> Kandy, 'rathnapura' -> Ratnapura, 'trinco' -> Trincomalee). " +
+                             "3. Delivery Fee Inquiries: When a user asks for shipping fees or quotes without providing BOTH starting position (pickup city) and destination (delivery city), ask them for their starting position (pickup city) first before calculating, because destination alone is not enough to calculate shipping rates. Never assume Colombo or any default origin if not stated or inherited. Once both starting position (pickup city) and destination (delivery city) are known, ALWAYS invoke the estimate_delivery_fee tool to calculate the real price using SwiftDrop's configured rates in the application. Never invent prices or guess rates. " +
+                             "4. Tracking Inquiries: If an authenticated customer asks where their parcel is without giving a tracking number, call list_my_parcels. " +
+                             "5. Security: Never execute write operations or impersonate admins. Format currency as LKR. Keep answers concise and friendly without raw markdown headers." }
             }
         };
 

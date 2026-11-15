@@ -19,9 +19,13 @@ public sealed class AssistantEndpointsTests
     private static readonly Guid CustomerId = Guid.NewGuid();
     private static readonly Guid ZoneColomboId = Guid.NewGuid();
     private static readonly Guid ZoneKandyId = Guid.NewGuid();
+    private static readonly Guid ZoneJaffnaId = Guid.NewGuid();
+    private static readonly Guid ZoneGalleId = Guid.NewGuid();
 
     private static readonly BookableZone ZoneColombo = new(ZoneColomboId, "Colombo");
     private static readonly BookableZone ZoneKandy = new(ZoneKandyId, "Kandy");
+    private static readonly BookableZone ZoneJaffna = new(ZoneJaffnaId, "Jaffna");
+    private static readonly BookableZone ZoneGalle = new(ZoneGalleId, "Galle");
 
     [Fact]
     public async Task ChatAssistant_RefusesPromptInjectionAndAdminEscalation_DeterministicGuardrail()
@@ -64,6 +68,82 @@ public sealed class AssistantEndpointsTests
         Assert.Contains("Kandy", chatResult.Cards.Quote.DeliveryCity);
         Assert.Contains("/customer/book", chatResult.Cards.Quote.BookingDeepLink);
     }
+
+    [Fact]
+    public async Task ChatAssistant_ResolvesCityTypo_JafnaToJaffna()
+    {
+        using var factory = CreateFactory(QuoteApiFactory.Customer(CustomerId));
+        using var client = factory.CreateClient();
+
+        // "Jafna" has a typo (one 'f') and should resolve to Jaffna
+        var request = new AssistantChatRequest("How much to send 2 kg from Colombo to Jafna?");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Single(chatResult!.ToolCalls);
+        Assert.Equal("success", chatResult.ToolCalls[0].Status);
+        Assert.NotNull(chatResult.Cards?.Quote);
+        Assert.Contains("Colombo", chatResult.Cards!.Quote!.PickupCity);
+        Assert.Contains("Jaffna", chatResult.Cards.Quote.DeliveryCity, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_FollowUp_InheritsContextAndCalculatesFee()
+    {
+        using var factory = CreateFactory(QuoteApiFactory.Customer(CustomerId));
+        using var client = factory.CreateClient();
+
+        // Turn 1 history contains a quote for 2 kg Colombo to Kandy
+        var history = new List<ChatMessage>
+        {
+            new("user", "How much to send 2 kg from Colombo to Kandy?"),
+            new("assistant", "Sending a 2 kg (Small) parcel from Colombo to Kandy costs LKR 560.00. This quote is locked until 7:29 PM—you can proceed to book directly below.")
+        };
+
+        // Turn 2: Follow-up query "How about from Kandy to Jafna"
+        var request = new AssistantChatRequest("How about from Kandy to Jafna", history);
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Single(chatResult!.ToolCalls);
+        Assert.Equal(AssistantToolNames.EstimateDeliveryFee, chatResult.ToolCalls[0].ToolName);
+        Assert.Equal("success", chatResult.ToolCalls[0].Status);
+        Assert.NotNull(chatResult.Cards?.Quote);
+        Assert.Equal(2m, chatResult.Cards!.Quote!.WeightKg);
+        Assert.Contains("Kandy", chatResult.Cards.Quote.PickupCity);
+        Assert.Contains("Jaffna", chatResult.Cards.Quote.DeliveryCity, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_FollowUp_ChangesDestinationOnly_InheritsPickupAndWeight()
+    {
+        using var factory = CreateFactory(QuoteApiFactory.Customer(CustomerId));
+        using var client = factory.CreateClient();
+
+        // Turn 1 history contains quote from Colombo to Kandy
+        var history = new List<ChatMessage>
+        {
+            new("user", "How much to send 2 kg from Colombo to Kandy?"),
+            new("assistant", "Sending a 2 kg (Small) parcel from Colombo to Kandy costs LKR 560.00.")
+        };
+
+        // Turn 2: User only changes destination: "How about to Galle?"
+        var request = new AssistantChatRequest("How about to Galle?", history);
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Single(chatResult!.ToolCalls);
+        Assert.Equal("success", chatResult.ToolCalls[0].Status);
+        Assert.NotNull(chatResult.Cards?.Quote);
+        Assert.Equal(2m, chatResult.Cards!.Quote!.WeightKg);
+        Assert.Contains("Colombo", chatResult.Cards.Quote.PickupCity);
+        Assert.Contains("Galle", chatResult.Cards.Quote.DeliveryCity, StringComparison.OrdinalIgnoreCase);
 
     [Fact]
     public async Task ChatAssistant_AsksForStartingPosition_WhenOnlyDestinationGiven()
@@ -373,7 +453,7 @@ public sealed class AssistantEndpointsTests
         return new QuoteApiFactory(null, principal, replaceAuthentication: true, services =>
         {
             services.RemoveAll<IBookingZoneCatalog>();
-            services.AddSingleton<IBookingZoneCatalog>(new TestZoneCatalog([ZoneColombo, ZoneKandy]));
+            services.AddSingleton<IBookingZoneCatalog>(new TestZoneCatalog([ZoneColombo, ZoneKandy, ZoneJaffna, ZoneGalle]));
 
             services.RemoveAll<IQuoteStore>();
             services.AddSingleton<IQuoteStore>(new TestQuoteStore());
