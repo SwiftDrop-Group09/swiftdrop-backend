@@ -198,6 +198,11 @@ namespace SwiftDrop.Merchant.Api.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("external_order_id");
 
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("failure_reason");
+
                     b.Property<string>("IdempotencyKey")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -283,6 +288,8 @@ namespace SwiftDrop.Merchant.Api.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_inbox_jobs_created_has_parcel", "state <> 'Created' OR (parcel_id IS NOT NULL AND tracking_number IS NOT NULL AND parcel_status IS NOT NULL AND parcel_version IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_inbox_jobs_external_order_id", "btrim(external_order_id) <> ''");
+
+                            t.HasCheckConstraint("ck_inbox_jobs_failure_reason", "failure_reason IS NULL OR (parcel_status = 'Failed' AND failure_reason IN ('RecipientUnavailable','AddressUnreachable','Damaged','Other'))");
 
                             t.HasCheckConstraint("ck_inbox_jobs_fingerprint", "request_fingerprint ~ '^[0-9a-f]{64}$'");
 

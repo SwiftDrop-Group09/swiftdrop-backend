@@ -4,8 +4,10 @@ using SwiftDrop.Delivery.Api.Application.Quotes;
 namespace SwiftDrop.Delivery.Api.Application.DeliveryReads;
 
 public sealed record AssignmentQueryInput(string? Date = null, string? IncludeOverdue = null,
-    string? Page = null, string? PageSize = null, bool InvalidParameters = false);
-public sealed record AssignmentQuery(DateOnly Date, bool IncludeOverdue, int Page, int PageSize);
+    string? Page = null, string? PageSize = null, bool InvalidParameters = false,
+    string? Status = null, string? Search = null, string? OverdueOnly = null);
+public sealed record AssignmentQuery(DateOnly Date, bool IncludeOverdue, int Page, int PageSize,
+    Domain.ParcelStatus? Status = null, string? Search = null, bool OverdueOnly = false);
 public sealed record ParcelReadScope(Guid UserId, bool IsCourier, bool IsCustomer, bool IsOperations);
 public sealed record ReadPackageDetails(decimal WeightKg, string Size);
 

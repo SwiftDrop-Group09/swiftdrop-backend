@@ -106,7 +106,7 @@ public sealed class FoundationTests : IDisposable
     [Theory]
     [InlineData("CreateBooking")]
     [InlineData("GetBookingByExternalOrder")]
-    public async Task MerchantRpcPostsRemainUnimplementedDespiteCallerSuppliedCredentials(string method)
+    public async Task MerchantRpcRejectsHttp1DespiteCallerSuppliedCredentials(string method)
     {
         using var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Id", Guid.NewGuid().ToString("D"));
@@ -115,7 +115,7 @@ public sealed class FoundationTests : IDisposable
         using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/grpc+json");
         using var response = await client.PostAsync($"/swiftdrop.delivery.v1.DeliveryService/{method}", content);
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.UpgradeRequired, response.StatusCode);
     }
 
     public void Dispose() => _factory.Dispose();

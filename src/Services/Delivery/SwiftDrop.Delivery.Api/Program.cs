@@ -29,6 +29,9 @@ public partial class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddHealthChecks();
+        builder.Services.AddGrpc(options => options.MaxReceiveMessageSize = 16 * 1024);
+        builder.Services.AddScoped<MerchantDeliveryGrpcService>();
+        builder.Services.AddScoped<Func<DeliveryDbContext>>(services => () => services.GetRequiredService<DeliveryDbContext>());
         builder.Services.AddDeliveryPersistence(builder.Configuration);
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<ICurrentCustomer, ClaimsCurrentCustomer>();
@@ -44,6 +47,12 @@ public partial class Program
             new PostgresWorkloadReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddSingleton<IReceiptPdfRenderer, SkiaReceiptPdfRenderer>();
         builder.Services.AddScoped<CourierHistoryHandler>();
+        builder.Services.AddScoped<CourierHistoryDetailHandler>();
+        builder.Services.AddScoped<ICourierHistoryDetailStore>(services =>
+            new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<CourierSummaryHandler>();
+        builder.Services.AddScoped<ICourierSummaryStore>(services =>
+            new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<ICourierHistoryStore>(services =>
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<CourierStatusHandler>();
@@ -100,6 +109,7 @@ public partial class Program
         }
 
         var app = builder.Build();
+        app.MapGrpcService<MerchantDeliveryGrpcService>().AllowAnonymous();
 
         app.Use(async (context, next) =>
         {

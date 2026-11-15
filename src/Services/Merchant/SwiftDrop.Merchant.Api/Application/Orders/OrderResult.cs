@@ -28,5 +28,6 @@ internal static class OrderJobMapper
         job.TerminalAt,
         job.ErrorCode,
         job.LastRefreshedAt,
-        job.CreatedAt);
+        job.CreatedAt,
+        job.FailureReason);
 }

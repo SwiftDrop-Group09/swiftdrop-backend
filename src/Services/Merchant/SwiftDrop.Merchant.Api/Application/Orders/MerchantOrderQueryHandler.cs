@@ -25,13 +25,14 @@ public sealed class MerchantOrderQueryHandler(MerchantDbContext database, ICurre
             return OrderResult<OrderJobPage>.Fail(OrderFailure.InvalidInput, paging.Errors);
         }
 
-        var (page, pageSize, state) = paging.Value!;
+        var (page, pageSize, state, parcelStatus) = paging.Value!;
         var jobs = database.InboxJobs.AsNoTracking().Where(job => job.BusinessId == businessId);
         if (state is { } wanted)
         {
             jobs = jobs.Where(job => job.State == wanted);
         }
 
+        if (parcelStatus is not null) jobs = jobs.Where(job => job.ParcelStatus == parcelStatus);
         var totalCount = await jobs.CountAsync(cancellationToken);
 
         // Pages beyond the data (including absurdly large page numbers) are simply empty.

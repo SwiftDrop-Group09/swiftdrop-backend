@@ -25,8 +25,6 @@ public static class CourierTransitionPolicy
     public static void ValidateMetadata(ParcelStatus to, string? notes, CourierFailureReason? reason)
     {
         if (notes is { Length: > 500 }) throw new ArgumentOutOfRangeException(nameof(notes));
-        if (to is ParcelStatus.PickedUp or ParcelStatus.InTransit or ParcelStatus.OutForDelivery)
-            DomainGuard.Text(notes!, nameof(notes));
         if (to == ParcelStatus.Failed && (reason is null || !Enum.IsDefined(reason.Value)))
             throw new ArgumentException("A documented delivery failure reason is required.", nameof(reason));
         if (to != ParcelStatus.Failed && reason is not null)

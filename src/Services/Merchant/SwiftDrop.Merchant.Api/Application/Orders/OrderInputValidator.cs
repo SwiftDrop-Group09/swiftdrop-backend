@@ -94,7 +94,11 @@ public static class OrderInputValidator
             }
         }
 
-        return errors.Count > 0 ? new(null, errors) : new(new OrderPage(page, pageSize, state), errors);
+        if (query.InvalidParameters) errors["query"] = ["Supply only one value for each documented query parameter."];
+        if (query.ParcelStatus is not null && query.ParcelStatus is not
+            ("Created" or "Assigned" or "PickedUp" or "InTransit" or "OutForDelivery" or "Delivered" or "Failed" or "Cancelled"))
+            errors["parcelStatus"] = ["Use a supported parcel status."];
+        return errors.Count > 0 ? new(null, errors) : new(new OrderPage(page, pageSize, state, query.ParcelStatus), errors);
     }
 
     private static OrderAddress? Address(OrderAddressInput? address, string field, Dictionary<string, string[]> errors)

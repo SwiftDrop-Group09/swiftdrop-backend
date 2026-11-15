@@ -63,8 +63,6 @@ public sealed class CourierStatusAuthenticationTests
         yield return ["{\"status\":\"PickedUp\",\"expectedVersion\":\"2\",\"notes\":\"note\"}"];
         yield return ["{\"status\":\"PickedUp\",\"expectedVersion\":2.5,\"notes\":\"note\"}"];
         yield return ["{\"status\":\"PickedUp\",\"expectedVersion\":0,\"notes\":\"note\"}"];
-        yield return ["{\"status\":\"PickedUp\",\"expectedVersion\":2}"];
-        yield return ["{\"status\":\"PickedUp\",\"expectedVersion\":2,\"notes\":\" \"}"];
         yield return [JsonSerializer.Serialize(new CourierStatusInput("PickedUp", 2, new string('x', 501)))];
         yield return ["{\"status\":\"Failed\",\"expectedVersion\":2}"];
         yield return ["{\"status\":\"Failed\",\"expectedVersion\":2,\"failureReason\":\"Unknown\"}"];

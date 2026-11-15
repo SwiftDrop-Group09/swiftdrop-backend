@@ -28,6 +28,7 @@ internal sealed class InboxJobEntityConfiguration : IEntityTypeConfiguration<Inb
             table.HasCheckConstraint("ck_inbox_jobs_attempts", "attempts >= 0");
             table.HasCheckConstraint("ck_inbox_jobs_total", "total IS NULL OR total >= 0");
             table.HasCheckConstraint("ck_inbox_jobs_parcel_version", "parcel_version IS NULL OR parcel_version >= 1");
+            table.HasCheckConstraint("ck_inbox_jobs_failure_reason", "failure_reason IS NULL OR (parcel_status = 'Failed' AND failure_reason IN ('RecipientUnavailable','AddressUnreachable','Damaged','Other'))");
 
             // State invariants: unsettled jobs must be schedulable, created jobs must carry their parcel.
             table.HasCheckConstraint(
@@ -60,6 +61,7 @@ internal sealed class InboxJobEntityConfiguration : IEntityTypeConfiguration<Inb
         job.Property(x => x.Total).HasPrecision(InboxJobLimits.TotalPrecision, InboxJobLimits.TotalScale);
         job.Property(x => x.Currency).HasMaxLength(InboxJobLimits.CurrencyLength).IsFixedLength();
         job.Property(x => x.ParcelStatus).HasMaxLength(InboxJobLimits.ParcelStatusMaxLength);
+        job.Property(x => x.FailureReason).HasMaxLength(32);
 
         job.Property(x => x.CreatedAt).IsRequired();
         job.Property(x => x.UpdatedAt).IsRequired();

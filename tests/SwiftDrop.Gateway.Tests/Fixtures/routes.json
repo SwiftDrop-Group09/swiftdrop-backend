@@ -280,12 +280,32 @@
     "success": "200"
   },
   {
+    "operationId": "CourierDaySummary",
+    "method": "GET",
+    "path": "/api/v1/couriers/me/summary",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Courier self",
+    "request": "CourierSummaryQuery",
+    "response": "CourierWorkSummary",
+    "success": "200"
+  },
+  {
+    "operationId": "CourierHistoryDetail",
+    "method": "GET",
+    "path": "/api/v1/couriers/me/history/{id}",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Courier self; retained terminal assignment",
+    "request": "None",
+    "response": "CourierHistoryDetail",
+    "success": "200"
+  },
+  {
     "operationId": "CourierHistory",
     "method": "GET",
     "path": "/api/v1/couriers/me/history",
     "owner": "Delivery",
     "authorization": "Human JWT; Courier self",
-    "request": "PageQuery",
+    "request": "CourierHistoryQuery",
     "response": "ParcelPage",
     "success": "200"
   },
