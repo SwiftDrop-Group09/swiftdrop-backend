@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Configuration;
@@ -43,6 +44,22 @@ public sealed partial class AssistantOrchestrator(
             ?? configuration["DELIVERY_AI_API_KEY"]
             ?? configuration["GEMINI_API_KEY"]
             ?? configuration["OPENAI_API_KEY"];
+
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            try
+            {
+                var geminiResponse = await ProcessWithGeminiAsync(rawMessage, apiKey.Trim(), cancellationToken);
+                if (geminiResponse != null)
+                {
+                    return geminiResponse;
+                }
+            }
+            catch
+            {
+                // Fall back gracefully to built-in deterministic engine on transient error
+            }
+        }
 
         // 3. Built-In Resilient Deterministic Tool-Calling Engine
         return await ProcessWithBuiltInEngineAsync(rawMessage, cancellationToken);
@@ -388,5 +405,177 @@ public sealed partial class AssistantOrchestrator(
     {
         var lower = text.ToLowerInvariant();
         return Regex.IsMatch(lower, @"\b(zones|coverage|where do you deliver|service area|supported cities|cities you cover)\b");
+    }
+
+    private static readonly HttpClient GeminiClient = new() { Timeout = TimeSpan.FromSeconds(15) };
+
+    private async Task<AssistantChatResponse?> ProcessWithGeminiAsync(
+        string message,
+        string apiKey,
+        CancellationToken cancellationToken)
+    {
+        var model = configuration["GEMINI_MODEL"] ?? "gemini-2.5-flash";
+        var endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
+
+        var requestBody = new
+        {
+            contents = new object[]
+            {
+                new
+                {
+                    role = "user",
+                    parts = new object[]
+                    {
+                        new { text = message }
+                    }
+                }
+            },
+            system_instruction = new
+            {
+                parts = new object[]
+                {
+                    new { text = "You are the SwiftDrop AI Delivery Assistant, helping users in Sri Lanka with parcel tracking, delivery rate quotes, and service zones. Always call the provided tools when real parcel status or fee calculations are needed. Never invent tracking milestones or prices without calling tools. Never execute write operations or impersonate admins. Format currency as LKR." }
+                }
+            },
+            tools = new object[]
+            {
+                new
+                {
+                    function_declarations = new object[]
+                    {
+                        new
+                        {
+                            name = AssistantToolNames.EstimateDeliveryFee,
+                            description = "Estimates delivery fee based on package weight in kg, pickup city, and delivery city in Sri Lanka.",
+                            parameters = new
+                            {
+                                type = "OBJECT",
+                                properties = new Dictionary<string, object>
+                                {
+                                    ["weightKg"] = new { type = "NUMBER", description = "Weight in kilograms (e.g. 2.0)" },
+                                    ["pickupCity"] = new { type = "STRING", description = "Origin city in Sri Lanka (default Colombo)" },
+                                    ["deliveryCity"] = new { type = "STRING", description = "Destination city in Sri Lanka (e.g. Kandy, Galle, Jaffna)" },
+                                    ["size"] = new { type = "STRING", @enum = new[] { "Small", "Medium", "Large", "ExtraLarge" }, description = "Package size tier" }
+                                },
+                                required = new[] { "weightKg" }
+                            }
+                        },
+                        new
+                        {
+                            name = AssistantToolNames.TrackParcel,
+                            description = "Tracks parcel delivery status, location, and milestone timeline by tracking number (e.g. SD-...).",
+                            parameters = new
+                            {
+                                type = "OBJECT",
+                                properties = new Dictionary<string, object>
+                                {
+                                    ["trackingNumber"] = new { type = "STRING", description = "Tracking number" }
+                                }
+                            }
+                        },
+                        new
+                        {
+                            name = AssistantToolNames.ListMyParcels,
+                            description = "Lists active and recent parcels for the authenticated customer.",
+                            parameters = new
+                            {
+                                type = "OBJECT",
+                                properties = new Dictionary<string, object>
+                                {
+                                    ["limit"] = new { type = "INTEGER", description = "Max parcels to return (1-10)" }
+                                }
+                            }
+                        },
+                        new
+                        {
+                            name = AssistantToolNames.ListServiceZones,
+                            description = "Lists active bookable delivery zones, supported cities, and postal codes in Sri Lanka.",
+                            parameters = new
+                            {
+                                type = "OBJECT",
+                                properties = new Dictionary<string, object>()
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var response = await GeminiClient.PostAsJsonAsync(endpoint, requestBody, JsonOptions, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("candidates", out var candidates) || candidates.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var candidate = candidates[0];
+        if (!candidate.TryGetProperty("content", out var content) || !content.TryGetProperty("parts", out var parts) || parts.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var toolCalls = new List<AssistantToolCallTrace>();
+        var cards = new AssistantCards();
+        var replyText = string.Empty;
+
+        foreach (var part in parts.EnumerateArray())
+        {
+            if (part.TryGetProperty("text", out var textProp))
+            {
+                replyText += textProp.GetString() + "\n";
+            }
+            else if (part.TryGetProperty("functionCall", out var fc))
+            {
+                var toolName = fc.GetProperty("name").GetString() ?? "";
+                var args = fc.TryGetProperty("args", out var a) ? a : JsonSerializer.SerializeToElement(new { });
+
+                var sw = Stopwatch.StartNew();
+                var result = await toolExecutor.ExecuteAsync(toolName, args, cancellationToken);
+                sw.Stop();
+
+                toolCalls.Add(new AssistantToolCallTrace(
+                    toolName,
+                    args,
+                    result.Success ? "success" : "error",
+                    sw.ElapsedMilliseconds,
+                    result.TextSummary));
+
+                if (result.Success && result.Data is not null)
+                {
+                    if (result.Data is QuoteCardData qc) cards = cards with { Quote = qc };
+                    else if (result.Data is TrackingCardData tc) cards = cards with { Tracking = tc };
+                    else if (result.Data is ParcelListCardData plc) cards = cards with { ParcelList = plc };
+                    else if (result.Data is ZonesCardData zc) cards = cards with { Zones = zc };
+                }
+
+                if (string.IsNullOrWhiteSpace(replyText))
+                {
+                    replyText = result.TextSummary;
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(replyText))
+        {
+            replyText = "Here is the information from your SwiftDrop delivery service.";
+        }
+
+        return new AssistantChatResponse(
+            Reply: replyText.Trim(),
+            Mode: $"gemini ({model})",
+            ToolCalls: toolCalls,
+            Cards: (cards.Quote != null || cards.Tracking != null || cards.ParcelList != null || cards.Zones != null) ? cards : null,
+            SuggestedPrompts:
+            [
+                "Where is my parcel?",
+                "How much to send 2 kg to Kandy?",
+                "What delivery zones do you cover?"
+            ]);
     }
 }
