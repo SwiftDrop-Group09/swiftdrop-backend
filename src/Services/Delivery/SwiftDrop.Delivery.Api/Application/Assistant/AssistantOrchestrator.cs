@@ -683,6 +683,18 @@ public sealed partial class AssistantOrchestrator(
         try
         {
             response = await GeminiClient.PostAsJsonAsync(endpoint, requestBody, JsonOptions, cancellationToken);
+            if (!response.IsSuccessStatusCode && !model.Contains("flash-lite", StringComparison.OrdinalIgnoreCase))
+            {
+                // Fallback to flash-lite if primary model returned 429 quota exhaustion or transient error
+                var liteEndpoint = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={apiKey}";
+                var retryResp = await GeminiClient.PostAsJsonAsync(liteEndpoint, requestBody, JsonOptions, cancellationToken);
+                if (retryResp.IsSuccessStatusCode)
+                {
+                    response = retryResp;
+                    model = "gemini-2.5-flash-lite";
+                    endpoint = liteEndpoint;
+                }
+            }
         }
         catch
         {
