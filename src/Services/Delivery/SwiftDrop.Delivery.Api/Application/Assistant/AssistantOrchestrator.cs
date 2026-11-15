@@ -572,17 +572,28 @@ public sealed partial class AssistantOrchestrator(
             else if (part.TryGetProperty("functionCall", out var fc))
             {
                 var toolName = fc.GetProperty("name").GetString() ?? "";
-                var args = fc.TryGetProperty("args", out var a) && a.ValueKind == JsonValueKind.Object
-                    ? a
-                    : JsonSerializer.SerializeToElement(new { });
+                var rawArgsText = fc.TryGetProperty("args", out var a) && a.ValueKind == JsonValueKind.Object
+                    ? a.GetRawText()
+                    : "{}";
+
+                object? argsObj;
+                try
+                {
+                    argsObj = JsonSerializer.Deserialize<Dictionary<string, object?>>(rawArgsText, JsonOptions);
+                }
+                catch
+                {
+                    argsObj = new Dictionary<string, object?>();
+                }
 
                 var sw = Stopwatch.StartNew();
-                var result = await toolExecutor.ExecuteAsync(toolName, args, cancellationToken);
+                using var argsDoc = JsonDocument.Parse(rawArgsText);
+                var result = await toolExecutor.ExecuteAsync(toolName, argsDoc.RootElement, cancellationToken);
                 sw.Stop();
 
                 toolCalls.Add(new AssistantToolCallTrace(
                     toolName,
-                    args,
+                    argsObj,
                     result.Success ? "success" : "error",
                     sw.ElapsedMilliseconds,
                     result.TextSummary));
@@ -645,7 +656,17 @@ public sealed partial class AssistantOrchestrator(
                         new
                         {
                             role = "model",
-                            parts = new object[] { fc }
+                            parts = new object[]
+                            {
+                                new
+                                {
+                                    functionCall = new
+                                    {
+                                        name = toolName,
+                                        args = argsObj
+                                    }
+                                }
+                            }
                         },
                         new
                         {
