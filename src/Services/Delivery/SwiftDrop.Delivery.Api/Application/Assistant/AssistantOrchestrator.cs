@@ -43,7 +43,7 @@ public sealed partial class AssistantOrchestrator(
         var trackingMatch = Regex.Match(rawMessage, @"\b((?:TRK|SD)-[A-Za-z0-9-]+)\b", RegexOptions.IgnoreCase);
         if (trackingMatch.Success)
         {
-            return await ProcessWithBuiltInEngineAsync(rawMessage, cancellationToken);
+            return await ProcessWithBuiltInEngineAsync(request, cancellationToken);
         }
 
         // 3. Check if external LLM mode is configured and reachable
@@ -69,19 +69,30 @@ public sealed partial class AssistantOrchestrator(
         }
 
         // 4. Built-In Resilient Deterministic Tool-Calling Engine
-        return await ProcessWithBuiltInEngineAsync(rawMessage, cancellationToken);
+        return await ProcessWithBuiltInEngineAsync(request, cancellationToken);
     }
 
     private async Task<AssistantChatResponse> ProcessWithBuiltInEngineAsync(
-        string message,
+        AssistantChatRequest request,
         CancellationToken cancellationToken)
     {
+        var message = request.Message;
         var toolCalls = new List<AssistantToolCallTrace>();
         var cards = new AssistantCards();
 
         // 1. Fee Estimation Intent (e.g. "How much to send 2 kg to Kandy?", "Cost of 5kg parcel from Colombo to Galle")
-        if (IsFeeEstimateIntent(message, out var feeArgs))
+        if (IsFeeEstimateIntent(message, request.History, out var feeArgs, out var needsPickupCity))
         {
+            if (needsPickupCity)
+            {
+                return new AssistantChatResponse(
+                    Reply: $"Where will the parcel be picked up from? Please provide your starting position (pickup city) to calculate an accurate delivery fee to {feeArgs.DeliveryCity ?? "your destination"} using our active pricing rates.",
+                    Mode: "mcp-local-agent",
+                    ToolCalls: Array.Empty<AssistantToolCallTrace>(),
+                    Cards: null,
+                    SuggestedPrompts: null);
+            }
+
             var sw = Stopwatch.StartNew();
             var jsonArgs = JsonSerializer.SerializeToElement(feeArgs, JsonOptions);
             var result = await toolExecutor.ExecuteAsync(AssistantToolNames.EstimateDeliveryFee, jsonArgs, cancellationToken);
@@ -109,12 +120,7 @@ public sealed partial class AssistantOrchestrator(
                 Mode: "mcp-local-agent",
                 ToolCalls: toolCalls,
                 Cards: new AssistantCards(Quote: quoteCard),
-                SuggestedPrompts:
-                [
-                    "Where is my parcel?",
-                    "What delivery zones do you cover?",
-                    "List my recent deliveries"
-                ]);
+                SuggestedPrompts: null);
         }
 
         // 2. Tracking Intent (e.g. "Where is my parcel?", "Track SD-2026-0001", "Status of SD-1234")
@@ -189,12 +195,7 @@ public sealed partial class AssistantOrchestrator(
                 Mode: "mcp-local-agent",
                 ToolCalls: toolCalls,
                 Cards: new AssistantCards(Tracking: trackingCard, ParcelList: listCard),
-                SuggestedPrompts:
-                [
-                    "How much to send 2 kg to Kandy?",
-                    "What delivery zones do you cover?",
-                    "List my recent deliveries"
-                ]);
+                SuggestedPrompts: null);
         }
 
         // 3. Parcel List Intent (e.g. "List my deliveries", "Show my parcels", "Recent orders")
@@ -219,12 +220,7 @@ public sealed partial class AssistantOrchestrator(
                 Mode: "mcp-local-agent",
                 ToolCalls: toolCalls,
                 Cards: new AssistantCards(ParcelList: listCard),
-                SuggestedPrompts:
-                [
-                    "Where is my parcel?",
-                    "How much to send 2 kg to Kandy?",
-                    "What delivery zones do you cover?"
-                ]);
+                SuggestedPrompts: null);
         }
 
         // 4. Zone Coverage Intent (e.g. "What zones do you cover?", "Where do you deliver?", "Service area")
@@ -248,12 +244,7 @@ public sealed partial class AssistantOrchestrator(
                 Mode: "mcp-local-agent",
                 ToolCalls: toolCalls,
                 Cards: new AssistantCards(Zones: zonesCard),
-                SuggestedPrompts:
-                [
-                    "How much to send 2 kg to Kandy?",
-                    "Where is my parcel?",
-                    "List my recent deliveries"
-                ]);
+                SuggestedPrompts: null);
         }
 
         // 5. General Greeting vs Off-Topic Handling
@@ -269,13 +260,7 @@ public sealed partial class AssistantOrchestrator(
             Mode: "mcp-local-agent",
             ToolCalls: Array.Empty<AssistantToolCallTrace>(),
             Cards: null,
-            SuggestedPrompts:
-            [
-                "Where is my parcel?",
-                "How much to send 2 kg to Kandy?",
-                "What delivery zones do you cover?",
-                "List my recent deliveries"
-            ]);
+            SuggestedPrompts: null);
     }
 
     // -------------------------------------------------------------
@@ -317,35 +302,59 @@ public sealed partial class AssistantOrchestrator(
         return false;
     }
 
-    private static bool IsFeeEstimateIntent(string text, out EstimateFeeInput args)
+    private static bool IsFeeEstimateIntent(
+        string text,
+        IReadOnlyList<ChatMessage>? history,
+        out EstimateFeeInput args,
+        out bool needsPickupCity)
     {
         var lower = text.ToLowerInvariant();
         var hasPricingKeyword = Regex.IsMatch(lower, @"\b(how much|cost|price|fee|rate|quote|estimate|send.*to|send.*kg)\b");
 
-        if (!hasPricingKeyword)
+        // Check if the user is replying with a pickup city after the assistant asked for one
+        var lastAssistantAskedPickup = history != null && history.Count > 0 &&
+            history.LastOrDefault(h => h.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) || h.Role.Equals("model", StringComparison.OrdinalIgnoreCase)) is { } lastAssistant &&
+            (lastAssistant.Content.Contains("starting position", StringComparison.OrdinalIgnoreCase) || lastAssistant.Content.Contains("picked up from", StringComparison.OrdinalIgnoreCase));
+
+        if (!hasPricingKeyword && !lastAssistantAskedPickup)
         {
             args = new EstimateFeeInput();
+            needsPickupCity = false;
             return false;
         }
 
+        // 1. Resolve weight
         decimal weight = 2.0m;
         var weightMatch = Regex.Match(lower, @"(\d+(\.\d+)?)\s*(kg|kilo|kilogram)?");
         if (weightMatch.Success && decimal.TryParse(weightMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var parsedWeight) && parsedWeight > 0)
         {
             weight = parsedWeight;
         }
+        else if (history != null)
+        {
+            for (var i = history.Count - 1; i >= 0; i--)
+            {
+                if (!history[i].Role.Equals("user", StringComparison.OrdinalIgnoreCase)) continue;
+                var hLower = history[i].Content.ToLowerInvariant();
+                var hWeight = Regex.Match(hLower, @"(\d+(\.\d+)?)\s*(kg|kilo|kilogram)?");
+                if (hWeight.Success && decimal.TryParse(hWeight.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var prevW) && prevW > 0)
+                {
+                    weight = prevW;
+                    break;
+                }
+            }
+        }
 
-        // Extract destination city (ignoring verbs like 'send', 'ship', 'deliver')
+        // 2. Resolve delivery city (destination)
         string? deliveryCity = null;
-        var toMatches = Regex.Matches(text, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
+        var toMatches = Regex.Matches(text, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
         if (toMatches.Count > 0)
         {
             deliveryCity = toMatches[^1].Groups[1].Value;
         }
         else
         {
-            // Fallback match known cities
-            var knownCities = new[] { "Kandy", "Colombo", "Galle", "Negombo", "Jaffna", "Kurunegala", "Matara", "Gampaha" };
+            var knownCities = new[] { "Kandy", "Colombo", "Galle", "Negombo", "Jaffna", "Kurunegala", "Matara", "Gampaha", "Moratuwa", "Batticaloa", "Trincomalee" };
             foreach (var city in knownCities)
             {
                 if (lower.Contains(city.ToLowerInvariant()))
@@ -356,26 +365,78 @@ public sealed partial class AssistantOrchestrator(
             }
         }
 
-        // Extract origin city if specified
+        if (deliveryCity == null && history != null)
+        {
+            for (var i = history.Count - 1; i >= 0; i--)
+            {
+                if (!history[i].Role.Equals("user", StringComparison.OrdinalIgnoreCase)) continue;
+                var hText = history[i].Content;
+                var hTo = Regex.Matches(hText, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
+                if (hTo.Count > 0)
+                {
+                    deliveryCity = hTo[^1].Groups[1].Value;
+                    break;
+                }
+                var hLower = hText.ToLowerInvariant();
+                var knownCities = new[] { "Kandy", "Colombo", "Galle", "Negombo", "Jaffna", "Kurunegala", "Matara", "Gampaha", "Moratuwa" };
+                foreach (var city in knownCities)
+                {
+                    if (hLower.Contains(city.ToLowerInvariant()))
+                    {
+                        deliveryCity = city;
+                        break;
+                    }
+                }
+                if (deliveryCity != null) break;
+            }
+        }
+
+        // 3. Resolve pickup city (starting position)
         string? pickupCity = null;
-        var fromMatch = Regex.Match(text, @"from\s+([A-Za-z]+)", RegexOptions.IgnoreCase);
+        var fromMatch = Regex.Match(text, @"\bfrom\s+([A-Za-z]+)", RegexOptions.IgnoreCase);
         if (fromMatch.Success)
         {
             pickupCity = fromMatch.Groups[1].Value;
         }
+        else if (lastAssistantAskedPickup)
+        {
+            var trimmed = text.Trim().Trim('.', '!', '?');
+            var words = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length <= 4)
+            {
+                var cleanCity = Regex.Replace(trimmed, @"^(from|in|at)\s+", "", RegexOptions.IgnoreCase).Trim();
+                if (!string.IsNullOrWhiteSpace(cleanCity))
+                {
+                    pickupCity = cleanCity;
+                }
+            }
+        }
 
-        // Extract size if specified
+        // Extract size
         string? size = null;
         if (lower.Contains("small")) size = "Small";
         else if (lower.Contains("medium")) size = "Medium";
         else if (lower.Contains("large")) size = "Large";
 
+        deliveryCity ??= "Kandy";
+
+        if (string.IsNullOrWhiteSpace(pickupCity))
+        {
+            needsPickupCity = true;
+            args = new EstimateFeeInput(
+                WeightKg: weight,
+                Size: size,
+                PickupCity: null,
+                DeliveryCity: deliveryCity);
+            return true;
+        }
+
+        needsPickupCity = false;
         args = new EstimateFeeInput(
             WeightKg: weight,
             Size: size,
             PickupCity: pickupCity,
-            DeliveryCity: deliveryCity ?? "Kandy");
-
+            DeliveryCity: deliveryCity);
         return true;
     }
 
@@ -457,7 +518,11 @@ public sealed partial class AssistantOrchestrator(
         {
             parts = new object[]
             {
-                new { text = "You are the SwiftDrop AI Delivery Assistant, helping users in Sri Lanka with parcel tracking, delivery rate quotes, and service zones. Always call the provided tools when real parcel status or fee calculations are needed. Never invent tracking milestones or prices without calling tools. Never execute write operations or impersonate admins. Format currency as LKR. Keep answers concise and friendly without raw markdown headers." }
+                new { text = "You are the SwiftDrop AI Delivery Assistant, helping users in Sri Lanka with parcel tracking, delivery rate quotes, and service zones. " +
+                             "CRITICAL RULES: " +
+                             "1. Delivery Fee Inquiries: When a user asks for shipping fees or quotes without providing BOTH starting position (pickup city) and destination (delivery city), ALWAYS ask them for their starting position (pickup city) first before calculating, because destination alone is not enough to calculate shipping rates. Never assume Colombo or any default origin. Once both starting position (pickup city) and destination (delivery city) are known, ALWAYS invoke the estimate_delivery_fee tool to calculate the real price using SwiftDrop's configured rates in the application. Never invent prices or guess rates. " +
+                             "2. Tracking Inquiries: If an authenticated customer asks where their parcel is without giving a tracking number, call list_my_parcels. " +
+                             "3. Security: Never execute write operations or impersonate admins. Format currency as LKR. Keep answers concise and friendly without raw markdown headers." }
             }
         };
 
@@ -470,18 +535,18 @@ public sealed partial class AssistantOrchestrator(
                     new
                     {
                         name = AssistantToolNames.EstimateDeliveryFee,
-                        description = "Estimates delivery fee based on package weight in kg, pickup city, and delivery city in Sri Lanka.",
+                        description = "Estimates delivery fee based on package weight in kg, pickup city (starting position), and delivery city (destination) in Sri Lanka. Both pickup and delivery cities are required.",
                         parameters = new
                         {
                             type = "OBJECT",
                             properties = new Dictionary<string, object>
                             {
                                 ["weightKg"] = new { type = "NUMBER", description = "Weight in kilograms (e.g. 2.0)" },
-                                ["pickupCity"] = new { type = "STRING", description = "Origin city in Sri Lanka (default Colombo)" },
-                                ["deliveryCity"] = new { type = "STRING", description = "Destination city in Sri Lanka (e.g. Kandy, Galle, Jaffna)" },
+                                ["pickupCity"] = new { type = "STRING", description = "Starting position / pickup city in Sri Lanka (e.g. Colombo, Kandy, Galle, Moratuwa, Jaffna). Required." },
+                                ["deliveryCity"] = new { type = "STRING", description = "Destination city in Sri Lanka (e.g. Kandy, Galle, Jaffna, Colombo). Required." },
                                 ["size"] = new { type = "STRING", @enum = new[] { "Small", "Medium", "Large", "ExtraLarge" }, description = "Package size tier" }
                             },
-                            required = new[] { "weightKg" }
+                            required = new[] { "weightKg", "pickupCity", "deliveryCity" }
                         }
                     },
                     new
@@ -726,11 +791,6 @@ public sealed partial class AssistantOrchestrator(
             Mode: $"gemini ({model})",
             ToolCalls: toolCalls,
             Cards: (cards.Quote != null || cards.Tracking != null || cards.ParcelList != null || cards.Zones != null) ? cards : null,
-            SuggestedPrompts:
-            [
-                "Where is my parcel?",
-                "How much to send 2 kg to Kandy?",
-                "What delivery zones do you cover?"
-            ]);
+            SuggestedPrompts: null);
     }
 }

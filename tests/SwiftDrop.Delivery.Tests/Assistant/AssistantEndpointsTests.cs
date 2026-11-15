@@ -43,12 +43,12 @@ public sealed class AssistantEndpointsTests
     }
 
     [Fact]
-    public async Task ChatAssistant_CalculatesFee_ForHowMuchToSend2KgToKandy()
+    public async Task ChatAssistant_CalculatesFee_WhenOriginAndDestinationProvided()
     {
         using var factory = CreateFactory(QuoteApiFactory.Customer(CustomerId));
         using var client = factory.CreateClient();
 
-        var request = new AssistantChatRequest("How much to send 2 kg to Kandy?");
+        var request = new AssistantChatRequest("How much to send 2 kg from Colombo to Kandy?");
         var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -60,8 +60,26 @@ public sealed class AssistantEndpointsTests
         Assert.NotNull(chatResult.Cards?.Quote);
         Assert.Equal("LKR", chatResult.Cards!.Quote!.Currency);
         Assert.Equal(2m, chatResult.Cards.Quote.WeightKg);
+        Assert.Contains("Colombo", chatResult.Cards.Quote.PickupCity);
         Assert.Contains("Kandy", chatResult.Cards.Quote.DeliveryCity);
         Assert.Contains("/customer/book", chatResult.Cards.Quote.BookingDeepLink);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_AsksForStartingPosition_WhenOnlyDestinationGiven()
+    {
+        using var factory = CreateFactory(QuoteApiFactory.Customer(CustomerId));
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("How much to send 2 kg to Kandy?");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Contains("starting position", chatResult!.Reply, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(chatResult.ToolCalls);
+        Assert.Null(chatResult.Cards);
     }
 
     [Fact]

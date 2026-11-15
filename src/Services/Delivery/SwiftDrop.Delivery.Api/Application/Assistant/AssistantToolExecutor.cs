@@ -268,6 +268,17 @@ public sealed class AssistantToolExecutor(
         // Infer Size if omitted
         var resolvedSize = InferSize(weight, input.Size);
 
+        if (string.IsNullOrWhiteSpace(input.PickupCity) && string.IsNullOrWhiteSpace(input.PickupZoneId))
+        {
+            var dest = !string.IsNullOrWhiteSpace(input.DeliveryCity) ? $" to {input.DeliveryCity.Trim()}" : "";
+            return new ToolExecutionResult(
+                AssistantToolNames.EstimateDeliveryFee,
+                false,
+                null,
+                $"Where will the parcel be picked up from? Please specify the starting position (pickup city) to calculate an accurate delivery fee{dest}.",
+                "missing_pickup_city");
+        }
+
         // Resolve pickup and delivery zones
         var pickupZone = ResolveZone(input.PickupZoneId, input.PickupCity, activeZones, isPickup: true);
         var deliveryZone = ResolveZone(input.DeliveryZoneId, input.DeliveryCity, activeZones, isPickup: false);
@@ -283,8 +294,7 @@ public sealed class AssistantToolExecutor(
                 "unsupported_zone");
         }
 
-        var assumedPickup = string.IsNullOrWhiteSpace(input.PickupCity);
-        var pickupCity = !assumedPickup ? input.PickupCity!.Trim() : (pickupZone.Name.Contains("Western", StringComparison.OrdinalIgnoreCase) ? "Colombo" : pickupZone.Name);
+        var pickupCity = !string.IsNullOrWhiteSpace(input.PickupCity) ? input.PickupCity.Trim() : pickupZone.Name;
         var deliveryCity = !string.IsNullOrWhiteSpace(input.DeliveryCity) ? input.DeliveryCity.Trim() : deliveryZone.Name;
 
         // If authenticated Customer, calculate and persist an owner-bound quote via QuoteEstimator
@@ -314,8 +324,7 @@ public sealed class AssistantToolExecutor(
                     deepLink);
 
                 var expiryText = quote.ExpiresAt.ToString("h:mm tt");
-                var pickupNote = assumedPickup ? " (assuming pickup from Colombo)" : "";
-                var summaryText = $"Sending a **{weight} kg ({resolvedSize})** parcel from **{pickupCity}** to **{deliveryCity}** costs **{quote.Currency} {quote.Total:N2}**{pickupNote}. This quote is locked until {expiryText}—you can proceed to book directly below.";
+                var summaryText = $"Sending a **{weight} kg ({resolvedSize})** parcel from **{pickupCity}** to **{deliveryCity}** costs **{quote.Currency} {quote.Total:N2}**. This quote is locked until {expiryText}—you can proceed to book directly below.";
 
                 return new ToolExecutionResult(
                     AssistantToolNames.EstimateDeliveryFee,
@@ -359,8 +368,7 @@ public sealed class AssistantToolExecutor(
                     deliveryCity,
                     deepLink);
 
-                var pickupNote = assumedPickup ? " (assuming pickup from Colombo)" : "";
-                var summaryText = $"Estimated delivery fee for a **{weight} kg ({resolvedSize})** parcel from **{pickupCity}** to **{deliveryCity}** is approximately **{tier.Currency} {calculated.Total:N2}**{pickupNote}. Sign in to lock an official quote.";
+                var summaryText = $"Estimated delivery fee for a **{weight} kg ({resolvedSize})** parcel from **{pickupCity}** to **{deliveryCity}** is approximately **{tier.Currency} {calculated.Total:N2}**. Sign in to lock an official quote.";
 
                 return new ToolExecutionResult(
                     AssistantToolNames.EstimateDeliveryFee,
@@ -470,25 +478,7 @@ public sealed class AssistantToolExecutor(
             }
         }
 
-        // If no match but only one zone exists, use it
-        if (zones.Count == 1) return zones[0];
-
-        // Default pickup to Colombo/Western zone if available, else first zone
-        if (isPickup)
-        {
-            var colombo = zones.FirstOrDefault(z =>
-                z.Name.Contains("Colombo", StringComparison.OrdinalIgnoreCase) ||
-                z.Name.Contains("Western", StringComparison.OrdinalIgnoreCase));
-            if (colombo is not null) return colombo;
-            return zones[0];
-        }
-
-        // For delivery, if unspecified, prefer non-pickup zone if available
-        var nonColombo = zones.FirstOrDefault(z =>
-            !z.Name.Contains("Colombo", StringComparison.OrdinalIgnoreCase) &&
-            !z.Name.Contains("Western", StringComparison.OrdinalIgnoreCase));
-        if (nonColombo is not null) return nonColombo;
-        return zones.Count > 1 ? zones[1] : zones[0];
+        return null;
     }
 
     private static IReadOnlyList<MilestoneStep> BuildMilestones(
