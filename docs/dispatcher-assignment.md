@@ -168,3 +168,58 @@ reassignment for the last slot on one date. Golden pre-P4 fingerprint vectors an
 retained initial-assignment receipts remain covered. Normalized-reason replay is
 verified after pickup, a later reassignment and business midnight (both omitted
 and explicit dates), with changed-reason conflicts and no duplicate effects.
+
+## Whole Dispatcher integration (P6)
+
+`DispatcherWorkflowTests` adds four API-through-PostgreSQL cases for Dispatcher
+and Admin. Only reference zones/tariffs/Courier profiles are seeded; quote and
+booking, allocation, reassignment, Courier stages, failure and proof completion
+use existing HTTP handlers. Proof bytes use the existing in-memory private-storage
+fixture. This exercises the Delivery boundary without claiming real sign-in,
+shared storage, Flutter, broker or container acceptance.
+
+The successful-delivery path verifies Created queue/Customer ownership, assignment,
+Courier manifest, every stage's operations detail/workload/active-parcel projection,
+and all-date/UTC booking-day zone summaries through Delivered. The replacement
+path verifies retained history, old-Courier loss of ownership and the new Courier's
+Failed outcome. Both paths verify Dispatcher/Admin cannot advance Courier status
+or upload proof, with unchanged persisted graphs and no proof uploads on refusal.
+Post-terminal booking/assignment retries return their original responses with no
+extra state, history, outbox, receipt or proof writes. Events retain strict v1
+schema/private-data boundaries. Existing race/fault suites remain authoritative
+for last-slot allocation, pickup races and rollback at each transaction stage.
+
+At test commit `284ed33` (base `6b56f45`), Release restore/build passes with zero
+warnings/errors and all **2,127** solution tests pass, none skipped: Delivery
+1,260; Identity 409; Merchant 383; Gateway 70; Notification 5. Tests used private
+disposable PostgreSQL 18.6 with external database fallbacks unset and .NET SDK
+10.0.301. `DOTNET_USE_POLLING_FILE_WATCHER=1` was scoped to the check process after
+the initial baseline hit the host's inotify-instance limit in Merchant test hosts.
+Foundation's 13-project boundary/cycle audit passes; its real startup probes remain
+pending because the existing development stack occupies the fixed listeners.
+The canonical infra runner also built all six current application images; this
+does not establish startup, database readiness or live workflow acceptance.
+
+The implementation preserves the proposed design's service-owned transactions,
+expectedVersion/current-ownership guards and outbox boundary. Contract-owner
+handoffs remain: assignment-options and operations assignment-list catalog entries,
+additive workload fields, future-date duty policy, TC-D02 capacity **422** versus
+draft **409**, and the reassignment reason narrative versus fixed StatusChanged v1.
+The reason remains private history; P6 adds no public contract/schema change.
+Current Courier transition notes are optional under the updated state policy.
+
+Shared acceptance uses two explicitly agreed test parcels and existing authorized
+accounts/profiles. The user or workflow owner performs booking, allocation,
+replacement and Courier actions; compare queue, manifests, counts and all-date/UTC
+summary responses to independent read-only persistence. One parcel must finish
+with valid proof; the other must be reassigned before pickup and fail with a
+canonical reason. Keep races/fault injection in disposable fixtures.
+
+A fresh read-only preflight on 15 November found Identity 5/5, Delivery 11/11 and
+Merchant 7/7 migrations applied, no pending migrations, and nine active/on-duty
+Courier profiles with zone memberships. No shared data/schema or account changes
+were made during this P6 work. The earlier rollout notes above describe their
+original milestones. A canonical startup still executes migration tasks and
+requires task-specific authorization. Current-revision Docker startup and real
+user-assisted whole-workflow acceptance remain pending; health and fixture
+results do not satisfy them. Missing other-role workflows are owner dependencies.
