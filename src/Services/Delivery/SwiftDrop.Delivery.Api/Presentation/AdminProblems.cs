@@ -16,6 +16,7 @@ public static class AdminProblems
             ZoneFailure.NotFound => (404, "not_found", "The specified delivery zone was not found."),
             ZoneFailure.Conflict => (409, "conflict", "The zone changed or its name already exists. Refresh before updating."),
             ZoneFailure.OverlappingPostalCodes => (400, "overlapping_postal_codes", "Postal codes must not overlap across active delivery zones."),
+            ZoneFailure.InvalidDateRange => (400, "invalid_date_range", "The zone summary date range is invalid."),
             _ => (400, "validation", "The zone input is invalid.")
         };
 

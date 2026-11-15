@@ -10,8 +10,9 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /tmp/swiftdrop \
-    && chown "$APP_UID" /tmp/swiftdrop
+    && mkdir -p /tmp/swiftdrop/identity /home/app/.aspnet/DataProtection-Keys \
+    && chown -R "$APP_UID:$APP_UID" /tmp/swiftdrop /home/app/.aspnet \
+    && chmod 700 /tmp/swiftdrop/identity /home/app/.aspnet/DataProtection-Keys
 COPY --from=build /app/publish .
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
