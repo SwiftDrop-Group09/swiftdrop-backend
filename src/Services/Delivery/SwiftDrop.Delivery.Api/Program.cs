@@ -4,6 +4,7 @@ using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Admin.Pricing;
 using SwiftDrop.Delivery.Api.Application.Admin.Reports;
 using SwiftDrop.Delivery.Api.Application.Admin.Zones;
+using SwiftDrop.Delivery.Api.Application.Assistant;
 using SwiftDrop.Delivery.Api.Application.Bookings;
 using SwiftDrop.Delivery.Api.Application.CourierStatus;
 using SwiftDrop.Delivery.Api.Application.CourierProof;
@@ -95,6 +96,9 @@ public partial class Program
         builder.Services.AddScoped<IDeliveryReportStore>(services =>
             new PostgresDeliveryReportStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<DeliveryReportHandler>();
+        builder.Services.AddScoped<AssistantToolExecutor>();
+        builder.Services.AddScoped<McpServerHandler>();
+        builder.Services.AddScoped<AssistantOrchestrator>();
         builder.Services.AddDeliveryIdentityAuthentication();
         builder.Services.AddAuthorization();
 
@@ -141,7 +145,8 @@ public partial class Program
                 || context.GetEndpoint()?.Metadata.GetMetadata<CourierProofEndpointMetadata>() is not null
                 || context.GetEndpoint()?.Metadata.GetMetadata<AdminZoneEndpointMetadata>() is not null
                 || context.GetEndpoint()?.Metadata.GetMetadata<AdminPricingEndpointMetadata>() is not null
-                || context.GetEndpoint()?.Metadata.GetMetadata<AdminReportEndpointMetadata>() is not null)
+                || context.GetEndpoint()?.Metadata.GetMetadata<AdminReportEndpointMetadata>() is not null
+                || context.GetEndpoint()?.Metadata.GetMetadata<AssistantEndpointMetadata>() is not null)
                 context.Response.Headers.CacheControl = "private, no-store";
             await next(context);
         });
@@ -189,6 +194,7 @@ public partial class Program
         app.MapAdminZones();
         app.MapAdminPricing();
         app.MapAdminReports();
+        app.MapAssistantEndpoints();
 
         app.Run();
     }
