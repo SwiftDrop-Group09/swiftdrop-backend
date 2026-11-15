@@ -1,5 +1,12 @@
 # Member 7: Delivery booking compatibility handoff
 
+Historical Phase 7 handoff. The private RPC adapter, durable replay binding and
+optional safe failure-category field are now implemented on
+`feat/courier-workspace-experience`; see
+[current implementation](courier-workspace-experience.md). The original ten-field
+wire/hash inventory below describes that earlier baseline, not the extended
+current proto. Event/outbox delivery remains its separate integration boundary.
+
 This Phase 7 handoff implements the original master's reusable-handler option
 for the Merchant integration owner. Backend baseline is a8cb95b; the local
 documentation baseline remains d97fff4. No teammate was contacted. The gRPC

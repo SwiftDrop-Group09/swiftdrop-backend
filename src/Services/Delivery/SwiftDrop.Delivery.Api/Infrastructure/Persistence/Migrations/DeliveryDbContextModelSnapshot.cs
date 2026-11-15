@@ -346,6 +346,43 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.MerchantBookingIdentity", b =>
+                {
+                    b.Property<Guid>("MerchantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("merchant_id");
+
+                    b.Property<string>("ExternalOrderId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("external_order_id");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("fingerprint");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parcel_id");
+
+                    b.HasKey("MerchantId", "ExternalOrderId");
+
+                    b.HasIndex("ParcelId");
+
+                    b.HasIndex("MerchantId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("merchant_booking_identities", (string)null);
+                });
+
             modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -801,6 +838,15 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("ParcelId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.MerchantBookingIdentity", b =>
+                {
+                    b.HasOne("SwiftDrop.Delivery.Api.Domain.Parcel", null)
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.Parcel", b =>

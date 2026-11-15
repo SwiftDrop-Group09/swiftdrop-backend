@@ -53,7 +53,7 @@ public sealed class EfInboxJobQueue(MerchantDbContext database) : IInboxJobQueue
 
         return await database.InboxJobs
             .Where(job => job.State == InboxJobState.Created
-                && job.ParcelStatus != null && !terminal.Contains(job.ParcelStatus)
+                && job.ParcelStatus != null && (!terminal.Contains(job.ParcelStatus) || (job.ParcelStatus == "Failed" && job.FailureReason == null))
                 && (job.LastRefreshedAt == null || job.LastRefreshedAt < staleBefore))
             .OrderBy(job => job.LastRefreshedAt)
             .Take(batchSize)

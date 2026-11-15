@@ -52,9 +52,9 @@ public static class OrderEndpoints
 
         // GET list — owner JWT or X-API-Key (orders:read); scoped to the caller's business.
         app.MapGet(OrdersPath, async (HttpContext context, MerchantOrderQueryHandler handler,
-            string? page, string? pageSize, string? state, CancellationToken cancellationToken) =>
+            string? page, string? pageSize, string? state, string? parcelStatus, CancellationToken cancellationToken) =>
         {
-            var result = await handler.ListAsync(new OrderListQuery(page, pageSize, state), cancellationToken);
+            var result = await handler.ListAsync(new OrderListQuery(page, pageSize, state, parcelStatus, context.Request.Query.Any(pair => pair.Value.Count != 1 || pair.Key is not ("page" or "pageSize" or "state" or "parcelStatus"))), cancellationToken);
             return result.Value is { } orders
                 ? Results.Ok(orders)
                 : OrderProblems.Failure(context, result.Failure!.Value, result.Errors);

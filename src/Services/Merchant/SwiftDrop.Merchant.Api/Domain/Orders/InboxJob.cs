@@ -51,6 +51,7 @@ public sealed class InboxJob
 
     // ── Refreshed copy of Delivery's parcel state ──────────────────────────
     public string? ParcelStatus { get; private set; }
+    public string? FailureReason { get; private set; }
     public long? ParcelVersion { get; private set; }
     public DateTimeOffset? LastStatusChangedAt { get; private set; }
     public DateTimeOffset? TerminalAt { get; private set; }
@@ -178,6 +179,13 @@ public sealed class InboxJob
         LastRefreshedAt = timestamp;
         UpdatedAt = timestamp;
 
+        // A same-version read may safely enrich an older terminal projection without reopening it.
+        if (snapshot.Version == ParcelVersion && snapshot.Status == ParcelStatus && snapshot.ChangedAt == LastStatusChangedAt
+            && snapshot.Status == "Failed" && FailureReason is null && snapshot.FailureReason is not null)
+        {
+            FailureReason = snapshot.FailureReason;
+            return true;
+        }
         if (snapshot.Version <= ParcelVersion)
         {
             return false;
@@ -193,6 +201,7 @@ public sealed class InboxJob
         ParcelVersion = snapshot.Version;
         LastStatusChangedAt = snapshot.ChangedAt;
         TerminalAt = snapshot.TerminalAt;
+        FailureReason = snapshot.FailureReason;
     }
 
     private void EnsureUnsettled(string operation)

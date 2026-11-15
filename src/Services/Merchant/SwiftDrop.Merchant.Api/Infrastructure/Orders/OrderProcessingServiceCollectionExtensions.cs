@@ -11,6 +11,8 @@ public enum DeliveryClientMode
     /// <summary>Default: orders wait in Retrying until a real client exists.</summary>
     Unconfigured,
 
+    Grpc,
+
     /// <summary>In-memory stand-in; allowed only in Development and Testing.</summary>
     Fake
 }
@@ -52,6 +54,9 @@ public static class OrderProcessingServiceCollectionExtensions
         var mode = configuration.GetValue(DeliveryClientSetting, DeliveryClientMode.Unconfigured);
         switch (mode)
         {
+            case DeliveryClientMode.Grpc:
+                services.AddSingleton<IDeliveryBookingClient, GrpcDeliveryBookingClient>();
+                break;
             case DeliveryClientMode.Fake when environment.IsDevelopment() || environment.IsEnvironment("Testing"):
                 services.AddSingleton<IDeliveryBookingClient, FakeDeliveryBookingClient>();
                 break;

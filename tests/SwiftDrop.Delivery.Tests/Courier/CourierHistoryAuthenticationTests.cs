@@ -71,11 +71,11 @@ public sealed class CourierHistoryAuthenticationTests
     [InlineData("?page=1&page=2")]
     [InlineData("?Page=1")]
     [InlineData("?courierId=forged")]
-    [InlineData("?status=Delivered")]
+    [InlineData("?status=Assigned")]
     [InlineData("?from=2026-01-01&to=2026-12-31")]
-    [InlineData("?date=2026-10-29")]
+    [InlineData("?date=2026-02-30")]
     [InlineData("?includeOverdue=true")]
-    public async Task OnlyDocumentedPageQueryIsAcceptedBeforeDatabaseAccess(string query)
+    public async Task OnlyDocumentedHistoryFiltersAreAcceptedBeforeDatabaseAccess(string query)
     {
         using var factory = new QuoteApiFactory(null, DeliveryTestAuthentication.Principal(Guid.NewGuid().ToString(), "Courier"));
         using var client = factory.CreateClient();
