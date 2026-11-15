@@ -309,7 +309,7 @@ public sealed partial class AssistantOrchestrator(
         out bool needsPickupCity)
     {
         var lower = text.ToLowerInvariant();
-        var hasPricingKeyword = Regex.IsMatch(lower, @"\b(how much|cost|price|fee|rate|quote|estimate|send.*to|send.*kg|how about|what about)\b");
+        var hasPricingKeyword = Regex.IsMatch(lower, @"\b(how much|cost|price|fee|rate|quote|estimate|send.*to|send.*kg|how about|what about|parcel)\b");
         var hasRoute = Regex.IsMatch(lower, @"\bfrom\s+[a-z]+\s+to\s+[a-z]+\b");
 
         // Check if there is existing fee/quote discussion in conversation history
@@ -324,13 +324,15 @@ public sealed partial class AssistantOrchestrator(
             history.LastOrDefault(h => h.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) || h.Role.Equals("model", StringComparison.OrdinalIgnoreCase)) is { } lastAssistant &&
             (lastAssistant.Content.Contains("starting position", StringComparison.OrdinalIgnoreCase) || lastAssistant.Content.Contains("picked up from", StringComparison.OrdinalIgnoreCase));
 
-        // If history had a quote or fee inquiry, a follow-up mentioning a city ("to Jaffna", "from Kandy", etc.), "how about", "what about", or weight is a fee intent
+        // If history had a quote or fee inquiry, a follow-up mentioning a city, "how about", "what about", "for ...", weight or size is a fee intent
         var isFollowUpInquiry = hasHistoryQuote && (
             lower.StartsWith("how about") ||
             lower.StartsWith("what about") ||
             lower.StartsWith("and ") ||
+            lower.StartsWith("for ") ||
             Regex.IsMatch(lower, @"\b(from|to)\s+[a-z]+\b") ||
-            Regex.IsMatch(lower, @"\b\d+(\.\d+)?\s*(kg|kilo)\b"));
+            Regex.IsMatch(lower, @"\b\d+(\.\d+)?\s*(kg|kilo)\b") ||
+            Regex.IsMatch(lower, @"\b(small|medium|large)\b"));
 
         if (!hasPricingKeyword && !hasRoute && !lastAssistantAskedPickup && !isFollowUpInquiry)
         {
@@ -380,41 +382,13 @@ public sealed partial class AssistantOrchestrator(
                 }
             }
         }
-        else if (hasHistoryQuote && history != null)
-        {
-            // Inherit previous pickup city if user only changed destination (e.g. "How about to Galle?")
-            for (var i = history.Count - 1; i >= 0; i--)
-            {
-                var hText = history[i].Content;
-                var hFrom = Regex.Match(hText, @"\bfrom\s+([A-Za-z]+)", RegexOptions.IgnoreCase);
-                if (hFrom.Success)
-                {
-                    pickupCity = hFrom.Groups[1].Value;
-                    break;
-                }
-            }
-        }
 
         // 3. Resolve delivery city (destination)
         string? deliveryCity = null;
-        var toMatches = Regex.Matches(text, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
+        var toMatches = Regex.Matches(text, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b|book\b|proceed\b|pay\b|view\b|get\b|see\b|find\b|use\b|order\b|help\b|verify\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
         if (toMatches.Count > 0)
         {
             deliveryCity = toMatches[^1].Groups[1].Value;
-        }
-        else if (hasHistoryQuote && history != null)
-        {
-            // Inherit previous delivery city if user only changed pickup or weight (e.g. "What about from Galle?", "What about 5 kg?")
-            for (var i = history.Count - 1; i >= 0; i--)
-            {
-                var hText = history[i].Content;
-                var hTo = Regex.Matches(hText, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
-                if (hTo.Count > 0)
-                {
-                    deliveryCity = hTo[^1].Groups[1].Value;
-                    break;
-                }
-            }
         }
         else
         {
@@ -429,18 +403,12 @@ public sealed partial class AssistantOrchestrator(
             }
         }
 
-        if (deliveryCity == null && history != null)
+        // If either city is still unresolved, extract from conversation history
+        if ((pickupCity == null || deliveryCity == null) && hasHistoryQuote && history != null)
         {
-            for (var i = history.Count - 1; i >= 0; i--)
-            {
-                var hText = history[i].Content;
-                var hTo = Regex.Matches(hText, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
-                if (hTo.Count > 0)
-                {
-                    deliveryCity = hTo[^1].Groups[1].Value;
-                    break;
-                }
-            }
+            var (histPickup, histDelivery) = ExtractRouteFromHistory(history);
+            pickupCity ??= histPickup;
+            deliveryCity ??= histDelivery;
         }
 
         // Extract size
@@ -479,6 +447,73 @@ public sealed partial class AssistantOrchestrator(
             PickupCity: pickupCity,
             DeliveryCity: deliveryCity);
         return true;
+    }
+
+    private static (string? Pickup, string? Delivery) ExtractRouteFromHistory(IReadOnlyList<ChatMessage>? history)
+    {
+        if (history == null) return (null, null);
+
+        string? pickup = null;
+        string? delivery = null;
+
+        for (var i = history.Count - 1; i >= 0; i--)
+        {
+            var text = history[i].Content;
+
+            // 1. Explicit pair: "from Colombo to Kandy" or "from **Colombo** to **Kandy**"
+            var pairMatch = Regex.Match(text, @"\bfrom\s+\*?\*?([A-Za-z]+)\*?\*?\s+to\s+\*?\*?([A-Za-z]+)\*?\*?", RegexOptions.IgnoreCase);
+            if (pairMatch.Success)
+            {
+                pickup ??= pairMatch.Groups[1].Value;
+                delivery ??= pairMatch.Groups[2].Value;
+                return (pickup, delivery);
+            }
+
+            // 2. Arrow notation: "Colombo → Kandy"
+            var arrowMatch = Regex.Match(text, @"\b([A-Za-z]+)\s*(?:→|->)\s*([A-Za-z]+)\b", RegexOptions.IgnoreCase);
+            if (arrowMatch.Success)
+            {
+                pickup ??= arrowMatch.Groups[1].Value;
+                delivery ??= arrowMatch.Groups[2].Value;
+                return (pickup, delivery);
+            }
+
+            // 3. Deep link URL parameters: "pickupCity=Colombo&deliveryCity=Kandy"
+            var urlPickup = Regex.Match(text, @"pickupCity=([A-Za-z]+)", RegexOptions.IgnoreCase);
+            var urlDelivery = Regex.Match(text, @"deliveryCity=([A-Za-z]+)", RegexOptions.IgnoreCase);
+            if (urlPickup.Success || urlDelivery.Success)
+            {
+                pickup ??= urlPickup.Success ? urlPickup.Groups[1].Value : null;
+                delivery ??= urlDelivery.Success ? urlDelivery.Groups[1].Value : null;
+                if (pickup != null && delivery != null)
+                {
+                    return (pickup, delivery);
+                }
+            }
+
+            // 4. In user messages only, look for "from <City>" and "to <City>"
+            if (history[i].Role.Equals("user", StringComparison.OrdinalIgnoreCase))
+            {
+                if (pickup == null)
+                {
+                    var uFrom = Regex.Match(text, @"\bfrom\s+([A-Za-z]+)", RegexOptions.IgnoreCase);
+                    if (uFrom.Success) pickup = uFrom.Groups[1].Value;
+                }
+
+                if (delivery == null)
+                {
+                    var uTo = Regex.Matches(text, @"\b(?:to|into)\s+(?!send\b|ship\b|deliver\b|post\b|calculate\b|check\b|track\b|book\b|proceed\b|pay\b|view\b|get\b|see\b|find\b|use\b|order\b|help\b|verify\b)([A-Za-z]+)", RegexOptions.IgnoreCase);
+                    if (uTo.Count > 0) delivery = uTo[^1].Groups[1].Value;
+                }
+
+                if (pickup != null && delivery != null)
+                {
+                    return (pickup, delivery);
+                }
+            }
+        }
+
+        return (pickup, delivery);
     }
 
     private static bool IsTrackingIntent(string text, out TrackParcelInput args)

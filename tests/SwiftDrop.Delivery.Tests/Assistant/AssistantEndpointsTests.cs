@@ -144,6 +144,36 @@ public sealed class AssistantEndpointsTests
         Assert.Equal(2m, chatResult.Cards!.Quote!.WeightKg);
         Assert.Contains("Colombo", chatResult.Cards.Quote.PickupCity);
         Assert.Contains("Galle", chatResult.Cards.Quote.DeliveryCity, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_FollowUp_ChangesWeightAndSizeOnly_InheritsRoute()
+    {
+        using var factory = CreateFactory(QuoteApiFactory.Customer(CustomerId));
+        using var client = factory.CreateClient();
+
+        // Turn 1 history contains quote from Colombo to Kandy
+        var history = new List<ChatMessage>
+        {
+            new("user", "How much to send 2 kg from Colombo to Kandy?"),
+            new("assistant", "Sending a 2 kg (Small) parcel from Colombo to Kandy costs LKR 560.00. This quote is locked until 8:04 PM—you can proceed to book directly below.")
+        };
+
+        // Turn 2: User changes weight and size only: "for a parcel of 25kg of size medium"
+        var request = new AssistantChatRequest("for a parcel of 25kg of size medium", history);
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Single(chatResult!.ToolCalls);
+        Assert.Equal("success", chatResult.ToolCalls[0].Status);
+        Assert.NotNull(chatResult.Cards?.Quote);
+        Assert.Equal(25m, chatResult.Cards!.Quote!.WeightKg);
+        Assert.Equal("Medium", chatResult.Cards.Quote.Size);
+        Assert.Contains("Colombo", chatResult.Cards.Quote.PickupCity);
+        Assert.Contains("Kandy", chatResult.Cards.Quote.DeliveryCity, StringComparison.OrdinalIgnoreCase);
+    }
 
     [Fact]
     public async Task ChatAssistant_AsksForStartingPosition_WhenOnlyDestinationGiven()
