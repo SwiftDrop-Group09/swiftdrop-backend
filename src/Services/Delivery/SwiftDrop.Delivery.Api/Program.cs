@@ -1,11 +1,13 @@
 using SwiftDrop.Auditing;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application;
+using SwiftDrop.Delivery.Api.Application.Admin.Couriers;
 using SwiftDrop.Delivery.Api.Application.Admin.Pricing;
 using SwiftDrop.Delivery.Api.Application.Admin.Reports;
 using SwiftDrop.Delivery.Api.Application.Admin.Zones;
 using SwiftDrop.Delivery.Api.Application.Assistant;
 using SwiftDrop.Delivery.Api.Application.Bookings;
+using SwiftDrop.Delivery.Api.Application.CourierDuty;
 using SwiftDrop.Delivery.Api.Application.CourierStatus;
 using SwiftDrop.Delivery.Api.Application.CourierProof;
 using SwiftDrop.Delivery.Api.Application.DeliveryReads;
@@ -96,6 +98,8 @@ public partial class Program
         builder.Services.AddScoped<IDeliveryReportStore>(services =>
             new PostgresDeliveryReportStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<DeliveryReportHandler>();
+        builder.Services.AddScoped<CourierDutyHandler>();
+        builder.Services.AddScoped<AdminCourierHandler>();
         builder.Services.AddScoped<AssistantToolExecutor>();
         builder.Services.AddScoped<McpServerHandler>();
         builder.Services.AddScoped<AssistantOrchestrator>();
@@ -189,8 +193,10 @@ public partial class Program
         app.MapDeliveryReads();
         app.MapDispatchReads();
         app.MapAssignments();
+        app.MapCourierDuty();
         app.MapCourierStatus();
         app.MapCourierProof();
+        app.MapAdminCouriers();
         app.MapAdminZones();
         app.MapAdminPricing();
         app.MapAdminReports();
