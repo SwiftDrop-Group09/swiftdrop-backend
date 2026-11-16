@@ -13,12 +13,13 @@ public sealed record AssignmentCandidate(
     bool OnDuty,
     int ActiveCountForServiceDate,
     int Capacity,
+    string CourierCode,
     VehicleType VehicleType = VehicleType.Motorcycle,
     string? VehicleNumber = null,
     decimal MaxWeightKg = 30.00m,
     int Score = 0,
     bool IsRecommended = false);
-public sealed record ReassignmentContext(Guid CourierId, DateOnly ServiceDate);
+public sealed record ReassignmentContext(Guid CourierId, DateOnly ServiceDate, string CourierCode);
 public sealed record AssignmentOptions(Guid ParcelId, long ParcelVersion, DateOnly BusinessToday,
     string OperationsTimeZone, DateOnly ServiceDate, IReadOnlyList<AssignmentCandidate> Items,
     int TotalCount, int Page, int PageSize, bool Reassign, ReassignmentContext? CurrentAssignment);

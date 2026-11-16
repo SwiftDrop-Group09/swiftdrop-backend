@@ -30,6 +30,7 @@ public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFacto
             && c.MaxWeightKg >= parcelWeight)
             .Select(c => new {
                 CourierId = c.Id,
+                c.BusinessNumber,
                 c.OnDuty,
                 c.Capacity,
                 c.VehicleType,
@@ -69,6 +70,7 @@ public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFacto
                 c.OnDuty,
                 c.ActiveCountForServiceDate,
                 c.Capacity,
+                "COU-" + c.BusinessNumber.ToString("D4", System.Globalization.CultureInfo.InvariantCulture),
                 c.VehicleType,
                 c.VehicleNumber,
                 c.MaxWeightKg,
@@ -87,9 +89,18 @@ public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFacto
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToArray();
+
+        ReassignmentContext? currentAssignment = null;
+        if (current is not null)
+        {
+            var number = await db.Couriers.AsNoTracking().Where(c => c.Id == current.CourierId)
+                .Select(c => c.BusinessNumber).SingleAsync(cancellationToken);
+            currentAssignment = new(current.CourierId, current.ServiceDate,
+                "COU-" + number.ToString("D4", System.Globalization.CultureInfo.InvariantCulture));
+        }
         await transaction.CommitAsync(cancellationToken);
         return new(parcel.Id, parcel.Version, today, timeZone, serviceDate, items, total, page, pageSize, reassign,
-            current is null ? null : new(current.CourierId, current.ServiceDate));
+            currentAssignment);
     });
 
     public Task<IAssignmentTransaction> BeginAsync(CancellationToken cancellationToken) => Protect<IAssignmentTransaction>(async () =>
