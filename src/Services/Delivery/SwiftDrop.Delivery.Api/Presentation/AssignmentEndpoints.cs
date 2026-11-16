@@ -60,6 +60,7 @@ public static class AssignmentEndpoints
             AssignmentFailure.CourierUnavailable => (422, "courier_unavailable", "The courier must be active and on duty for today's work."),
             AssignmentFailure.ZoneMismatch => (422, "zone_mismatch", "The courier does not serve this parcel's delivery zone."),
             AssignmentFailure.CapacityExceeded => (422, "capacity_exceeded", "The courier's capacity for this service date is full."),
+            AssignmentFailure.WeightCapacityExceeded => (422, "weight_capacity_exceeded", "The parcel's weight exceeds the courier's maximum vehicle weight limit."),
             AssignmentFailure.KeyConflict => (409, "idempotency_conflict", "The key belongs to a different request."),
             AssignmentFailure.KeyExpired => (409, "key_expired", "The retained idempotency key has expired."),
             AssignmentFailure.OperationInProgress => (409, "operation_in_progress", "Retry the same request and key later."),

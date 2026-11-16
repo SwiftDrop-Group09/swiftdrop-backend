@@ -8,7 +8,16 @@ public sealed record AssignCourierCommand(Guid ParcelId, Guid CourierId, long Ex
     DateOnly? ServiceDate, string Key, string Fingerprint, bool Reassign = false, string? Reason = null);
 public sealed record AssignmentOptionsInput(string? ServiceDate = null, string? Page = null,
     string? PageSize = null, bool InvalidParameters = false, string? Reassign = null);
-public sealed record AssignmentCandidate(Guid CourierId, bool OnDuty, int ActiveCountForServiceDate, int Capacity);
+public sealed record AssignmentCandidate(
+    Guid CourierId,
+    bool OnDuty,
+    int ActiveCountForServiceDate,
+    int Capacity,
+    VehicleType VehicleType = VehicleType.Motorcycle,
+    string? VehicleNumber = null,
+    decimal MaxWeightKg = 30.00m,
+    int Score = 0,
+    bool IsRecommended = false);
 public sealed record ReassignmentContext(Guid CourierId, DateOnly ServiceDate);
 public sealed record AssignmentOptions(Guid ParcelId, long ParcelVersion, DateOnly BusinessToday,
     string OperationsTimeZone, DateOnly ServiceDate, IReadOnlyList<AssignmentCandidate> Items,
@@ -17,7 +26,7 @@ public sealed record AssignedResponse(int StatusCode, string Body, string Locati
 public enum AssignmentFailure
 {
     Unauthenticated, Forbidden, InvalidInput, NotFound, StaleVersion, InvalidTransition,
-    CourierUnavailable, ZoneMismatch, CapacityExceeded, KeyConflict, KeyExpired, OperationInProgress, Unavailable
+    CourierUnavailable, ZoneMismatch, CapacityExceeded, WeightCapacityExceeded, KeyConflict, KeyExpired, OperationInProgress, Unavailable
 }
 public sealed record AssignmentResult<T>(T? Response, AssignmentFailure? Failure,
     IReadOnlyDictionary<string, string[]>? Errors = null, long? CurrentVersion = null);

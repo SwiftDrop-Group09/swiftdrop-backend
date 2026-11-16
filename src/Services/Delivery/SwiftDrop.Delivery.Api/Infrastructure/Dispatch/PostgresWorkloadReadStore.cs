@@ -22,6 +22,7 @@ public sealed class PostgresWorkloadReadStore(Func<DeliveryDbContext> contextFac
                 .Select(courier => new
                 {
                     courier.Id, courier.BusinessNumber, courier.Active, courier.OnDuty, courier.Capacity,
+                    courier.VehicleType, courier.VehicleNumber, courier.MaxWeightKg,
                     ActiveCount = db.Assignments.Count(assignment => assignment.CourierId == courier.Id
                         && assignment.Status == AssignmentStatus.Active)
                 }).ToArrayAsync(cancellationToken);
@@ -31,7 +32,8 @@ public sealed class PostgresWorkloadReadStore(Func<DeliveryDbContext> contextFac
             var zones = memberships.ToLookup(zone => zone.CourierId, zone => zone.ZoneId);
             var items = rows.Select(row => new CourierWorkloadResponse(row.Id, row.Active, row.OnDuty,
                 row.ActiveCount, row.Capacity, zones[row.Id].ToArray(),
-                "COU-" + row.BusinessNumber.ToString("D4", System.Globalization.CultureInfo.InvariantCulture))).ToArray();
+                "COU-" + row.BusinessNumber.ToString("D4", System.Globalization.CultureInfo.InvariantCulture),
+                row.VehicleType, row.VehicleNumber, row.MaxWeightKg)).ToArray();
             await transaction.CommitAsync(cancellationToken);
             return new(items, total, page, pageSize);
         }
