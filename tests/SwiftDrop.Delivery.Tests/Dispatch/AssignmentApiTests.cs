@@ -316,6 +316,31 @@ public sealed class AssignmentApiTests(PostgresFixture fixture)
             .Select(x => x.GetProperty("courierId").GetGuid()).ToArray();
         Assert.Equal(ids.Order(), ids);
         Assert.Equal(25, ids.Distinct().Count());
+        var items = a.RootElement.GetProperty("items").EnumerateArray()
+            .Concat(b.RootElement.GetProperty("items").EnumerateArray()).ToArray();
+        await using var stored = s.Context();
+        var numbers = await stored.Couriers.Where(c => ids.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c.BusinessNumber);
+        var codes = items.ToDictionary(x => x.GetProperty("courierId").GetGuid(),
+            x => x.GetProperty("courierCode").GetString());
+        foreach (var id in ids)
+            Assert.Equal("COU-" + numbers[id].ToString("D4", System.Globalization.CultureInfo.InvariantCulture), codes[id]);
+        Assert.Equal(25, codes.Values.Distinct().Count());
+        var remaining = ids.ToHashSet();
+        var page = 1;
+        while (remaining.Count > 0)
+        {
+            using var workload = await client.GetAsync($"/api/v1/couriers/workload?page={page++}&pageSize=100");
+            workload.EnsureSuccessStatusCode();
+            using var document = JsonDocument.Parse(await workload.Content.ReadAsStringAsync());
+            var fleet = document.RootElement.GetProperty("items").EnumerateArray().ToArray();
+            Assert.NotEmpty(fleet);
+            foreach (var row in fleet)
+            {
+                var id = row.GetProperty("courierId").GetGuid();
+                if (remaining.Remove(id)) Assert.Equal(codes[id], row.GetProperty("courierCode").GetString());
+            }
+        }
     }
 
     [Fact]

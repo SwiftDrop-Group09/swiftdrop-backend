@@ -26,15 +26,25 @@ public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFacto
         var excludedCourier = reassign ? current!.CourierId : Guid.Empty;
         var candidates = db.Couriers.AsNoTracking().Where(c => (c.Id != excludedCourier) && c.Active && (serviceDate > today || c.OnDuty)
             && db.CourierZones.Any(z => z.CourierId == c.Id && z.ZoneId == parcel.ZoneId))
-            .Select(c => new { CourierId = c.Id, c.OnDuty, c.Capacity,
+            .Select(c => new { CourierId = c.Id, c.BusinessNumber, c.OnDuty, c.Capacity,
                 ActiveCountForServiceDate = db.Assignments.Count(a => a.CourierId == c.Id && a.Status == AssignmentStatus.Active && a.ServiceDate == serviceDate) })
             .Where(c => c.ActiveCountForServiceDate < c.Capacity);
         var total = await candidates.CountAsync(cancellationToken);
-        var items = await candidates.OrderBy(c => c.CourierId).Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(c => new AssignmentCandidate(c.CourierId, c.OnDuty, c.ActiveCountForServiceDate, c.Capacity)).ToArrayAsync(cancellationToken);
+        var rows = await candidates.OrderBy(c => c.CourierId).Skip((page - 1) * pageSize).Take(pageSize)
+            .ToArrayAsync(cancellationToken);
+        var items = rows.Select(c => new AssignmentCandidate(c.CourierId, c.OnDuty, c.ActiveCountForServiceDate, c.Capacity,
+            "COU-" + c.BusinessNumber.ToString("D4", System.Globalization.CultureInfo.InvariantCulture))).ToArray();
+        ReassignmentContext? currentAssignment = null;
+        if (current is not null)
+        {
+            var number = await db.Couriers.AsNoTracking().Where(c => c.Id == current.CourierId)
+                .Select(c => c.BusinessNumber).SingleAsync(cancellationToken);
+            currentAssignment = new(current.CourierId, current.ServiceDate,
+                "COU-" + number.ToString("D4", System.Globalization.CultureInfo.InvariantCulture));
+        }
         await transaction.CommitAsync(cancellationToken);
         return new(parcel.Id, parcel.Version, today, timeZone, serviceDate, items, total, page, pageSize, reassign,
-            current is null ? null : new(current.CourierId, current.ServiceDate));
+            currentAssignment);
     });
 
     public Task<IAssignmentTransaction> BeginAsync(CancellationToken cancellationToken) => Protect<IAssignmentTransaction>(async () =>
