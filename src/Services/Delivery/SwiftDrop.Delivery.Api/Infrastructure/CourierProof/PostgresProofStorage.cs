@@ -68,7 +68,7 @@ public sealed class PostgresProofStorage : IPrivateProofStorage, IPrivateProofRe
             if (row.Sha256 != sha256 || row.Length != proof.Content.LongLength)
                 throw new ProofStorageException();
 
-            return new StoredProof(storageRef, proof.ContentType, row.Sha256, row.Length, row.StoredAt);
+            return new StoredProof(storageRef, proof.ContentType, row.Sha256, row.Length, row.StoredAt.ToUniversalTime());
         }, cancellationToken);
     }
 
@@ -121,7 +121,7 @@ public sealed class PostgresProofStorage : IPrivateProofStorage, IPrivateProofRe
         }, cancellationToken);
 
         foreach (var row in rows)
-            yield return new StagedProofObject(row.StorageRef, row.StoredAt);
+            yield return new StagedProofObject(row.StorageRef, row.StoredAt.ToUniversalTime());
     }
 
     /// <summary>
