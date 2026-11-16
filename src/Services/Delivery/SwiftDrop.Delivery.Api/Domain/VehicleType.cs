@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace SwiftDrop.Delivery.Api.Domain;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum VehicleType
 {
     Bicycle = 1,
