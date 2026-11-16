@@ -178,6 +178,96 @@ retained initial-assignment receipts remain covered. Normalized-reason replay is
 verified after pickup, a later reassignment and business midnight (both omitted
 and explicit dates), with changed-reason conflicts and no duplicate effects.
 
+## Whole Dispatcher integration (P6)
+
+`DispatcherWorkflowTests` adds four API-through-PostgreSQL cases for Dispatcher
+and Admin. Only reference zones/tariffs/Courier profiles are seeded; quote and
+booking, allocation, reassignment, Courier stages, failure and proof completion
+use existing HTTP handlers. Proof bytes use the existing in-memory private-storage
+fixture. This exercises the Delivery boundary without claiming real sign-in,
+shared storage, Flutter, broker or container acceptance.
+
+The successful-delivery path verifies Created queue/Customer ownership, assignment,
+Courier manifest, every stage's operations detail/workload/active-parcel projection,
+and all-date/UTC booking-day zone summaries through Delivered. The replacement
+path verifies retained history, old-Courier loss of ownership and the new Courier's
+Failed outcome. Both paths verify Dispatcher/Admin cannot advance Courier status
+or upload proof, with unchanged persisted graphs and no proof uploads on refusal.
+Post-terminal booking/assignment retries return their original responses with no
+extra state, history, outbox, receipt or proof writes. Events retain strict v1
+schema/private-data boundaries. Existing race/fault suites remain authoritative
+for last-slot allocation, pickup races and rollback at each transaction stage.
+
+At test commit `284ed33` (base `6b56f45`), Release restore/build passes with zero
+warnings/errors and all **2,127** solution tests pass, none skipped: Delivery
+1,260; Identity 409; Merchant 383; Gateway 70; Notification 5. Tests used private
+disposable PostgreSQL 18.6 with external database fallbacks unset and .NET SDK
+10.0.301. `DOTNET_USE_POLLING_FILE_WATCHER=1` was scoped to the check process after
+the initial baseline hit the host's inotify-instance limit in Merchant test hosts.
+After the user authorized a coordinated runtime switch, the full foundation
+script passed at `9e5a2ba`: 13-project reference/cycle audit, five real host starts,
+Gateway forwarding, internal-route isolation and fail-closed read/write probes.
+The script's last private-listener output still says no gRPC methods are
+implemented; that historical label establishes TCP binding only. The newer
+Merchant RPC exists and remains outside this Dispatcher acceptance scope.
+
+The implementation preserves the proposed design's service-owned transactions,
+expectedVersion/current-ownership guards and outbox boundary. Contract-owner
+handoffs remain: assignment-options and operations assignment-list catalog entries,
+additive workload fields, future-date duty policy, TC-D02 capacity **422** versus
+draft **409**, and the reassignment reason narrative versus fixed StatusChanged v1.
+The reason remains private history; P6 adds no public contract/schema change.
+Current Courier transition notes are optional under the updated state policy.
+
+Shared acceptance uses two explicitly agreed test parcels and existing authorized
+accounts/profiles. The user or workflow owner performs booking, allocation,
+replacement and Courier actions; compare queue, manifests, counts and all-date/UTC
+summary responses to independent read-only persistence. One parcel must finish
+with valid proof; the other must be reassigned before pickup and fail with a
+canonical reason. Keep races/fault injection in disposable fixtures.
+
+A fresh read-only preflight on 15 November found Identity 5/5, Delivery 11/11 and
+Merchant 7/7 migrations applied, no pending migrations, and nine active/on-duty
+Courier profiles with zone memberships. The user then authorized canonical startup
+and restoration. With backend `9e5a2ba`, frontend `6b33c39` and infra `785f0dc`,
+`run.sh up --mode docker --build` passed. All seven expected containers used the
+expected images; the six configured container health checks were healthy. Web
+deep routes, Identity bootstrap and internal trusted JWKS returned 200. Anonymous
+queue/workload/summary/options reads and assignment/status/proof writes returned
+401. These anonymous refusal probes performed no authorized parcel operation.
+
+Non-watch host mode was restored through the canonical runner; all six service
+health endpoints, the workload deep page and CSRF bootstrap returned 200, and
+anonymous summary returned 401. Read-only migration histories matched before
+Docker, during Docker and after host restoration: Identity 5/5, Delivery 11/11,
+Merchant 7/7, with no pending versions. No schema reset/downgrade, account
+provisioning or shared test-parcel mutation was performed. Earlier rollout notes
+above describe their original milestones.
+
+The user explicitly deferred real user-assisted whole-workflow acceptance. P6
+therefore remains pending that two-parcel run; startup/health, anonymous refusal
+and fixture results do not establish real signed-in workflow acceptance. Missing
+other-role workflows remain owner dependencies. No publication was performed.
+
+## Frontend integration follow-up
+
+Frontend normal merge `797242e` integrates current dev `17aaa30` with the unchanged
+P6 tests. No backend production/test source changed. At backend `265e2dc`, frontend
+`797242e` and infra `785f0dc`, fresh full foundation and canonical Docker build/start
+checks pass: seven expected service images, six configured healthy container
+checks, 14 HTTP/trusted-JWKS probes and anonymous operations refusal. Preflight
+found the earlier stack stopped; the canonical runner finished in non-watch host
+mode, with all nine host/page/bootstrap/refusal probes passing. Read-only schema
+histories remain Identity 5/5, Delivery 11/11, Merchant 7/7 before/during/after,
+with no pending migrations, schema reset/downgrade or shared test-parcel mutation.
+
+The frontend's unchanged complete standard check passes all 735 tests and build
+in a two-CPU-affinity child process. Its unrestricted local run retains an Identity
+heading timeout; upstream dev CI and the entire Identity file separately pass.
+See the frontend integration handoff for the exact environment and stability
+limit. No Identity source, assertions or test settings were changed to obtain
+these results. Signed-in two-parcel acceptance remains explicitly deferred.
+
 ## Courier label verification — 16 November 2026
 
 The courier-code patch on dev base `41b0873` passes Release restore/build with
@@ -196,3 +286,24 @@ preflight encounters occupied local ports. Full canonical Docker startup accepta
 is pending the existing task-specific shared migration authorization. Exact final
 commit hashes, source fingerprints and check logs are retained in the EAD
 Dispatcher continuity records.
+
+## Current dev integration review — 16 November 2026
+
+Integrated dev `2ef9cb9`, including courier-label PR #40 and courier
+vehicle/capacity PR #39, into the P6 branch for PR review. The documentation merge retains both the P6 workflow handoff and the
+current courier-code contract and verification history.
+
+The combined source passes `dotnet restore SwiftDrop.sln`, Release build with
+zero warnings/errors, and all **2,149 solution tests**, none skipped, on Linux
+with .NET SDK 10.0.301 and disposable PostgreSQL 18.6. This includes the four
+Dispatcher/Admin API-through-PostgreSQL lifecycle cases. The external Delivery
+test database fallback was unset. Full shared Docker startup for the combined
+source and real signed-in terminal-workflow acceptance remain pending. The last
+shared proof-storage preflight found missing runtime SELECT/INSERT/DELETE
+privileges on `proof_objects`; correction remains with the owning service and
+environment owners.
+
+The upstream proof-table grant was added to the historical `ProofObjectsTable`
+migration. The last shared-database preflight had already recorded that migration
+as applied. Runtime permission verification and any approved repair for an existing
+database remain with the service/environment owner.
