@@ -60,8 +60,12 @@ public sealed class ReassignmentOptionsTests(PostgresFixture fixture)
         Assert.Equal(2, root.GetProperty("parcelVersion").GetInt64());
         Assert.Equal(selectedDate, root.GetProperty("serviceDate").GetString());
         var current = root.GetProperty("currentAssignment");
-        Assert.Equal(new[] { "courierId", "serviceDate" }, current.EnumerateObject().Select(x => x.Name).Order().ToArray());
+        Assert.Equal(new[] { "courierCode", "courierId", "serviceDate" }, current.EnumerateObject().Select(x => x.Name).Order().ToArray());
         Assert.Equal(s.CourierId, current.GetProperty("courierId").GetGuid());
+        await using var stored = s.Context();
+        var number = await stored.Couriers.Where(x => x.Id == s.CourierId).Select(x => x.BusinessNumber).SingleAsync();
+        Assert.Equal("COU-" + number.ToString("D4", System.Globalization.CultureInfo.InvariantCulture),
+            current.GetProperty("courierCode").GetString());
         Assert.Equal(originalDate, current.GetProperty("serviceDate").GetString());
         Assert.Equal(s.OtherCourierId, Assert.Single(root.GetProperty("items").EnumerateArray()).GetProperty("courierId").GetGuid());
         Assert.Equal(1, root.GetProperty("totalCount").GetInt32());
@@ -97,9 +101,12 @@ public sealed class ReassignmentOptionsTests(PostgresFixture fixture)
     public async Task PagingAndDutyUseTheReplacementDateAndIgnoreOldCouriersActivity()
     {
         await using var s = await StatusTestScenario.CreateAsync(fixture);
+        string currentCode;
         await using (var db = s.Context())
         {
-            (await db.Couriers.SingleAsync(x => x.Id == s.CourierId)).Configure(false, false, 1);
+            var current = await db.Couriers.SingleAsync(x => x.Id == s.CourierId);
+            currentCode = "COU-" + current.BusinessNumber.ToString("D4", System.Globalization.CultureInfo.InvariantCulture);
+            current.Configure(false, false, 1);
             (await db.Couriers.SingleAsync(x => x.Id == s.OtherCourierId)).Configure(true, false, 1);
             await db.SaveChangesAsync();
         }
@@ -110,6 +117,7 @@ public sealed class ReassignmentOptionsTests(PostgresFixture fixture)
             using var response = await client.GetAsync($"/api/v1/deliveries/{s.ParcelId}/assignment-options?reassign=true&pageSize=1&serviceDate=" + (future ? "2026-10-29" : "2026-10-28"));
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(currentCode, body.RootElement.GetProperty("currentAssignment").GetProperty("courierCode").GetString());
             Assert.Equal(future ? 1 : 0, body.RootElement.GetProperty("totalCount").GetInt32());
         }
     }
