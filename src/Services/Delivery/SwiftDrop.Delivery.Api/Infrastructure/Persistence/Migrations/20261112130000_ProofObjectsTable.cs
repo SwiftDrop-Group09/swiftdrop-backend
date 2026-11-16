@@ -24,6 +24,9 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                 );
                 CREATE INDEX IF NOT EXISTS ix_proof_objects_stored_at
                     ON proof_objects (stored_at);
+                DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'delivery_app') THEN
+                    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE proof_objects TO delivery_app;
+                END IF; END $$;
                 """);
         }
 

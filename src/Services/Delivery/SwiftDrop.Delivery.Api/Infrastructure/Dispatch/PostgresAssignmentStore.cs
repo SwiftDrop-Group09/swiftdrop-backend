@@ -24,16 +24,72 @@ public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFacto
             throw new AssignmentException(AssignmentFailure.InvalidTransition);
         var serviceDate = requestedDate ?? (reassign && current!.ServiceDate > today ? current.ServiceDate : today);
         var excludedCourier = reassign ? current!.CourierId : Guid.Empty;
-        var candidates = db.Couriers.AsNoTracking().Where(c => (c.Id != excludedCourier) && c.Active && (serviceDate > today || c.OnDuty)
-            && db.CourierZones.Any(z => z.CourierId == c.Id && z.ZoneId == parcel.ZoneId))
-            .Select(c => new { CourierId = c.Id, c.BusinessNumber, c.OnDuty, c.Capacity,
-                ActiveCountForServiceDate = db.Assignments.Count(a => a.CourierId == c.Id && a.Status == AssignmentStatus.Active && a.ServiceDate == serviceDate) })
+        var parcelWeight = parcel.WeightKg;
+        var candidatesQuery = db.Couriers.AsNoTracking().Where(c => (c.Id != excludedCourier) && c.Active && (serviceDate > today || c.OnDuty)
+            && db.CourierZones.Any(z => z.CourierId == c.Id && z.ZoneId == parcel.ZoneId)
+            && c.MaxWeightKg >= parcelWeight)
+            .Select(c => new {
+                CourierId = c.Id,
+                c.BusinessNumber,
+                c.OnDuty,
+                c.Capacity,
+                c.VehicleType,
+                c.VehicleNumber,
+                c.MaxWeightKg,
+                ActiveCountForServiceDate = db.Assignments.Count(a => a.CourierId == c.Id && a.Status == AssignmentStatus.Active && a.ServiceDate == serviceDate)
+            })
             .Where(c => c.ActiveCountForServiceDate < c.Capacity);
-        var total = await candidates.CountAsync(cancellationToken);
-        var rows = await candidates.OrderBy(c => c.CourierId).Skip((page - 1) * pageSize).Take(pageSize)
-            .ToArrayAsync(cancellationToken);
-        var items = rows.Select(c => new AssignmentCandidate(c.CourierId, c.OnDuty, c.ActiveCountForServiceDate, c.Capacity,
-            "COU-" + c.BusinessNumber.ToString("D4", System.Globalization.CultureInfo.InvariantCulture))).ToArray();
+
+        var rawCandidates = await candidatesQuery.ToListAsync(cancellationToken);
+        var total = rawCandidates.Count;
+
+        var scored = rawCandidates.Select(c =>
+        {
+            var workloadRatio = (double)c.ActiveCountForServiceDate / Math.Max(1, c.Capacity);
+            var workloadScore = (int)((1.0 - workloadRatio) * 50);
+
+            var vehicleScore = c.VehicleType switch
+            {
+                VehicleType.Bicycle when parcelWeight <= 5.0m => 30,
+                VehicleType.Bicycle => 10,
+                VehicleType.Motorcycle when parcelWeight <= 15.0m => 30,
+                VehicleType.Motorcycle => 25,
+                VehicleType.Car when parcelWeight is > 10.0m and <= 50.0m => 30,
+                VehicleType.Car => 20,
+                VehicleType.Van when parcelWeight > 30.0m => 30,
+                VehicleType.Van => 20,
+                VehicleType.Truck when parcelWeight > 100.0m => 30,
+                _ => 15
+            };
+
+            var headroom = Math.Clamp(c.Capacity - c.ActiveCountForServiceDate, 0, 20);
+            var totalScore = Math.Clamp(workloadScore + vehicleScore + headroom, 1, 100);
+
+            return new AssignmentCandidate(
+                c.CourierId,
+                c.OnDuty,
+                c.ActiveCountForServiceDate,
+                c.Capacity,
+                "COU-" + c.BusinessNumber.ToString("D4", System.Globalization.CultureInfo.InvariantCulture),
+                c.VehicleType,
+                c.VehicleNumber,
+                c.MaxWeightKg,
+                totalScore,
+                false);
+        }).ToList();
+        var bestCourier = scored
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.ActiveCountForServiceDate)
+            .FirstOrDefault();
+        var bestCourierId = bestCourier?.CourierId;
+
+        var items = scored
+            .Select(c => c.CourierId == bestCourierId ? c with { IsRecommended = true } : c)
+            .OrderBy(c => c.CourierId)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToArray();
+
         ReassignmentContext? currentAssignment = null;
         if (current is not null)
         {
@@ -126,6 +182,7 @@ public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFacto
                 var count = await db.Assignments.CountAsync(x => x.CourierId == courierId && x.ServiceDate == date
                     && x.Status == AssignmentStatus.Active, cancellationToken);
                 if (count >= courier.Capacity) throw new AssignmentException(AssignmentFailure.CapacityExceeded);
+                if (parcel.WeightKg > courier.MaxWeightKg) throw new AssignmentException(AssignmentFailure.WeightCapacityExceeded);
                 return true;
             });
         }
