@@ -16,9 +16,10 @@ using SwiftDrop.Identity.Api.Infrastructure.Google;
 
 namespace SwiftDrop.Identity.Tests;
 
+[Collection("GoogleVerifier")]
 public sealed class GoogleVerifierTests : IAsyncLifetime
 {
-    private readonly RSA rsa = RSA.Create(2048);
+    private static readonly RSA rsa = RSA.Create(2048);
     private WebApplication server = null!;
     private string certificatesUrl = null!;
 
@@ -30,14 +31,18 @@ public sealed class GoogleVerifierTests : IAsyncLifetime
         builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
         server = builder.Build();
         var publicKey = rsa.ExportParameters(false);
-        server.MapGet("/keys", () => Results.Json(new
+        server.MapGet("/keys", (HttpContext context) =>
         {
-            keys = new[]
+            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            return Results.Json(new
             {
-                new { kty = "RSA", kid = "google-test", alg = "RS256", use = "sig",
-                    n = Base64UrlEncoder.Encode(publicKey.Modulus), e = Base64UrlEncoder.Encode(publicKey.Exponent) }
-            }
-        }));
+                keys = new[]
+                {
+                    new { kty = "RSA", kid = "google-test", alg = "RS256", use = "sig",
+                        n = Base64UrlEncoder.Encode(publicKey.Modulus), e = Base64UrlEncoder.Encode(publicKey.Exponent) }
+                }
+            });
+        });
         await server.StartAsync();
         certificatesUrl = server.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + "/keys";
     }
@@ -250,6 +255,5 @@ public sealed class GoogleVerifierTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await server.DisposeAsync();
-        rsa.Dispose();
     }
 }

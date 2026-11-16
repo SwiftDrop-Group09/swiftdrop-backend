@@ -289,12 +289,12 @@ Dispatcher continuity records.
 
 ## Current dev integration review — 16 November 2026
 
-Integrated dev `a3cc9fd`, including courier-label PR #40, into the P6 branch for
-PR review. The documentation merge retains both the P6 workflow handoff and the
+Integrated dev `2ef9cb9`, including courier-label PR #40 and courier
+vehicle/capacity PR #39, into the P6 branch for PR review. The documentation merge retains both the P6 workflow handoff and the
 current courier-code contract and verification history.
 
 The combined source passes `dotnet restore SwiftDrop.sln`, Release build with
-zero warnings/errors, and all **2,146 solution tests**, none skipped, on Linux
+zero warnings/errors, and all **2,149 solution tests**, none skipped, on Linux
 with .NET SDK 10.0.301 and disposable PostgreSQL 18.6. This includes the four
 Dispatcher/Admin API-through-PostgreSQL lifecycle cases. The external Delivery
 test database fallback was unset. Full shared Docker startup for the combined
@@ -302,3 +302,8 @@ source and real signed-in terminal-workflow acceptance remain pending. The last
 shared proof-storage preflight found missing runtime SELECT/INSERT/DELETE
 privileges on `proof_objects`; correction remains with the owning service and
 environment owners.
+
+The upstream proof-table grant was added to the historical `ProofObjectsTable`
+migration. The last shared-database preflight had already recorded that migration
+as applied. Runtime permission verification and any approved repair for an existing
+database remain with the service/environment owner.

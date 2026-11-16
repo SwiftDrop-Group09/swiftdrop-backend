@@ -1,9 +1,12 @@
+using SwiftDrop.Delivery.Api.Domain;
+
 namespace SwiftDrop.Delivery.Api.Application.Dispatch;
 
 public sealed record WorkloadQueryInput(string? Page = null, string? PageSize = null,
     bool InvalidParameters = false);
 public sealed record CourierWorkloadResponse(Guid CourierId, bool Active, bool OnDuty,
-    int ActiveCount, int Capacity, IReadOnlyList<Guid> ZoneIds, string CourierCode);
+    int ActiveCount, int Capacity, IReadOnlyList<Guid> ZoneIds, string CourierCode,
+    VehicleType VehicleType = VehicleType.Motorcycle, string? VehicleNumber = null, decimal MaxWeightKg = 30.00m);
 public sealed record WorkloadPage(IReadOnlyList<CourierWorkloadResponse> Items,
     int TotalCount, int Page, int PageSize);
 public sealed record DispatchAssignmentResponse(Guid ParcelId, string TrackingNumber,
