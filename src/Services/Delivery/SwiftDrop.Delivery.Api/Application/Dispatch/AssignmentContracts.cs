@@ -8,8 +8,9 @@ public sealed record AssignCourierCommand(Guid ParcelId, Guid CourierId, long Ex
     DateOnly? ServiceDate, string Key, string Fingerprint, bool Reassign = false, string? Reason = null);
 public sealed record AssignmentOptionsInput(string? ServiceDate = null, string? Page = null,
     string? PageSize = null, bool InvalidParameters = false, string? Reassign = null);
-public sealed record AssignmentCandidate(Guid CourierId, bool OnDuty, int ActiveCountForServiceDate, int Capacity);
-public sealed record ReassignmentContext(Guid CourierId, DateOnly ServiceDate);
+public sealed record AssignmentCandidate(Guid CourierId, bool OnDuty, int ActiveCountForServiceDate, int Capacity,
+    string CourierCode);
+public sealed record ReassignmentContext(Guid CourierId, DateOnly ServiceDate, string CourierCode);
 public sealed record AssignmentOptions(Guid ParcelId, long ParcelVersion, DateOnly BusinessToday,
     string OperationsTimeZone, DateOnly ServiceDate, IReadOnlyList<AssignmentCandidate> Items,
     int TotalCount, int Page, int PageSize, bool Reassign, ReassignmentContext? CurrentAssignment);

@@ -32,10 +32,19 @@ A missing parcel returns 404; a parcel no longer Created returns 409.
 
 The response contains parcelId, parcelVersion, businessToday, operationsTimeZone,
 serviceDate, items, totalCount, page and pageSize. Each eligible item contains
-courierId, onDuty, activeCountForServiceDate and capacity. Candidates are ordered
+courierId, courierCode, onDuty, activeCountForServiceDate and capacity. Codes use
+the persisted Courier business number and the workload endpoint's `COU-0001`
+format, with at least four digits. Candidates are ordered
 by courier ID ascending. Eligibility, total and page share a repeatable-read
 snapshot. Empty eligibility is a successful empty page; failure is safe 503.
-The preview is advisory and never reserves capacity. Courier names are absent.
+The preview is advisory and never reserves capacity. The frontend resolves names
+through the existing operations-authorized Identity courier directory for the
+visible candidate IDs and the current courier. Names are display information;
+assignment requests identify couriers with courierId.
+
+The courier-code response addition is deployed before the corresponding frontend.
+The client validates the code on candidates and reassignment context, resolves
+names independently and permits code-based selection when a name is unavailable.
 
 `POST /api/v1/deliveries/assign` requires one Idempotency-Key (existing opaque
 key rules, maximum 128 characters) and JSON parcelId, courierId, expectedVersion,
@@ -118,8 +127,8 @@ Omission means false; only exact lowercase true/false values are accepted.
 Empty, duplicate, unknown, whitespace-padded or alternative boolean values return
 400 validation. Reassignment mode requires Assigned and an Active assignment with
 no pickup. It excludes the current courier and returns reassign=true plus
-currentAssignment={courierId,serviceDate}; ordinary mode returns reassign=false
-and currentAssignment=null. Existing candidate and pagination fields remain.
+currentAssignment={courierId,courierCode,serviceDate}; ordinary mode returns
+reassign=false and currentAssignment=null. Existing candidate and pagination fields remain.
 All context, candidates and counts share the repeatable-read snapshot.
 
 For reassignment, omitted serviceDate preserves an existing today/future date,
@@ -258,3 +267,38 @@ heading timeout; upstream dev CI and the entire Identity file separately pass.
 See the frontend integration handoff for the exact environment and stability
 limit. No Identity source, assertions or test settings were changed to obtain
 these results. Signed-in two-parcel acceptance remains explicitly deferred.
+
+## Courier label verification — 16 November 2026
+
+The courier-code patch on dev base `41b0873` passes Release restore/build with
+zero warnings/errors and all 2,142 solution tests, none skipped. Delivery tests
+verify codes against persisted business numbers and workload responses across
+paging, stable repeat reads and inactive/off-duty reassignment context. Tests use
+private disposable PostgreSQL 18.6, .NET SDK 10.0.301 and process-scoped polling
+file watching, with the external Delivery test database fallback unset.
+
+The companion frontend patch on dev base `6f49910` passes all 746 tests and the
+production build. Production Chrome 157.0.8103.78 passes 23 isolated API-fixture
+browser groups for both dialogs, names/codes, lookup recovery, UUID submission,
+responsive layout, themes, date changes and retained retries. These establish
+fixture behavior. The foundation reference/cycle audit passes, but its host-start
+preflight encounters occupied local ports. Full canonical Docker startup acceptance
+is pending the existing task-specific shared migration authorization. Exact final
+commit hashes, source fingerprints and check logs are retained in the EAD
+Dispatcher continuity records.
+
+## Current dev integration review — 16 November 2026
+
+Integrated dev `a3cc9fd`, including courier-label PR #40, into the P6 branch for
+PR review. The documentation merge retains both the P6 workflow handoff and the
+current courier-code contract and verification history.
+
+The combined source passes `dotnet restore SwiftDrop.sln`, Release build with
+zero warnings/errors, and all **2,146 solution tests**, none skipped, on Linux
+with .NET SDK 10.0.301 and disposable PostgreSQL 18.6. This includes the four
+Dispatcher/Admin API-through-PostgreSQL lifecycle cases. The external Delivery
+test database fallback was unset. Full shared Docker startup for the combined
+source and real signed-in terminal-workflow acceptance remain pending. The last
+shared proof-storage preflight found missing runtime SELECT/INSERT/DELETE
+privileges on `proof_objects`; correction remains with the owning service and
+environment owners.
