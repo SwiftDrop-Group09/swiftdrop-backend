@@ -11,6 +11,7 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Outbox;
 public sealed class DeliveryOutboxRelayWorker(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
+    IHostEnvironment environment,
     ILogger<DeliveryOutboxRelayWorker> logger) : BackgroundService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -22,6 +23,11 @@ public sealed class DeliveryOutboxRelayWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (environment.IsEnvironment("Testing") && !configuration.GetValue<bool>("Delivery:Outbox:EnableInTests"))
+        {
+            return;
+        }
+
         logger.LogInformation("DeliveryOutboxRelayWorker started.");
 
         while (!stoppingToken.IsCancellationRequested)
