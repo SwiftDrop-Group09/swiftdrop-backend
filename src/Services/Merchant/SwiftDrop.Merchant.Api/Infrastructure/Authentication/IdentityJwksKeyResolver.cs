@@ -15,12 +15,17 @@ public sealed class IdentityJwksKeyResolver(IConfiguration configuration)
     private IReadOnlyList<SecurityKey> keys = [];
     private DateTimeOffset expiresAt = DateTimeOffset.MinValue;
 
-    public TokenValidationParameters CreateValidationParameters() => new()
+    public TokenValidationParameters CreateValidationParameters() =>
+        CreateValidationParameters(configuration["Identity:Tokens:Audience"] ?? "swiftdrop-api-local");
+
+    public TokenValidationParameters CreateValidationParameters(string audience) => new()
     {
         ValidateIssuer = true,
         ValidIssuer = configuration["Identity:Tokens:Issuer"] ?? "https://identity.swiftdrop.invalid",
         ValidateAudience = true,
-        ValidAudience = configuration["Identity:Tokens:Audience"] ?? "swiftdrop-api-local",
+        ValidAudience = audience,
+        AudienceValidator = (audiences, _, _) => audiences.ToArray() is [var value]
+            && string.Equals(value, audience, StringComparison.Ordinal),
         ValidateIssuerSigningKey = true,
         RequireSignedTokens = true,
         ValidateLifetime = true,
