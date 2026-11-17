@@ -1,5 +1,6 @@
 using SwiftDrop.Auditing;
 using Microsoft.EntityFrameworkCore;
+using SwiftDrop.Contracts.Events.V1;
 using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Admin.Couriers;
 using SwiftDrop.Delivery.Api.Application.Admin.Pricing;
@@ -12,6 +13,7 @@ using SwiftDrop.Delivery.Api.Application.CourierStatus;
 using SwiftDrop.Delivery.Api.Application.CourierProof;
 using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 using SwiftDrop.Delivery.Api.Application.Dispatch;
+using SwiftDrop.Delivery.Api.Application.Notifications;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Infrastructure.Admin;
 using SwiftDrop.Delivery.Api.Infrastructure.Authentication;
@@ -20,6 +22,7 @@ using SwiftDrop.Delivery.Api.Infrastructure.CourierStatus;
 using SwiftDrop.Delivery.Api.Infrastructure.CourierProof;
 using SwiftDrop.Delivery.Api.Infrastructure.DeliveryReads;
 using SwiftDrop.Delivery.Api.Infrastructure.Dispatch;
+using SwiftDrop.Delivery.Api.Infrastructure.Notifications;
 using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 using SwiftDrop.Delivery.Api.Infrastructure.Quotes;
 using SwiftDrop.Delivery.Api.Presentation;
@@ -73,6 +76,8 @@ public partial class Program
             new PostgresCourierStatusStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IDeliveryReadStore>(services =>
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
+        builder.Services.AddScoped<INotificationContextStore, PostgresNotificationContextStore>();
+        builder.Services.AddScoped<NotificationContextHandler>();
         builder.Services.AddScoped<ICustomerDeliveryReadStore>(services =>
             new PostgresDeliveryReadStore(() => services.GetRequiredService<DeliveryDbContext>()));
         builder.Services.AddScoped<IPrivateProofReader>(services =>
@@ -103,6 +108,8 @@ public partial class Program
         builder.Services.AddScoped<AssistantToolExecutor>();
         builder.Services.AddScoped<McpServerHandler>();
         builder.Services.AddScoped<AssistantOrchestrator>();
+        builder.Services.AddHttpClient("MerchantInternal");
+
         builder.Services.AddDeliveryIdentityAuthentication();
         builder.Services.AddAuthorization();
 
@@ -194,6 +201,7 @@ public partial class Program
         app.MapDispatchReads();
         app.MapAssignments();
         app.MapCourierDuty();
+        app.MapNotificationContext();
         app.MapCourierStatus();
         app.MapCourierProof();
         app.MapAdminCouriers();

@@ -223,7 +223,7 @@ public static class WebhookEndpoints
             }
 
             return WebhookProblems.Failure(context, failure!);
-        }).RequireAuthorization().WithName("DispatchWebhook")
+        }).RequireAuthorization("MerchantWorkerService").WithName("DispatchWebhook")
           .Produces<InternalDispatchResponse>(202)
           .ProducesProblem(400).ProducesProblem(401).ProducesProblem(403);
     }

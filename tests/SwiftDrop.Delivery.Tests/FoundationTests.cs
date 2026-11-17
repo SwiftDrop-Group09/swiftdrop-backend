@@ -31,7 +31,6 @@ public sealed class FoundationTests : IDisposable
     [InlineData("/weatherforecast")]
     [InlineData("/ready")]
     [InlineData("/graphql")]
-    [InlineData("/internal/v1/notification-context")]
     [InlineData("/swiftdrop.delivery.v1.DeliveryService/CreateBooking")]
     [InlineData("/swiftdrop.delivery.v1.DeliveryService/GetBookingByExternalOrder")]
     public async Task UnimplementedRoutesReturnNotFound(string path)
@@ -40,6 +39,16 @@ public sealed class FoundationTests : IDisposable
         using var response = await client.GetAsync(path);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task NotificationContextRequiresServiceAuthentication()
+    {
+        using var client = _factory.CreateClient();
+        using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/internal/v1/notification-context", content);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Theory]
