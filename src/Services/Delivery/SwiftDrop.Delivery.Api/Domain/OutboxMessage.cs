@@ -68,4 +68,9 @@ public sealed class OutboxMessage
     public string Payload { get; private set; } = null!;
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? PublishedAt { get; private set; }
+
+    public void MarkPublished(DateTimeOffset publishedAt)
+    {
+        PublishedAt = publishedAt.ToUniversalTime();
+    }
 }

@@ -1,6 +1,9 @@
 using SwiftDrop.Auditing;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using SwiftDrop.Contracts.Events.V1;
 using SwiftDrop.Delivery.Api.Application;
+using SwiftDrop.Delivery.Api.Infrastructure.Outbox;
 using SwiftDrop.Delivery.Api.Application.Admin.Couriers;
 using SwiftDrop.Delivery.Api.Application.Admin.Pricing;
 using SwiftDrop.Delivery.Api.Application.Admin.Reports;
@@ -107,6 +110,39 @@ public partial class Program
         builder.Services.AddScoped<AssistantToolExecutor>();
         builder.Services.AddScoped<McpServerHandler>();
         builder.Services.AddScoped<AssistantOrchestrator>();
+        builder.Services.AddHttpClient("MerchantInternal");
+
+        var broker = builder.Configuration.GetSection("Delivery:Broker");
+        if (!broker.Exists())
+        {
+            broker = builder.Configuration.GetSection("Broker");
+        }
+        var brokerHost = broker["Host"];
+        var brokerUser = broker["Username"];
+        var brokerPassword = broker["Password"];
+        var brokerVirtualHost = broker["VirtualHost"] ?? "/";
+
+        if (!string.IsNullOrWhiteSpace(brokerHost) &&
+            !string.IsNullOrWhiteSpace(brokerUser) &&
+            !string.IsNullOrWhiteSpace(brokerPassword))
+        {
+            builder.Services.AddMassTransit(registration =>
+            {
+                registration.UsingRabbitMq((context, cfg) =>
+                {
+                    cfg.Host(brokerHost!, brokerVirtualHost, host =>
+                    {
+                        host.Username(brokerUser!);
+                        host.Password(brokerPassword!);
+                    });
+                    cfg.Message<StatusChangedV1>(message =>
+                        message.SetEntityName("SwiftDrop.Contracts.V1:StatusChanged"));
+                });
+            });
+        }
+
+        builder.Services.AddHostedService<DeliveryOutboxRelayWorker>();
+
         builder.Services.AddDeliveryIdentityAuthentication();
         builder.Services.AddAuthorization();
 
