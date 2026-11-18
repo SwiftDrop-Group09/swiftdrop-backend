@@ -19,24 +19,61 @@ public sealed class SkiaReceiptPdfRenderer : IReceiptPdfRenderer
         using var headerPaint = new SKPaint { Color = new SKColor(15, 23, 42), IsAntialias = true };
         canvas.DrawRect(0, 0, 595, 96, headerPaint);
 
-        using var brandFont = new SKFont(SKTypeface.FromFamilyName("Helvetica", SKFontStyle.Bold), 24);
+        static SKTypeface SafeTypeface(bool bold)
+        {
+            var candidates = bold
+                ? new[]
+                {
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                    "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+                    @"C:\Windows\Fonts\arialbd.ttf",
+                    @"C:\Windows\Fonts\segoeuib.ttf",
+                }
+                : new[]
+                {
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+                    @"C:\Windows\Fonts\arial.ttf",
+                    @"C:\Windows\Fonts\segoeui.ttf",
+                };
+
+            foreach (var path in candidates)
+            {
+                if (File.Exists(path))
+                {
+                    var tf = SKTypeface.FromFile(path);
+                    if (tf is not null) return tf;
+                }
+            }
+
+            return SKTypeface.FromFamilyName("Helvetica", bold ? SKFontStyle.Bold : SKFontStyle.Normal)
+                ?? SKTypeface.FromFamilyName("DejaVu Sans", bold ? SKFontStyle.Bold : SKFontStyle.Normal)
+                ?? SKTypeface.Default;
+        }
+
+        using var boldTypeface = SafeTypeface(true);
+        using var regularTypeface = SafeTypeface(false);
+
+        using var brandFont = new SKFont(boldTypeface, 24);
         using var whitePaint = new SKPaint { Color = SKColors.White, IsAntialias = true };
         Draw("SwiftDrop", 40, 48, brandFont, whitePaint);
 
-        using var subtitleFont = new SKFont(SKTypeface.FromFamilyName("Helvetica"), 11);
+        using var subtitleFont = new SKFont(regularTypeface, 11);
         using var mutedLightPaint = new SKPaint { Color = new SKColor(203, 213, 225), IsAntialias = true };
         Draw("Official Delivery Receipt", 40, 70, subtitleFont, mutedLightPaint);
 
-        using var titleFont = new SKFont(SKTypeface.FromFamilyName("Helvetica", SKFontStyle.Bold), 14);
-        using var labelFont = new SKFont(SKTypeface.FromFamilyName("Helvetica", SKFontStyle.Bold), 10);
-        using var bodyFont = new SKFont(SKTypeface.FromFamilyName("Helvetica"), 10);
+        using var titleFont = new SKFont(boldTypeface, 14);
+        using var labelFont = new SKFont(boldTypeface, 10);
+        using var bodyFont = new SKFont(regularTypeface, 10);
         using var darkPaint = new SKPaint { Color = new SKColor(15, 23, 42), IsAntialias = true };
         using var mutedPaint = new SKPaint { Color = new SKColor(100, 116, 139), IsAntialias = true };
         using var linePaint = new SKPaint { Color = new SKColor(226, 232, 240), StrokeWidth = 1 };
 
-        float y = 132;
-        Draw($"Receipt Reference: {receipt.ReceiptNumber}", 40, y, titleFont, darkPaint);
-        y += 20;
+        float y = 126;
+        Draw("Receipt Reference:", 40, y, labelFont, mutedPaint);
+        y += 18;
+        Draw(receipt.ReceiptNumber, 40, y, titleFont, darkPaint);
+        y += 22;
         Draw($"Tracking Number: {receipt.TrackingNumber}", 40, y, bodyFont, mutedPaint);
         Draw($"Status: {receipt.Status}", 380, y, labelFont, darkPaint);
         y += 16;
