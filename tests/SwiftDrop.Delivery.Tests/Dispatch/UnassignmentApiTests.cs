@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Delivery.Api.Application.Dispatch;
 using SwiftDrop.Delivery.Api.Domain;
+using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 using SwiftDrop.Delivery.Tests.Courier;
 using SwiftDrop.Delivery.Tests.Persistence;
 using SwiftDrop.Delivery.Tests.Quotes;
@@ -385,7 +386,11 @@ public sealed class UnassignmentApiTests(PostgresFixture fixture)
     [Fact]
     public async Task ParcelNotFoundIsRejected()
     {
-        using var factory = new QuoteApiFactory(null, QuoteApiFactory.Principal(Guid.NewGuid().ToString(), "Dispatcher"));
+        await using var db = new DeliveryDbContext(
+            new DbContextOptionsBuilder<DeliveryDbContext>().UseNpgsql(fixture.ConnectionString).Options);
+        await db.Database.MigrateAsync();
+
+        using var factory = new QuoteApiFactory(fixture.ConnectionString, QuoteApiFactory.Principal(Guid.NewGuid().ToString(), "Dispatcher"));
         using var client = factory.CreateClient();
         using var response = await Send(client, Guid.NewGuid());
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
