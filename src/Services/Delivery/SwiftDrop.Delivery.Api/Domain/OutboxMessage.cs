@@ -30,6 +30,13 @@ public sealed class OutboxMessage
         return Create(eventId, parcel, "Assigned", "Assigned", parcel.UpdatedAt, correlationId);
     }
 
+    public static OutboxMessage Unassigned(Guid eventId, Parcel parcel, string correlationId)
+    {
+        if (parcel.Status != ParcelStatus.Created || parcel.Version < 2)
+            throw new InvalidOperationException("Unassignment event requires a created parcel.");
+        return Create(eventId, parcel, "Created", "Assigned", parcel.UpdatedAt, correlationId);
+    }
+
     private static OutboxMessage Create(Guid eventId, Parcel parcel, string status, string? previousStatus,
         DateTimeOffset occurredAt, string correlationId)
     {

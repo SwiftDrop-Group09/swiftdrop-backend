@@ -141,6 +141,22 @@ public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFacto
             return new AssignmentReservation(inserted == 1, record);
         });
 
+        public Task<AssignmentReservation> ReserveUnassignAsync(Guid actor, UnassignCourierCommand command, DateTimeOffset now,
+            CancellationToken cancellationToken) => Protect(async () =>
+        {
+            var candidate = new IdempotencyRecord(Guid.NewGuid(), actor.ToString("D"), AssignmentValidator.UnassignOperation,
+                command.Key, command.Fingerprint, now);
+            var inserted = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO idempotency_keys (id, principal_id, operation, key, request_fingerprint, created_at, expires_at)
+                VALUES ({candidate.Id}, {candidate.PrincipalId}, {candidate.Operation}, {candidate.Key},
+                    {candidate.RequestFingerprint}, {candidate.CreatedAt}, {candidate.ExpiresAt})
+                ON CONFLICT (principal_id, operation, key) DO NOTHING
+                """, cancellationToken);
+            var record = await db.IdempotencyRecords.SingleAsync(x => x.PrincipalId == candidate.PrincipalId
+                && x.Operation == candidate.Operation && x.Key == candidate.Key, cancellationToken);
+            return new AssignmentReservation(inserted == 1, record);
+        });
+
         public Task<CourierAssignment?> LockCurrentAssignmentAsync(Guid parcelId, CancellationToken cancellationToken) => Protect<CourierAssignment?>(async () =>
         {
             var rows = await db.Assignments.FromSqlInterpolated($"""
@@ -156,6 +172,17 @@ public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFacto
                 if (db.Database.CurrentTransaction != transaction || db.Entry(assignment).State == EntityState.Detached)
                     throw new InvalidOperationException("Retirement must belong to the owning transaction.");
                 assignment.MarkReassigned();
+                return await db.SaveChangesAsync(cancellationToken);
+            });
+        }
+
+        public async Task CancelAssignmentAsync(CourierAssignment assignment, CancellationToken cancellationToken)
+        {
+            await Protect(async () =>
+            {
+                if (db.Database.CurrentTransaction != transaction || db.Entry(assignment).State == EntityState.Detached)
+                    throw new InvalidOperationException("Cancellation must belong to the owning transaction.");
+                assignment.MarkCancelled();
                 return await db.SaveChangesAsync(cancellationToken);
             });
         }
@@ -197,6 +224,21 @@ public sealed class PostgresAssignmentStore(Func<DeliveryDbContext> contextFacto
                     || history.ParcelId != state.Parcel.Id || record.ParcelId != state.Parcel.Id)
                     throw new InvalidOperationException("Assignment records must share the owning transaction.");
                 db.Assignments.Add(assignment);
+                db.BookingHistory.Add(history);
+                db.OutboxMessages.Add(outbox);
+                return await db.SaveChangesAsync(cancellationToken);
+            });
+        }
+
+        public async Task SaveUnassignmentAsync(AssignmentState state, BookingHistory history,
+            OutboxMessage outbox, IdempotencyRecord record, CancellationToken cancellationToken)
+        {
+            await Protect(async () =>
+            {
+                if (db.Database.CurrentTransaction != transaction || db.Entry(state.Parcel).State == EntityState.Detached
+                    || db.Entry(record).State == EntityState.Detached
+                    || history.ParcelId != state.Parcel.Id || record.ParcelId != state.Parcel.Id)
+                    throw new InvalidOperationException("Unassignment records must share the owning transaction.");
                 db.BookingHistory.Add(history);
                 db.OutboxMessages.Add(outbox);
                 return await db.SaveChangesAsync(cancellationToken);

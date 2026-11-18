@@ -6,6 +6,8 @@ public sealed record AssignCourierInput(string? ParcelId, string? CourierId, lon
     bool Reassign = false, string? ServiceDate = null, string? Reason = null);
 public sealed record AssignCourierCommand(Guid ParcelId, Guid CourierId, long ExpectedVersion,
     DateOnly? ServiceDate, string Key, string Fingerprint, bool Reassign = false, string? Reason = null);
+public sealed record UnassignCourierInput(string? ParcelId, long? ExpectedVersion, string? Reason = null);
+public sealed record UnassignCourierCommand(Guid ParcelId, long ExpectedVersion, string Key, string Fingerprint, string? Reason = null);
 public sealed record AssignmentOptionsInput(string? ServiceDate = null, string? Page = null,
     string? PageSize = null, bool InvalidParameters = false, string? Reassign = null);
 public sealed record AssignmentCandidate(
@@ -51,8 +53,12 @@ public interface IAssignmentTransaction : IAsyncDisposable
     Task<AssignmentReservation> ReserveAsync(Guid actor, AssignCourierCommand command, DateTimeOffset now, CancellationToken cancellationToken);
     Task<CourierAssignment?> LockCurrentAssignmentAsync(Guid parcelId, CancellationToken cancellationToken);
     Task RetireAsync(CourierAssignment assignment, CancellationToken cancellationToken);
+    Task CancelAssignmentAsync(CourierAssignment assignment, CancellationToken cancellationToken);
     Task CheckEligibilityAsync(Parcel parcel, Guid courierId, DateOnly date, DateOnly today, CancellationToken cancellationToken, Guid? originalCourierId = null);
     Task SaveAsync(AssignmentState state, CourierAssignment assignment, BookingHistory history,
         OutboxMessage outbox, IdempotencyRecord record, CancellationToken cancellationToken);
+    Task SaveUnassignmentAsync(AssignmentState state, BookingHistory history,
+        OutboxMessage outbox, IdempotencyRecord record, CancellationToken cancellationToken);
+    Task<AssignmentReservation> ReserveUnassignAsync(Guid actor, UnassignCourierCommand command, DateTimeOffset now, CancellationToken cancellationToken);
     Task CommitAsync(CancellationToken cancellationToken);
 }

@@ -109,6 +109,9 @@ public sealed class ReassignmentReliabilityTests(PostgresFixture fixture)
         public Task CheckEligibilityAsync(Parcel parcel, Guid courier, DateOnly date, DateOnly today, CancellationToken ct, Guid? originalCourierId = null) => inner.CheckEligibilityAsync(parcel, courier, date, today, ct, originalCourierId);
         public Task SaveAsync(AssignmentState state, CourierAssignment assignment, BookingHistory history, OutboxMessage outbox, IdempotencyRecord record, CancellationToken ct)
             => inner.SaveAsync(state, assignment, history, outbox, record, ct);
+        public Task CancelAssignmentAsync(CourierAssignment assignment, CancellationToken ct) => inner.CancelAssignmentAsync(assignment, ct);
+        public Task SaveUnassignmentAsync(AssignmentState state, BookingHistory history, OutboxMessage outbox, IdempotencyRecord record, CancellationToken ct) => inner.SaveUnassignmentAsync(state, history, outbox, record, ct);
+        public Task<AssignmentReservation> ReserveUnassignAsync(Guid actor, UnassignCourierCommand command, DateTimeOffset now, CancellationToken ct) => inner.ReserveUnassignAsync(actor, command, now, ct);
         public async Task CommitAsync(CancellationToken ct)
         { await inner.CommitAsync(ct); throw new AssignmentException(AssignmentFailure.Unavailable); }
         public ValueTask DisposeAsync() => inner.DisposeAsync();

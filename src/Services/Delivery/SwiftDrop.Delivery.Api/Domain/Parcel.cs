@@ -79,6 +79,16 @@ public sealed class Parcel
         UpdatedAt = changedAt.ToUniversalTime();
     }
 
+    public void UnassignCourier(long expectedVersion, DateTimeOffset unassignedAt)
+    {
+        if (Version != expectedVersion || Status != ParcelStatus.Assigned)
+            throw new InvalidOperationException("Unassignment requires Assigned and the expected version.");
+        var nextVersion = checked(Version + 1);
+        Status = ParcelStatus.Created;
+        Version = nextVersion;
+        UpdatedAt = unassignedAt.ToUniversalTime();
+    }
+
     // Authorization and assignment locking belong to the owning transaction.
     // Delivered is deliberately absent from the Courier status policy.
     public void AdvanceCourierStatus(ParcelStatus next, long expectedVersion, DateTimeOffset changedAt)

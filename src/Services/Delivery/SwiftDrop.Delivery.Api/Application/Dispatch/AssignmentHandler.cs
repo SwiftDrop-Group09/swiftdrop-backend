@@ -102,6 +102,54 @@ public sealed class AssignmentHandler(ICurrentDeliveryUser user, IAssignmentStor
         { return new(null, AssignmentFailure.Unavailable); }
     }
 
+    public async Task<AssignmentResult<AssignedResponse>> UnassignAsync(UnassignCourierInput? input, string? key, string correlationId, CancellationToken cancellationToken)
+    {
+        if (Access() is { } access) return new(null, access);
+        var errors = new Dictionary<string, string[]>();
+        var command = AssignmentValidator.ValidateUnassign(input, key, errors);
+        if (command is null) return new(null, AssignmentFailure.InvalidInput, errors);
+        try
+        {
+            await using var transaction = await store.BeginAsync(cancellationToken);
+            var state = await transaction.LockParcelAsync(command.ParcelId, cancellationToken);
+            if (state is null) return new(null, AssignmentFailure.NotFound);
+            var now = clock.GetUtcNow().ToUniversalTime();
+            now = new(now.Ticks - now.Ticks % 10, TimeSpan.Zero);
+            var reservation = await transaction.ReserveUnassignAsync(user.UserId!.Value, command, now, cancellationToken);
+            var record = reservation.Record;
+            if (record.PrincipalId != user.UserId.Value.ToString("D") || record.Operation != AssignmentValidator.UnassignOperation || record.Key != command.Key)
+                return new(null, AssignmentFailure.Unavailable);
+            if (!reservation.IsNew && now >= record.ExpiresAt) return new(null, AssignmentFailure.KeyExpired);
+            if (record.RequestFingerprint != command.Fingerprint) return new(null, AssignmentFailure.KeyConflict);
+            if (!reservation.IsNew)
+                return record.StoredResponse is null && record.ParcelId is null
+                    ? new(null, AssignmentFailure.OperationInProgress) : new(AssignmentResponseCodec.ReplayUnassign(record, command), null);
+            if (record.StoredResponse is not null || record.ParcelId is not null) return new(null, AssignmentFailure.Unavailable);
+            if (state.Parcel.Version != command.ExpectedVersion) return new(null, AssignmentFailure.StaleVersion, CurrentVersion: state.Parcel.Version);
+            if (state.Parcel.Status != ParcelStatus.Assigned)
+                return new(null, AssignmentFailure.InvalidTransition);
+            var original = await transaction.LockCurrentAssignmentAsync(state.Parcel.Id, cancellationToken);
+            if (original is null || original.PickedUpAt is not null) return new(null, AssignmentFailure.InvalidTransition);
+
+            now = clock.GetUtcNow().ToUniversalTime();
+            now = new(now.Ticks - now.Ticks % 10, TimeSpan.Zero);
+            await transaction.CancelAssignmentAsync(original, cancellationToken);
+            state.Parcel.UnassignCourier(command.ExpectedVersion, now);
+
+            var response = AssignmentResponseCodec.Create(state);
+            record.CompleteUnassignment(state.Parcel.Id, response.Body);
+            await transaction.SaveUnassignmentAsync(state,
+                BookingHistory.Unassigned(Guid.NewGuid(), state.Parcel, user.UserId.Value, command.Reason),
+                OutboxMessage.Unassigned(Guid.NewGuid(), state.Parcel, correlationId), record, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new(response, null);
+        }
+        catch (AssignmentException exception) { return new(null, exception.Failure, CurrentVersion: exception.CurrentVersion); }
+        catch (DeliveryReadUnavailableException) { return new(null, AssignmentFailure.Unavailable); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        { return new(null, AssignmentFailure.Unavailable); }
+    }
+
     private static AssignmentResult<T> PastDate<T>() => new(default, AssignmentFailure.InvalidInput,
         new Dictionary<string, string[]> { ["serviceDate"] = ["Choose today or a future operations service date."] });
 }

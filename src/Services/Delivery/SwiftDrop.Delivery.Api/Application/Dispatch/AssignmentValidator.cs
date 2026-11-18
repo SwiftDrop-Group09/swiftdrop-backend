@@ -10,6 +10,7 @@ namespace SwiftDrop.Delivery.Api.Application.Dispatch;
 public static class AssignmentValidator
 {
     public const string Operation = "AssignCourier";
+    public const string UnassignOperation = "UnassignCourier";
     public static DateOnly? Date(string? text, IDictionary<string, string[]> errors)
     {
         if (text is null) return null;
@@ -42,5 +43,23 @@ public static class AssignmentValidator
             expectedVersion = input.ExpectedVersion!.Value, reassign = false, serviceDate = input.ServiceDate });
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
         return new(parcel, courier, input.ExpectedVersion.Value, date, key!, fingerprint, input.Reassign, reason);
+    }
+
+    public static UnassignCourierCommand? ValidateUnassign(UnassignCourierInput? input, string? key, Dictionary<string, string[]> errors)
+    {
+        if (!IdempotencyInput.IsValidKey(key)) errors["Idempotency-Key"] = ["Supply one nonblank key of at most 128 characters without control characters."];
+        if (input is null) { errors["body"] = ["Supply an unassignment request."]; return null; }
+        if (!Guid.TryParse(input.ParcelId, out var parcel) || parcel == Guid.Empty) errors["parcelId"] = ["Supply a non-empty parcel UUID."];
+        if (input.ExpectedVersion is not >= 1) errors["expectedVersion"] = ["Supply an expected version of at least 1."];
+        string? reason = null;
+        if (input.Reason is not null)
+        {
+            try { reason = ReassignmentReason.Normalize(input.Reason); }
+            catch (ArgumentException) { errors["reason"] = ["Supply an unassignment reason of 1 to 500 characters."]; }
+        }
+        if (errors.Count != 0) return null;
+        var canonical = JsonSerializer.Serialize(new { parcelId = parcel, expectedVersion = input.ExpectedVersion!.Value, reason });
+        var fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        return new(parcel, input.ExpectedVersion.Value, key!, fingerprint, reason);
     }
 }
