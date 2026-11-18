@@ -17,14 +17,21 @@ public partial class Program
         var applyMigrations = args.Contains("--migrate", StringComparer.Ordinal);
         var generateDevelopmentKey = args.Contains("--generate-development-key", StringComparer.Ordinal);
         var provisionDevelopmentAdmin = args.Contains("--provision-development-admin", StringComparer.Ordinal);
-        if (new[] { applyMigrations, generateDevelopmentKey, provisionDevelopmentAdmin }.Count(value => value) > 1)
+        var runDevelopmentWorkloadTokenProvisioner = args.Contains("--run-development-workload-token-provisioner", StringComparer.Ordinal);
+        if (new[] { applyMigrations, generateDevelopmentKey, provisionDevelopmentAdmin, runDevelopmentWorkloadTokenProvisioner }.Count(value => value) > 1)
             throw new InvalidOperationException("Select only one Identity provisioning operation.");
-        var builderArgs = args.Where(argument => argument is not ("--migrate" or "--generate-development-key" or "--provision-development-admin")).ToArray();
+        var builderArgs = args.Where(argument => argument is not ("--migrate" or "--generate-development-key" or
+            "--provision-development-admin" or "--run-development-workload-token-provisioner")).ToArray();
         var builder = WebApplication.CreateBuilder(builderArgs);
 
         if (provisionDevelopmentAdmin)
         {
             await DevelopmentAdminProvisioner.ProvisionAsync(builder.Configuration, builder.Environment);
+            return;
+        }
+        if (runDevelopmentWorkloadTokenProvisioner)
+        {
+            await DevelopmentWorkloadTokenProvisioner.RunAsync(builder.Configuration, builder.Environment);
             return;
         }
         if (generateDevelopmentKey)

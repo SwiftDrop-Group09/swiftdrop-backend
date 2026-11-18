@@ -29,7 +29,7 @@ public sealed class StatusEventAndProviderTests
     }
 
     [Fact]
-    public async Task MerchantStatusEventCreatesOnlyWebhookDispatchJob()
+    public async Task DuplicateMerchantStatusEventCreatesOnlyOneWebhookDispatchJob()
     {
         await using var database = await TestDatabase.CreateAsync();
         var clock = new ManualTimeProvider(DateTimeOffset.Parse("2026-11-14T10:00:00Z"));
@@ -37,9 +37,12 @@ public sealed class StatusEventAndProviderTests
             database.Context, clock, NullLogger<StatusNotificationProcessor>.Instance);
         var merchantId = Guid.NewGuid();
 
-        await processor.ProcessAsync(CustomerEvent(merchantId.ToString("D")), CancellationToken.None);
+        var message = CustomerEvent(merchantId.ToString("D"));
+        await processor.ProcessAsync(message, CancellationToken.None);
+        await processor.ProcessAsync(message, CancellationToken.None);
 
         Assert.Empty(await database.Context.NotificationJobs.ToListAsync());
+        Assert.Single(await database.Context.ConsumedStatusEvents.ToListAsync());
         var dispatch = Assert.Single(await database.Context.WebhookDispatchJobs.ToListAsync());
         Assert.Equal(merchantId.ToString("D"), dispatch.MerchantId);
         Assert.Equal("Pending", dispatch.State);

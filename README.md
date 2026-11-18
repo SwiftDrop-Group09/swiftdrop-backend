@@ -11,7 +11,10 @@ Identity login/JWKS output through that verifier. The Notification Worker now
 consumes durable status events, resolves recipient context through Delivery,
 requests webhook dispatch from Merchant and records in-app/mock-SMS jobs and
 provider attempts. The Delivery outbox publisher/relay and private workload
-credential provisioning remain separate integration work. See the
+credential provisioning have now been implemented for local development: a
+separate relay publishes the existing status contract, and a Development-only
+Identity CLI process renews narrowly scoped Worker JWT files. Production workload
+credential provisioning and live broker acceptance remain separate work. See the
 [Delivery login-loop fix](docs/delivery-identity-jwt-integration.md) for the current
 JWT configuration, validation and service boundaries. Courier Phase 1 adds operational profiles, zone memberships,
 retained assignments with one active owner per parcel, private proof metadata
@@ -263,8 +266,11 @@ Delivery uses EF Core/Npgsql with the initial Booking migration, additive Courie
 profile/proof/assignment migrations and the status replay-constraint migration;
 Identity retains its independent SQL migrations. Merchant has its separate
 EF Core persistence/migration slice; see [Merchant alignment](docs/merchant-dev-alignment.md). Delivery's
-status outbox publisher/relay remains upstream work; this repository contains
-the downstream Notification Worker RabbitMQ consumer. GraphQL, gRPC and SSE
+status outbox relay now runs as a separate backend worker and publishes the
+existing Delivery-owned outbox contract to RabbitMQ. The Notification Worker
+consumes those events and routes durable effects. This development wiring has
+not yet been verified against a live broker or provisioned runtime databases.
+GraphQL, gRPC and SSE
 adapters and generated clients remain future work.
 Docker packaging exists for the development containers. Delivery's quote and
 booking handlers are implemented; dependency-aware readiness remains later work.
