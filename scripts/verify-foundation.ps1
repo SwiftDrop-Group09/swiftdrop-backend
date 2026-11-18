@@ -23,11 +23,13 @@ $allowed = @{
     'SwiftDrop.Delivery.Api' = @('SwiftDrop.Contracts', 'SwiftDrop.Auditing')
     'SwiftDrop.Merchant.Api' = @('SwiftDrop.Contracts', 'SwiftDrop.Auditing')
     'SwiftDrop.Notification.Worker' = @('SwiftDrop.Contracts')
+    'SwiftDrop.Delivery.OutboxRelay' = @('SwiftDrop.Contracts')
     # Cross-service cryptographic contract harness; runtime services stay isolated.
     'SwiftDrop.Identity.Tests' = @('SwiftDrop.Identity.Api', 'SwiftDrop.Delivery.Api')
     'SwiftDrop.Delivery.Tests' = @('SwiftDrop.Delivery.Api')
     # Local client fixture runner; never referenced or published by a service.
     'SwiftDrop.Delivery.Harness' = @('SwiftDrop.Delivery.Tests')
+    'SwiftDrop.Delivery.OutboxRelay.Tests' = @('SwiftDrop.Delivery.OutboxRelay')
     'SwiftDrop.Merchant.Tests' = @('SwiftDrop.Merchant.Api')
     'SwiftDrop.Notification.Tests' = @('SwiftDrop.Notification.Worker')
     'SwiftDrop.Gateway.Tests' = @('SwiftDrop.Gateway')
