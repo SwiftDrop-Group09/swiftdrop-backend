@@ -40,6 +40,20 @@ public sealed class BookingHistory
         };
     }
 
+    public static BookingHistory Unassigned(Guid id, Parcel parcel, Guid actor, string? reason)
+    {
+        if (parcel.Status != ParcelStatus.Created || parcel.Version < 2)
+            throw new InvalidOperationException("Unassignment history requires a created parcel.");
+        if (reason is not null) reason = ReassignmentReason.Normalize(reason);
+        return new BookingHistory
+        {
+            Id = DomainGuard.Id(id, nameof(id)), ParcelId = parcel.Id,
+            FromStatus = ParcelStatus.Assigned, ToStatus = ParcelStatus.Created,
+            ChangedBy = DomainGuard.Id(actor, nameof(actor)), Timestamp = parcel.UpdatedAt,
+            ChangeReason = reason
+        };
+    }
+
     public Guid Id { get; private set; }
 
     public static BookingHistory CourierChanged(Guid id, Parcel parcel, ParcelStatus previousStatus,

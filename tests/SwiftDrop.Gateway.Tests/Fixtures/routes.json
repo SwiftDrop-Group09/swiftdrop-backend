@@ -250,6 +250,16 @@
     "success": "200"
   },
   {
+    "operationId": "UnassignCourier",
+    "method": "POST",
+    "path": "/api/v1/deliveries/unassign",
+    "owner": "Delivery",
+    "authorization": "Human JWT; Dispatcher/Admin",
+    "request": "UnassignInput",
+    "response": "Parcel",
+    "success": "200"
+  },
+  {
     "operationId": "UpdateDeliveryStatus",
     "method": "PUT",
     "path": "/api/v1/deliveries/{id}/status",

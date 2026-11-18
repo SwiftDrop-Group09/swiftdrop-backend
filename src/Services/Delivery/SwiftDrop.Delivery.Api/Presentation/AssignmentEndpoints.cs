@@ -44,6 +44,25 @@ public static class AssignmentEndpoints
             .Produces<SwiftDrop.Delivery.Api.Application.Bookings.ParcelBookingResponse>()
             .ProducesProblem(400).ProducesProblem(401).ProducesProblem(403).ProducesProblem(404)
             .ProducesProblem(409).ProducesProblem(422).ProducesProblem(503);
+
+        app.MapPost("/api/v1/deliveries/unassign", async (HttpContext context, ICurrentDeliveryUser user,
+            AssignmentHandler handler, CancellationToken cancellationToken) =>
+        {
+            if (!user.IsAuthenticated || user.UserId is null || user.UserId == Guid.Empty) return Problem(context, AssignmentFailure.Unauthenticated);
+            if (!user.IsOperations) return Problem(context, AssignmentFailure.Forbidden);
+            var keys = context.Request.Headers["Idempotency-Key"];
+            if (keys.Count != 1 || context.Request.Query.Count != 0 || !context.Request.HasJsonContentType()) return Problem(context, AssignmentFailure.InvalidInput);
+            UnassignCourierInput? input;
+            try { input = await context.Request.ReadFromJsonAsync<UnassignCourierInput>(Json, cancellationToken); }
+            catch (Exception exception) when (exception is JsonException or BadHttpRequestException or NotSupportedException)
+            { return Problem(context, AssignmentFailure.InvalidInput); }
+            var result = await handler.UnassignAsync(input, keys[0], QuoteProblems.CorrelationId(context), cancellationToken);
+            return result.Response is { } response ? Results.Text(response.Body, "application/json", Encoding.UTF8, response.StatusCode)
+                : Problem(context, result.Failure!.Value, result.Errors, result.CurrentVersion);
+        }).RequireAuthorization().WithName("UnassignCourier").WithMetadata(new AssignmentEndpointMetadata())
+            .Produces<SwiftDrop.Delivery.Api.Application.Bookings.ParcelBookingResponse>()
+            .ProducesProblem(400).ProducesProblem(401).ProducesProblem(403).ProducesProblem(404)
+            .ProducesProblem(409).ProducesProblem(503);
     }
 
     public static IResult Problem(HttpContext context, AssignmentFailure failure,

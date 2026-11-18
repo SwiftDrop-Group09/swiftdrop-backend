@@ -60,6 +60,13 @@ public sealed class IdempotencyRecord
         CompleteResult(parcelId, 200, body, "/api/v1/parcels/" + parcelId.ToString("D"));
     }
 
+    public void CompleteUnassignment(Guid parcelId, string body)
+    {
+        if (Operation != "UnassignCourier")
+            throw new InvalidOperationException("Only UnassignCourier stores this unassignment result.");
+        CompleteResult(parcelId, 200, body, "/api/v1/parcels/" + parcelId.ToString("D"));
+    }
+
     private void CompleteResult(Guid parcelId, int statusCode, string body, string location)
     {
         if (StoredResponse is not null)
