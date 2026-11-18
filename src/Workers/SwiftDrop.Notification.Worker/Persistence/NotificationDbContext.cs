@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace SwiftDrop.Notification.Worker.Persistence;
 
@@ -82,6 +83,19 @@ public sealed class NotificationDbContext(DbContextOptions<NotificationDbContext
             entity.Property(x => x.CreatedAt).IsRequired();
             entity.Property(x => x.UpdatedAt).IsRequired();
         });
+
+        // SQLite has no native DateTimeOffset ordering; use its documented
+        // binary representation in tests so routing due-time queries translate.
+        if (Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+        {
+            var converter = new DateTimeOffsetToBinaryConverter();
+            foreach (var property in modelBuilder.Model.GetEntityTypes().SelectMany(entity => entity.GetProperties())
+                         .Where(property => property.ClrType == typeof(DateTimeOffset) ||
+                             Nullable.GetUnderlyingType(property.ClrType) == typeof(DateTimeOffset)))
+            {
+                property.SetValueConverter(converter);
+            }
+        }
     }
 }
 

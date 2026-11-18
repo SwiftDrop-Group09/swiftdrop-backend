@@ -54,7 +54,7 @@ public sealed class StatusEffectRoutingWorker(
         }
     }
 
-    private async Task<bool> ProcessPendingAsync(CancellationToken cancellationToken)
+    internal async Task<bool> ProcessPendingAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
