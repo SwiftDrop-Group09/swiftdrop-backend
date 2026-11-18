@@ -20,6 +20,31 @@ public sealed class GoogleApiTests(IdentityPostgresFixture database)
 {
     private const string Password = "Correct Horse Battery 7!";
 
+    [Theory]
+    [InlineData(GoogleIdentityUnavailableReason.NotConfigured)]
+    [InlineData(GoogleIdentityUnavailableReason.ProviderUnavailable)]
+    public async Task GoogleDependencyFailureReturnsServiceErrorWithoutCreatingAccountsOrSessions(GoogleIdentityUnavailableReason reason)
+    {
+        using var factory = new IdentityApiFactory(database).WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IGoogleIdentityVerifier>();
+            services.AddSingleton<IGoogleIdentityVerifier>(new UnavailableVerifier(reason));
+        }));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri(IdentityApiFactory.Origin) });
+        var before = await Snapshot();
+        using var response = await client.PostAsJsonAsync("/api/v1/auth/google", new { idToken = "private-provider-credential" });
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+        using var body = await Json(response);
+        Assert.Equal("google_unavailable", body.RootElement.GetProperty("code").GetString());
+        Assert.DoesNotContain("private-provider-credential", body.RootElement.GetRawText());
+        Assert.DoesNotContain(reason.ToString(), body.RootElement.GetRawText());
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+        Assert.Equal(before, await Snapshot());
+        using var health = await client.GetAsync("/health");
+        Assert.Equal(HttpStatusCode.OK, health.StatusCode);
+    }
+
     [Fact]
     public async Task NewGoogleIdentityCreatesPasswordlessCustomerAndExistingSubjectKeepsSameUser()
     {
@@ -312,5 +337,11 @@ public sealed class GoogleApiTests(IdentityPostgresFixture database)
     private sealed class PasswordChangeVerifier(Func<Task<VerifiedGoogleIdentity>> verify) : IGoogleIdentityVerifier
     {
         public async Task<VerifiedGoogleIdentity?> VerifyAsync(string idToken, CancellationToken cancellationToken) => await verify();
+    }
+
+    private sealed class UnavailableVerifier(GoogleIdentityUnavailableReason reason) : IGoogleIdentityVerifier
+    {
+        public Task<VerifiedGoogleIdentity?> VerifyAsync(string idToken, CancellationToken cancellationToken) =>
+            throw new GoogleIdentityUnavailableException(reason);
     }
 }

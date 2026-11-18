@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -48,6 +48,7 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SwiftDrop.Delivery.Harness", "tests\SwiftDrop.Delivery.Harness\SwiftDrop.Delivery.Harness.csproj", "{CD2BE282-2895-4690-9D09-D500F410B637}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SwiftDrop.Delivery.OutboxRelay.Tests", "tests\SwiftDrop.Delivery.OutboxRelay.Tests\SwiftDrop.Delivery.OutboxRelay.Tests.csproj", "{FB7CC441-42C8-4430-BE1C-8F0882E2335C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SwiftDrop.Auditing", "src\BuildingBlocks\SwiftDrop.Auditing\SwiftDrop.Auditing.csproj", "{B44C4FCC-448E-4D70-8CFB-903ADE53B8E9}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -265,5 +266,6 @@ Global
 		{3C5686BF-A460-4A02-A4DF-543D658F1BAA} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{CD2BE282-2895-4690-9D09-D500F410B637} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{FB7CC441-42C8-4430-BE1C-8F0882E2335C} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{B44C4FCC-448E-4D70-8CFB-903ADE53B8E9} = {90298CBA-BD6F-3A0A-69D5-97CAD7B05E7E}
 	EndGlobalSection
 EndGlobal

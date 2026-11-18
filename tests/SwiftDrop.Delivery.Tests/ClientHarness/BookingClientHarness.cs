@@ -101,6 +101,7 @@ public sealed partial class BookingClientHarness : IAsyncDisposable
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:Database"] = "",
+                    ["Audit:Enabled"] = "false", // This isolated fixture injects its own store instead of production DB configuration.
                     ["DELIVERY_DATABASE_CONNECTION_STRING"] = "",
                     ["Logging:LogLevel:Default"] = "None",
                     ["Logging:EventLog:LogLevel:Default"] = "None"

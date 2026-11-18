@@ -6,6 +6,22 @@ against the real Identity API and an owned PostgreSQL instance. It adds no
 browser dependency to the default solution or existing test project graph and
 does not change production Identity, Gateway, Delivery or infra code.
 
+## Google provider configuration
+
+Real Google credentials must target an explicit `Identity:Google:WebClientIds` or
+`Identity:Google:AndroidClientIds` audience. The shared development runner maps
+the public `VITE_GOOGLE_WEB_CLIENT_ID` into the Identity web allowlist unless
+`IDENTITY_GOOGLE_WEB_CLIENT_ID` explicitly overrides it. Restart the host stack
+after changing these environment settings; the running verifier retains its
+startup configuration. Never infer a trusted audience from an incoming token.
+
+Missing/invalid audiences and provider connectivity/timeouts return HTTP 503 with
+`google_unavailable`, rather than a bad-credentials error. Operator logs provide
+a safe reason and recovery hint without tokens, claims or client IDs. Invalid
+signatures, issuer/audience claims, expiry, email verification and nonce bindings
+remain rejected; no dependency outage creates an account or session. The owned
+fixture below verifies these boundaries without signing into a real Google account.
+
 ## Run
 
 Prerequisites are the repository-pinned .NET SDK 10.0.301, installed PostgreSQL

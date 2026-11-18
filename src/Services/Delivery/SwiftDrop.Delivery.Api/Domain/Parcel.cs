@@ -60,6 +60,25 @@ public sealed class Parcel
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
+    public void AssignCourier(long expectedVersion, DateTimeOffset assignedAt)
+    {
+        if (Version != expectedVersion || Status != ParcelStatus.Created)
+            throw new InvalidOperationException("Initial assignment requires Created and the expected version.");
+        var nextVersion = checked(Version + 1);
+        Status = ParcelStatus.Assigned;
+        Version = nextVersion;
+        UpdatedAt = assignedAt.ToUniversalTime();
+    }
+
+    public void ReassignCourier(long expectedVersion, DateTimeOffset changedAt)
+    {
+        if (Version != expectedVersion || Status != ParcelStatus.Assigned)
+            throw new InvalidOperationException("Reassignment requires Assigned and the expected version.");
+        var nextVersion = checked(Version + 1);
+        Version = nextVersion;
+        UpdatedAt = changedAt.ToUniversalTime();
+    }
+
     // Authorization and assignment locking belong to the owning transaction.
     // Delivered is deliberately absent from the Courier status policy.
     public void AdvanceCourierStatus(ParcelStatus next, long expectedVersion, DateTimeOffset changedAt)

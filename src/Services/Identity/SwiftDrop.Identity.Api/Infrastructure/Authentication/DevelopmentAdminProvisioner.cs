@@ -75,7 +75,7 @@ public static class DevelopmentAdminProvisioner
                     (id,email,normalized_email,full_name,password_hash,is_active,created_at,updated_at)
                 VALUES (@id,@email,@normalized_email,@full_name,@password_hash,TRUE,@now,@now);
                 INSERT INTO public.user_roles (user_id,role_name,assigned_at)
-                VALUES (@id,'Customer',@now),(@id,'Admin',@now);
+                VALUES (@id,'Admin',@now);
                 INSERT INTO public.audit_logs
                     (actor_user_id,subject_user_id,action,created_at,result_code,correlation_id)
                 VALUES (NULL,@id,'UserCreated',@now,'Success',@correlation);

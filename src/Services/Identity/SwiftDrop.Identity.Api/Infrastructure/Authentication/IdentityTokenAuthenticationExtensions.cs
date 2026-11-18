@@ -87,9 +87,9 @@ public static class IdentityTokenAuthenticationExtensions
         {
             using var payload = JsonDocument.Parse(Base64UrlEncoder.Decode(encoded));
             return payload.RootElement.TryGetProperty("roles", out var roles)
-                && roles.ValueKind == JsonValueKind.Array
+                && roles.ValueKind == JsonValueKind.Array && roles.GetArrayLength() == 1
                 && roles.EnumerateArray().All(role => role.ValueKind == JsonValueKind.String
-                    && role.GetString() is "Customer" or "Courier" or "Merchant" or "Dispatcher" or "Admin");
+                    && SwiftDrop.Contracts.HumanRoles.TryParse(role.GetString(), out _));
         }
         catch (JsonException)
         {

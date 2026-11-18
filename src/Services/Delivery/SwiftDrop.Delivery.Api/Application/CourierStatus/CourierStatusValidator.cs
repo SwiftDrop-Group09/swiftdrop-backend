@@ -27,8 +27,6 @@ public static class CourierStatusValidator
         if (input.ExpectedVersion is not >= 1) errors["expectedVersion"] = ["Supply an expected parcel version of at least 1."];
         var notes = string.IsNullOrWhiteSpace(input.Notes) ? null : input.Notes.Trim();
         if (input.Notes is { Length: > 500 }) errors["notes"] = ["Notes must not exceed 500 characters."];
-        if (status is ParcelStatus.PickedUp or ParcelStatus.InTransit or ParcelStatus.OutForDelivery && notes is null)
-            errors["notes"] = ["A nonblank private delivery note is required for this stage."];
         CourierFailureReason? reason = null;
         if (status == ParcelStatus.Failed)
         {

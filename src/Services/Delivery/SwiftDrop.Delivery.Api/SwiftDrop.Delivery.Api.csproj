@@ -5,8 +5,10 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../../BuildingBlocks/SwiftDrop.Contracts/SwiftDrop.Contracts.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/SwiftDrop.Auditing/SwiftDrop.Auditing.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
     <PackageReference Include="AWSSDK.S3" Version="4.0.104.7" />
     <PackageReference Include="SkiaSharp" Version="4.154.0" />
@@ -18,5 +20,8 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.9" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.9" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <Protobuf Include="../../../BuildingBlocks/SwiftDrop.Contracts/Grpc/V1/delivery.proto" GrpcServices="Both" Link="Protos/delivery.proto" />
   </ItemGroup>
 </Project>

@@ -34,10 +34,17 @@ public sealed class GoogleIdentityVerifier : IGoogleIdentityVerifier
     public async Task<VerifiedGoogleIdentity?> VerifyAsync(string idToken, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (string.IsNullOrWhiteSpace(idToken) || idToken.Length > 10000 || audiences.Length == 0 ||
-            audiences.Any(audience => string.IsNullOrWhiteSpace(audience) || audience.Length > 256))
+        if (string.IsNullOrWhiteSpace(idToken) || idToken.Length > 10000)
         {
             return null;
+        }
+        if (audiences.Length == 0)
+        {
+            throw new GoogleIdentityUnavailableException(GoogleIdentityUnavailableReason.NotConfigured);
+        }
+        if (audiences.Any(audience => string.IsNullOrWhiteSpace(audience) || audience.Length > 256))
+        {
+            throw new GoogleIdentityUnavailableException(GoogleIdentityUnavailableReason.InvalidConfiguration);
         }
 
         try
@@ -89,8 +96,12 @@ public sealed class GoogleIdentityVerifier : IGoogleIdentityVerifier
 
             return new VerifiedGoogleIdentity(payload.Subject, payload.Email, name, nonce);
         }
+        catch (Exception exception) when (exception is HttpRequestException or TimeoutException)
+        {
+            throw new GoogleIdentityUnavailableException(GoogleIdentityUnavailableReason.ProviderUnavailable);
+        }
         catch (Exception exception) when (exception is InvalidJwtException or JsonException or FormatException or
-            ArgumentException or KeyNotFoundException or InvalidOperationException or HttpRequestException or TimeoutException)
+            ArgumentException or KeyNotFoundException or InvalidOperationException)
         {
             // No provider credential, decoded payload or validation diagnostics
             // leave the adapter. Bad tokens and unavailable Google fail closed.
@@ -98,7 +109,7 @@ public sealed class GoogleIdentityVerifier : IGoogleIdentityVerifier
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return null;
+            throw new GoogleIdentityUnavailableException(GoogleIdentityUnavailableReason.ProviderUnavailable);
         }
     }
 

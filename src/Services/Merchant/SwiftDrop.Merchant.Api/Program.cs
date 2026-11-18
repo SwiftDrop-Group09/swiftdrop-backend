@@ -1,3 +1,4 @@
+using SwiftDrop.Auditing;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -6,9 +7,12 @@ using Microsoft.IdentityModel.Tokens;
 using JsonWebToken = Microsoft.IdentityModel.JsonWebTokens.JsonWebToken;
 using SwiftDrop.Merchant.Api.Application;
 using SwiftDrop.Merchant.Api.Application.Merchants;
+using SwiftDrop.Merchant.Api.Application.Orders;
+using SwiftDrop.Merchant.Api.Application.Orders.Dashboard;
 using SwiftDrop.Merchant.Api.Application.Webhooks.Handlers;
 using SwiftDrop.Merchant.Api.Application.Webhooks.Ports;
 using SwiftDrop.Merchant.Api.Infrastructure.Authentication;
+using SwiftDrop.Merchant.Api.Infrastructure.Orders;
 using SwiftDrop.Merchant.Api.Infrastructure.Persistence;
 using SwiftDrop.Merchant.Api.Infrastructure.Webhooks;
 using SwiftDrop.Merchant.Api.Infrastructure.Webhooks.Background;
@@ -33,13 +37,19 @@ public partial class Program
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<MerchantHandler>();
 
+        // Merchant orders (FR-M04 / FR-M07)
+        builder.Services.AddScoped<SubmitMerchantOrderHandler>();
+        builder.Services.AddScoped<MerchantOrderQueryHandler>();
+        builder.Services.AddMerchantOrderProcessing(builder.Configuration, builder.Environment);
+        builder.Services.AddScoped<MerchantDashboardHandler>();
+
         // Webhook infrastructure, ports & handlers
         builder.Services.AddScoped<ICurrentMerchantContext, ClaimsCurrentMerchantContext>();
         builder.Services.AddSingleton<IWebhookClock>(SystemWebhookClock.Instance);
         builder.Services.AddSingleton<IWebhookSecretProtector, AesGcmSecretProtector>();
         builder.Services.AddSingleton<IWebhookDestinationValidator, SsrfDestinationValidator>();
         builder.Services.AddSingleton<IWebhookSender, ResilientWebhookSender>();
-        builder.Services.AddScoped<IWebhookOrderResolver, StubWebhookOrderResolver>();
+        builder.Services.AddScoped<IWebhookOrderResolver, InboxJobWebhookOrderResolver>();
 
         builder.Services.AddScoped<CreateWebhookSubscriptionHandler>();
         builder.Services.AddScoped<ListWebhookSubscriptionsHandler>();
@@ -60,6 +70,14 @@ public partial class Program
                 options.MapInboundClaims = false;
                 options.IncludeErrorDetails = false;
                 options.TokenValidationParameters = identityJwks.CreateValidationParameters();
+                options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents {
+                    OnTokenValidated = context => {
+                        var roles = context.Principal?.FindAll("roles").Select(claim => claim.Value).ToArray() ?? [];
+                        if (roles.Length != 1 || !SwiftDrop.Contracts.HumanRoles.TryParse(roles[0], out _))
+                            context.Fail("Exactly one defined human role is required.");
+                        return Task.CompletedTask;
+                    }
+                };
             })
             .AddJwtBearer(WorkerServiceScheme, options =>
             {
@@ -78,12 +96,15 @@ public partial class Program
                         return Task.CompletedTask;
                     }
                 };
-            });
+            })
+            .AddMerchantApiKey();
+
         builder.Services.AddAuthorization(options => options.AddPolicy(WorkerServicePolicy, policy =>
         {
             policy.AddAuthenticationSchemes(WorkerServiceScheme);
             policy.RequireAuthenticatedUser();
         }));
+        builder.Services.AddMerchantOrderAuthorization();
 
         // Explicit single-run migration task; normal host startup never applies DDL.
         if (args.Contains("--migrate", StringComparer.Ordinal))
@@ -120,12 +141,15 @@ public partial class Program
             }
         });
         app.UseAuthentication();
+        app.UseActivityAudit("Merchant", "/api/v1/merchant/audit-logs");
         app.UseAuthorization();
 
         // Process liveness only; dependency readiness is a later milestone.
         app.MapHealthChecks("/health");
         app.MapMerchantEndpoints();
         app.MapWebhookEndpoints();
+        app.MapOrderEndpoints();
+        app.MapDashboardEndpoints();
 
         app.Run();
     }

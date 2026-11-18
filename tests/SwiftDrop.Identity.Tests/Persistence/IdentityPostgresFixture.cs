@@ -31,7 +31,9 @@ public sealed class IdentityPostgresFixture : IAsyncLifetime
     public string ConnectionString { get; private set; } = string.Empty;
     public NpgsqlDataSource DataSource { get; private set; } = null!;
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync() => InitializeAsync(true);
+
+    public async Task InitializeAsync(bool applyMigrations)
     {
         try
         {
@@ -57,7 +59,7 @@ public sealed class IdentityPostgresFixture : IAsyncLifetime
             {
                 Database = "swiftdrop_identity"
             }.ConnectionString;
-            await IdentitySchemaMigrator.ApplyAsync(ConnectionString);
+            if (applyMigrations) await IdentitySchemaMigrator.ApplyAsync(ConnectionString);
             DataSource = NpgsqlDataSource.Create(ConnectionString);
         }
         catch

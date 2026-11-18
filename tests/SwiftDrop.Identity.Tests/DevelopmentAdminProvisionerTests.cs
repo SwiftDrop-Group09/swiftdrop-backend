@@ -93,7 +93,7 @@ public sealed class DevelopmentAdminProvisionerTests(IdentityPostgresFixture dat
         Assert.NotEqual(Guid.Empty, account.Profile.Id);
         Assert.Equal(email, account.Profile.Email);
         Assert.True(account.Profile.IsActive);
-        Assert.Equal(["Admin", "Customer"], account.Profile.Roles);
+        Assert.Equal(["Admin"], account.Profile.Roles);
         Assert.Equal("Development Fixture Administrator", account.Profile.FullName);
         Assert.NotNull(account.PasswordHash);
         Assert.NotEqual(FictionalPassword, account.PasswordHash);
@@ -168,7 +168,7 @@ public sealed class DevelopmentAdminProvisionerTests(IdentityPostgresFixture dat
         Assert.Single(results, successful => successful);
         Assert.Equal(1L, await ScalarAsync<long>(
             "SELECT COUNT(*) FROM public.users WHERE normalized_email=@email", ("email", email.ToUpperInvariant())));
-        Assert.Equal(2L, await ScalarAsync<long>("""
+        Assert.Equal(1L, await ScalarAsync<long>("""
             SELECT COUNT(*) FROM public.user_roles ur JOIN public.users u ON u.id=ur.user_id
             WHERE u.normalized_email=@email
             """, ("email", email.ToUpperInvariant())));
@@ -245,7 +245,7 @@ public sealed class DevelopmentAdminProvisionerTests(IdentityPostgresFixture dat
         var settings = new NpgsqlConnectionStringBuilder(database.ConnectionString) { Options = "-c role=identity_app" };
         await DevelopmentAdminProvisioner.ProvisionAsync(Configuration(email, settings.ConnectionString), Environment());
         var account = (await new PostgresIdentityAuthenticationStore(database.DataSource).FindByEmailAsync(email.ToUpperInvariant(), default))!;
-        Assert.Equal(["Admin", "Customer"], account.Profile.Roles);
+        Assert.Equal(["Admin"], account.Profile.Roles);
     }
 
     [Fact]

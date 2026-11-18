@@ -48,6 +48,37 @@ public sealed class CourierDomainTests
         Assert.Throws<ArgumentException>(() => new CourierZone(Guid.NewGuid(), Guid.Empty));
     }
 
+    [Fact]
+    public void CourierRetainsVehicleDetailsAndMaxWeight()
+    {
+        var id = Guid.NewGuid();
+        var courier = new Api.Domain.Courier(id, true, true, 8, VehicleType.Van, "WP-CAD-1234", 450.50m);
+
+        Assert.Equal(VehicleType.Van, courier.VehicleType);
+        Assert.Equal("WP-CAD-1234", courier.VehicleNumber);
+        Assert.Equal(450.50m, courier.MaxWeightKg);
+
+        courier.SetDuty(false);
+        Assert.False(courier.OnDuty);
+        Assert.Equal(2, courier.Version);
+
+        courier.Configure(true, true, 12, VehicleType.Car, "WP-CAB-5678", 80.00m);
+        Assert.Equal(VehicleType.Car, courier.VehicleType);
+        Assert.Equal("WP-CAB-5678", courier.VehicleNumber);
+        Assert.Equal(80.00m, courier.MaxWeightKg);
+        Assert.Equal(12, courier.Capacity);
+        Assert.Equal(3, courier.Version);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public void InvalidMaxWeightRejectsConfiguration(decimal maxWeight)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new Api.Domain.Courier(Guid.NewGuid(), true, true, 10, VehicleType.Motorcycle, null, maxWeight));
+    }
+
     [Theory]
     [InlineData(ProofType.Photo)]
     [InlineData(ProofType.Signature)]

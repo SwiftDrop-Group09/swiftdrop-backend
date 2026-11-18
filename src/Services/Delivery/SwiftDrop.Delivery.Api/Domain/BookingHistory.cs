@@ -14,6 +14,32 @@ public sealed class BookingHistory
         Timestamp = parcel.CreatedAt
     };
 
+    public static BookingHistory Assigned(Guid id, Parcel parcel, Guid actor)
+    {
+        if (parcel.Status != ParcelStatus.Assigned || parcel.Version < 2)
+            throw new InvalidOperationException("Assignment history requires an assigned parcel.");
+        return new BookingHistory
+        {
+            Id = DomainGuard.Id(id, nameof(id)), ParcelId = parcel.Id,
+            FromStatus = ParcelStatus.Created, ToStatus = ParcelStatus.Assigned,
+            ChangedBy = DomainGuard.Id(actor, nameof(actor)), Timestamp = parcel.UpdatedAt
+        };
+    }
+
+    public static BookingHistory Reassigned(Guid id, Parcel parcel, Guid actor, string reason)
+    {
+        if (parcel.Status != ParcelStatus.Assigned || parcel.Version < 3)
+            throw new InvalidOperationException("Reassignment history requires a reassigned parcel.");
+        reason = ReassignmentReason.Normalize(reason);
+        return new BookingHistory
+        {
+            Id = DomainGuard.Id(id, nameof(id)), ParcelId = parcel.Id,
+            FromStatus = ParcelStatus.Assigned, ToStatus = ParcelStatus.Assigned,
+            ChangedBy = DomainGuard.Id(actor, nameof(actor)), Timestamp = parcel.UpdatedAt,
+            ChangeReason = reason
+        };
+    }
+
     public Guid Id { get; private set; }
 
     public static BookingHistory CourierChanged(Guid id, Parcel parcel, ParcelStatus previousStatus,

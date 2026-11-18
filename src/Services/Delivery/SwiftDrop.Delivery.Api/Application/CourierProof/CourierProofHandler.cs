@@ -41,6 +41,7 @@ public sealed class CourierProofHandler(ICurrentDeliveryUser user, ICourierProof
                 var suffix = file.ContentType == "image/png" ? "png" : "jpg";
                 var reference = $"proofs/{id:N}/{upload}/{file.Type.ToString().ToLowerInvariant()}.{suffix}";
                 var stored = await storage.StageAsync(reference, file, cancellationToken);
+                stored = stored with { UploadedAt = stored.UploadedAt.ToUniversalTime() };
                 if (stored.StorageRef != reference || stored.ContentType != file.ContentType || stored.Length != file.Content.Length
                     || stored.Sha256 != Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file.Content))
                     || stored.UploadedAt.Offset != TimeSpan.Zero) throw new ProofStorageException();

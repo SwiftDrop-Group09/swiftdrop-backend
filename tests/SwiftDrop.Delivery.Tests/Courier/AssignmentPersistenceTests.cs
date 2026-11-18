@@ -280,7 +280,7 @@ public sealed class AssignmentPersistenceTests(PostgresFixture fixture) : IAsync
             var scoped = new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { SearchPath = schema }.ConnectionString;
             await using var context = Context(scoped);
             await context.GetService<IMigrator>().MigrateAsync("20261028110532_CourierPersistenceFoundation");
-            var seed = await SeedAsync(context);
+            var seed = await SeedAsync(context, legacyCouriers: true);
             context.ProofMetadata.Add(new ProofMetadata(Guid.NewGuid(), seed.ParcelId, ProofType.Photo,
                 "proofs/" + Guid.NewGuid().ToString("N"), "Fictional Recipient", seed.CourierA, Now));
             await context.SaveChangesAsync();
@@ -289,6 +289,14 @@ public sealed class AssignmentPersistenceTests(PostgresFixture fixture) : IAsync
             await context.SaveChangesAsync();
             context.ChangeTracker.Clear();
             Assert.Equal(2, await context.Couriers.CountAsync());
+            var couriers = await context.Couriers.AsNoTracking().ToArrayAsync();
+            Assert.All(couriers, courier => Assert.True(courier.BusinessNumber > 0));
+            Assert.Equal(2, couriers.Select(courier => courier.BusinessNumber).Distinct().Count());
+            var originalNumber = couriers.Single(courier => courier.Id == seed.CourierA).BusinessNumber;
+            var renumber = await Assert.ThrowsAsync<PostgresException>(() => context.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE couriers SET business_number=DEFAULT WHERE id={seed.CourierA}"));
+            Assert.Equal(PostgresErrorCodes.CheckViolation, renumber.SqlState);
+            Assert.Equal(originalNumber, (await context.Couriers.AsNoTracking().SingleAsync(courier => courier.Id == seed.CourierA)).BusinessNumber);
             Assert.Single(await context.ProofMetadata.ToListAsync());
             Assert.Single(await context.Parcels.ToListAsync());
             Assert.Single(await context.PriceSnapshots.ToListAsync());
@@ -333,7 +341,7 @@ public sealed class AssignmentPersistenceTests(PostgresFixture fixture) : IAsync
         return await SeedAsync(context);
     }
 
-    private static async Task<Seed> SeedAsync(DeliveryDbContext context)
+    private static async Task<Seed> SeedAsync(DeliveryDbContext context, bool legacyCouriers = false)
     {
         // Persistence fixtures do not simulate an authorized dispatcher/status handler.
         var zone = new DeliveryZone(Guid.NewGuid(), "Assignments " + Guid.NewGuid().ToString("N"));
@@ -343,7 +351,10 @@ public sealed class AssignmentPersistenceTests(PostgresFixture fixture) : IAsync
         var first = new Api.Domain.Courier(Guid.NewGuid(), true, true, 10);
         var second = new Api.Domain.Courier(Guid.NewGuid(), true, true, 10);
         var outbox = OutboxMessage.ParcelCreated(Guid.NewGuid(), parcel, "assignment-persistence-test");
-        context.AddRange(zone, tier, parcel, first, second,
+        if (legacyCouriers)
+            await context.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO couriers(id,active,on_duty,capacity,version) VALUES({first.Id},true,true,10,1),({second.Id},true,true,10,1)");
+        else context.AddRange(first, second);
+        context.AddRange(zone, tier, parcel,
             new PriceSnapshot(Guid.NewGuid(), parcel.Id, tier, 450m, 90m, 540m, Now),
             BookingHistory.Created(Guid.NewGuid(), parcel, parcel.CustomerId!.Value), outbox);
         await context.SaveChangesAsync();

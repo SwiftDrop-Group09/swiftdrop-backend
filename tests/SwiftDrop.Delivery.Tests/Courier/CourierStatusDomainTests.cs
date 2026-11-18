@@ -87,11 +87,11 @@ public sealed class CourierStatusDomainTests
     }
 
     [Fact]
-    public void HistoryFactoryCannotBypassRequiredNotesOrFailureReason()
+    public void HistoryFactoryAcceptsOptionalNotesAndStillRequiresAFailureReason()
     {
         var parcel = At(ParcelStatus.Assigned);
         parcel.AdvanceCourierStatus(ParcelStatus.PickedUp, 2, Now);
-        Assert.Throws<ArgumentException>(() => BookingHistory.CourierChanged(Guid.NewGuid(), parcel, ParcelStatus.Assigned, Guid.NewGuid(), " ", null));
+        Assert.Null(BookingHistory.CourierChanged(Guid.NewGuid(), parcel, ParcelStatus.Assigned, Guid.NewGuid(), null, null).DeliveryNote);
         parcel = At(ParcelStatus.Assigned);
         parcel.AdvanceCourierStatus(ParcelStatus.Failed, 2, Now);
         Assert.Throws<ArgumentException>(() => BookingHistory.CourierChanged(Guid.NewGuid(), parcel, ParcelStatus.Assigned, Guid.NewGuid(), null, null));

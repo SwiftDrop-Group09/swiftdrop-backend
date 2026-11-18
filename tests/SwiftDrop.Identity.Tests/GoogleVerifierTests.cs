@@ -11,13 +11,15 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using SwiftDrop.Identity.Api.Application;
 using SwiftDrop.Identity.Api.Infrastructure.Google;
 
 namespace SwiftDrop.Identity.Tests;
 
+[Collection("GoogleVerifier")]
 public sealed class GoogleVerifierTests : IAsyncLifetime
 {
-    private readonly RSA rsa = RSA.Create(2048);
+    private static readonly RSA rsa = RSA.Create(2048);
     private WebApplication server = null!;
     private string certificatesUrl = null!;
 
@@ -29,14 +31,18 @@ public sealed class GoogleVerifierTests : IAsyncLifetime
         builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
         server = builder.Build();
         var publicKey = rsa.ExportParameters(false);
-        server.MapGet("/keys", () => Results.Json(new
+        server.MapGet("/keys", (HttpContext context) =>
         {
-            keys = new[]
+            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            return Results.Json(new
             {
-                new { kty = "RSA", kid = "google-test", alg = "RS256", use = "sig",
-                    n = Base64UrlEncoder.Encode(publicKey.Modulus), e = Base64UrlEncoder.Encode(publicKey.Exponent) }
-            }
-        }));
+                keys = new[]
+                {
+                    new { kty = "RSA", kid = "google-test", alg = "RS256", use = "sig",
+                        n = Base64UrlEncoder.Encode(publicKey.Modulus), e = Base64UrlEncoder.Encode(publicKey.Exponent) }
+                }
+            });
+        });
         await server.StartAsync();
         certificatesUrl = server.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single() + "/keys";
     }
@@ -138,10 +144,41 @@ public sealed class GoogleVerifierTests : IAsyncLifetime
     public async Task GoogleConfigurationAndProviderOutagesFailClosed()
     {
         var empty = new GoogleIdentityVerifier(new ConfigurationBuilder().Build());
-        Assert.Null(await empty.VerifyAsync(Token([]), CancellationToken.None));
+        var missing = await Assert.ThrowsAsync<GoogleIdentityUnavailableException>(() => empty.VerifyAsync(Token([]), CancellationToken.None));
+        Assert.Equal(GoogleIdentityUnavailableReason.NotConfigured, missing.Reason);
         var unavailable = new GoogleIdentityVerifier(Configuration(), (_, _) =>
             Task.FromException<GoogleJsonWebSignature.Payload>(new HttpRequestException("provider unavailable")));
-        Assert.Null(await unavailable.VerifyAsync(Token([]), CancellationToken.None));
+        var outage = await Assert.ThrowsAsync<GoogleIdentityUnavailableException>(() => unavailable.VerifyAsync(Token([]), CancellationToken.None));
+        Assert.Equal(GoogleIdentityUnavailableReason.ProviderUnavailable, outage.Reason);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProviderDeadlineAndInternalCancellationAreServiceFailures(bool canceled)
+    {
+        var unavailable = new GoogleIdentityVerifier(Configuration(), (_, _) =>
+            Task.FromException<GoogleJsonWebSignature.Payload>(canceled ? new OperationCanceledException() : new TimeoutException()));
+        var failure = await Assert.ThrowsAsync<GoogleIdentityUnavailableException>(() => unavailable.VerifyAsync(Token([]), default));
+        Assert.Equal(GoogleIdentityUnavailableReason.ProviderUnavailable, failure.Reason);
+    }
+
+    [Fact]
+    public async Task InvalidAudienceConfigurationNeverReachesProviderValidation()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Identity:Google:WebClientIds:0"] = " "
+        }).Build();
+        var called = false;
+        var verifier = new GoogleIdentityVerifier(configuration, (_, _) =>
+        {
+            called = true;
+            throw new InvalidOperationException("Must not contact provider.");
+        });
+        var failure = await Assert.ThrowsAsync<GoogleIdentityUnavailableException>(() => verifier.VerifyAsync(Token([]), default));
+        Assert.Equal(GoogleIdentityUnavailableReason.InvalidConfiguration, failure.Reason);
+        Assert.False(called);
     }
 
     [Fact]
@@ -218,6 +255,5 @@ public sealed class GoogleVerifierTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await server.DisposeAsync();
-        rsa.Dispose();
     }
 }
