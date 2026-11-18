@@ -1,10 +1,15 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 
 #nullable disable
 
 namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(DeliveryDbContext))]
+    [Migration("20261118100000_UnassignCourierIdempotency")]
     public partial class UnassignCourierIdempotency : Migration
     {
         /// <inheritdoc />
