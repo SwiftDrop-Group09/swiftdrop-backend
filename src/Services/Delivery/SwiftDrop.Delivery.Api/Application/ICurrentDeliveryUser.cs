@@ -9,4 +9,7 @@ public interface ICurrentDeliveryUser
     bool IsCustomer { get; }
     bool IsOperations { get; }
     bool IsAdmin => false;
+    bool IsDispatcher => false;
+    bool IsMerchant => false;
+    string PrimaryRole => "Guest";
 }

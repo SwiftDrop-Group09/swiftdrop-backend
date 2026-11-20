@@ -17,6 +17,15 @@ public sealed class ClaimsCurrentDeliveryUser(IHttpContextAccessor accessor) : I
     public bool IsCustomer => HasRole("Customer");
     public bool IsOperations => HasRole("Dispatcher") || HasRole("Admin");
     public bool IsAdmin => HasRole("Admin");
+    public bool IsDispatcher => HasRole("Dispatcher");
+    public bool IsMerchant => HasRole("Merchant");
+
+    public string PrimaryRole =>
+        IsAdmin ? "Admin" :
+        IsDispatcher ? "Dispatcher" :
+        IsCourier ? "Courier" :
+        IsMerchant ? "Merchant" :
+        IsCustomer ? "Customer" : "Guest";
 
     private bool HasRole(string role) => Identity is { } identity
         && (identity.HasClaim(identity.RoleClaimType, role) || identity.HasClaim("roles", role));

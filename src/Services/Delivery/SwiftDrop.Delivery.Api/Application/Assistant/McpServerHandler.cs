@@ -50,8 +50,126 @@ public sealed class McpServerHandler(AssistantToolExecutor toolExecutor)
                 }
             }),
         new(
+            AssistantToolNames.EstimateDeliveryTime,
+            "Estimate transit duration, estimated arrival date, and SLA cutoff time between pickup and destination cities across Sri Lanka.",
+            new
+            {
+                type = "object",
+                required = new[] { "pickupCity", "deliveryCity" },
+                properties = new
+                {
+                    pickupCity = new { type = "string", description = "Starting position / pickup city in Sri Lanka (e.g. Kandy, Colombo, Galle, Moratuwa)" },
+                    deliveryCity = new { type = "string", description = "Destination city in Sri Lanka (e.g. Moratuwa, Kandy, Galle, Colombo)" },
+                    serviceSpeed = new { type = "string", @enum = new[] { "Standard", "Express" }, description = "Service delivery speed tier" }
+                }
+            }),
+        new(
             AssistantToolNames.ListServiceZones,
             "List all active SwiftDrop delivery service zones and supported delivery coverage cities.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+
+        // Courier Tools
+        new(
+            AssistantToolNames.GetCourierAssignedDeliveries,
+            "Retrieve active parcel assignments scheduled for the authenticated courier today.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+        new(
+            AssistantToolNames.GetCourierWorkSummary,
+            "Retrieve shift metrics, stage counts (assigned, picked up, in transit, delivered, failed), and overdue deliveries for the authenticated courier.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+        new(
+            AssistantToolNames.GetCourierDutyStatus,
+            "Retrieve on-duty / off-duty shift status, registered vehicle details, and maximum payload capacity for the authenticated courier.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+        new(
+            AssistantToolNames.GetCourierDeliveryProtocol,
+            "Retrieve the official SwiftDrop courier standard operating procedure for doorstep delivery, proof of delivery capture, and exception handling.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+
+        // Dispatcher Tools
+        new(
+            AssistantToolNames.ListUnassignedParcels,
+            "Inspect the queue of unassigned parcels awaiting courier allocation with pickup, delivery, weight, and SLA details.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+        new(
+            AssistantToolNames.GetCourierWorkload,
+            "Inspect active courier workload, duty state, capacity, and zone allocations across the fleet.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+        new(
+            AssistantToolNames.GetZoneDispatchSummary,
+            "Inspect delivery bottlenecks, pending pickups, and fleet availability summarized by service zone.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+
+        // Merchant Tools
+        new(
+            AssistantToolNames.ListMerchantOrders,
+            "List recent commercial merchant parcels, external order references, and live fulfillment statuses.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+        new(
+            AssistantToolNames.GetMerchantIntegrationGuide,
+            "Retrieve merchant REST API endpoints, API key authentication, webhook lifecycle events, and HMAC signature verification instructions.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+
+        // Admin Tools
+        new(
+            AssistantToolNames.GetDeliverySystemReports,
+            "Retrieve system-wide delivery performance reports, volume metrics, terminal counts, success rate, and daily trends.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+        new(
+            AssistantToolNames.ListPricingTariffs,
+            "Inspect configured pricing tariffs, weight bands, and per-kg rates across delivery zones.",
+            new
+            {
+                type = "object",
+                properties = new { }
+            }),
+        new(
+            AssistantToolNames.GetAdminSystemOverview,
+            "Retrieve high-level system overview including today's parcel volume, unassigned queue, active on-duty couriers, and platform health.",
             new
             {
                 type = "object",

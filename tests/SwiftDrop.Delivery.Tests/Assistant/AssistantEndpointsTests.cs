@@ -469,7 +469,175 @@ public sealed class AssistantEndpointsTests
 
         var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var tools = doc.RootElement.GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToList();
-        Assert.Equal(4, tools.Count);
+        Assert.Equal(17, tools.Count);
+        Assert.Contains(AssistantToolNames.EstimateDeliveryTime, tools);
+        Assert.Contains(AssistantToolNames.GetCourierAssignedDeliveries, tools);
+        Assert.Contains(AssistantToolNames.ListUnassignedParcels, tools);
+        Assert.Contains(AssistantToolNames.ListMerchantOrders, tools);
+        Assert.Contains(AssistantToolNames.GetDeliverySystemReports, tools);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_ForCourier_AnswersCourierDeliveryProtocol()
+    {
+        var courierId = Guid.NewGuid();
+        using var factory = CreateFactory(QuoteApiFactory.Principal(courierId.ToString(), "Courier"));
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("How do I complete proof of delivery protocol?");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Single(chatResult!.ToolCalls);
+        Assert.Equal(AssistantToolNames.GetCourierDeliveryProtocol, chatResult.ToolCalls[0].ToolName);
+        Assert.NotNull(chatResult.Cards?.CourierProtocol);
+        Assert.Contains("SOP", chatResult.Cards!.CourierProtocol!.Title);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_ForCourier_GreetingIsTailoredToCourier()
+    {
+        var courierId = Guid.NewGuid();
+        using var factory = CreateFactory(QuoteApiFactory.Principal(courierId.ToString(), "Courier"));
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("hello");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Contains("Courier Assistant", chatResult!.Reply);
+        Assert.Contains("assigned deliveries", chatResult.Reply);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_ForDispatcher_AnswersZoneDispatchSummary()
+    {
+        var dispatcherId = Guid.NewGuid();
+        using var factory = CreateFactory(QuoteApiFactory.Principal(dispatcherId.ToString(), "Dispatcher"));
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("What is the zone summary for dispatch?");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Single(chatResult!.ToolCalls);
+        Assert.Equal(AssistantToolNames.GetZoneDispatchSummary, chatResult.ToolCalls[0].ToolName);
+        Assert.NotNull(chatResult.Cards?.ZoneDispatch);
+        Assert.NotEmpty(chatResult.Cards!.ZoneDispatch!.Zones);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_ForDispatcher_GreetingIsTailoredToDispatcher()
+    {
+        var dispatcherId = Guid.NewGuid();
+        using var factory = CreateFactory(QuoteApiFactory.Principal(dispatcherId.ToString(), "Dispatcher"));
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("hi");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Contains("Dispatch Operations Assistant", chatResult!.Reply);
+        Assert.Contains("unassigned parcel queues", chatResult.Reply);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_ForMerchant_AnswersIntegrationGuide()
+    {
+        var merchantId = Guid.NewGuid();
+        using var factory = CreateFactory(QuoteApiFactory.Principal(merchantId.ToString(), "Merchant"));
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("How do I integrate via API and what webhooks exist?");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Single(chatResult!.ToolCalls);
+        Assert.Equal(AssistantToolNames.GetMerchantIntegrationGuide, chatResult.ToolCalls[0].ToolName);
+        Assert.NotNull(chatResult.Cards?.MerchantIntegration);
+        Assert.Contains("parcel.created", chatResult.Cards!.MerchantIntegration!.WebhookEvents[0]);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_ForMerchant_GreetingIsTailoredToMerchant()
+    {
+        var merchantId = Guid.NewGuid();
+        using var factory = CreateFactory(QuoteApiFactory.Principal(merchantId.ToString(), "Merchant"));
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("hey");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Contains("Merchant Assistant", chatResult!.Reply);
+        Assert.Contains("business orders", chatResult.Reply);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_ForAdmin_GreetingIsTailoredToAdmin()
+    {
+        var adminId = Guid.NewGuid();
+        using var factory = CreateFactory(QuoteApiFactory.Principal(adminId.ToString(), "Admin"));
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("start");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Contains("Administrative Assistant", chatResult!.Reply);
+        Assert.Contains("system delivery reports", chatResult.Reply);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_EstimateDeliveryTime_FromKandyToMoratuwa()
+    {
+        using var factory = CreateFactory(null);
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("How much time will it take to go from kandy to moratuwa");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Single(chatResult!.ToolCalls);
+        Assert.Equal(AssistantToolNames.EstimateDeliveryTime, chatResult.ToolCalls[0].ToolName);
+        Assert.NotNull(chatResult.Cards?.DeliveryTime);
+        Assert.Equal("Kandy", chatResult.Cards!.DeliveryTime!.PickupCity);
+        Assert.Equal("Colombo", chatResult.Cards.DeliveryTime.DeliveryCity);
+        Assert.Contains("24–48 hours", chatResult.Cards.DeliveryTime.EstimatedDuration);
+        Assert.Contains("Standard", chatResult.Cards.DeliveryTime.ServiceSpeed);
+    }
+
+    [Fact]
+    public async Task ChatAssistant_ForDispatcher_ParcelsToDeliver_ClarifiesRoleAndReturnsQueue()
+    {
+        var dispatcherId = Guid.NewGuid();
+        using var factory = CreateFactory(QuoteApiFactory.Principal(dispatcherId.ToString(), "Dispatcher"));
+        using var client = factory.CreateClient();
+
+        var request = new AssistantChatRequest("how many parcels do i have to deliver today ?");
+        var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var chatResult = await response.Content.ReadFromJsonAsync<AssistantChatResponse>();
+        Assert.NotNull(chatResult);
+        Assert.Contains("manage the dispatch fleet", chatResult!.Reply);
+        Assert.NotNull(chatResult.Cards?.DispatcherQueue);
     }
 
     // -------------------------------------------------------------
