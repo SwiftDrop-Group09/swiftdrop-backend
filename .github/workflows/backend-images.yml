@@ -3,7 +3,15 @@ name: Backend Images
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*.*.*'
+      - 'v*.*'
   workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Manual version tag (e.g. v1.2.0 or v1.2)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -58,7 +66,10 @@ jobs:
           images: ghcr.io/swiftdrop-group09/${{ matrix.image }}
           tags: |
             type=sha,prefix=sha-,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ inputs.version_tag }},enable=${{ inputs.version_tag != '' }}
 
       - name: Build and push (${{ matrix.service }})
         id: build
@@ -92,21 +103,36 @@ jobs:
 
   notify-infra:
     needs: publish
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.version_tag != '')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Trigger swiftdrop-infra staging CD
+      - name: Determine target image tag & environment
+        id: tag
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "image_tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.version_tag }}" ]; then
+            echo "image_tag=${{ inputs.version_tag }}" >> "$GITHUB_OUTPUT"
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+          else
+            SHORT_SHA="${{ github.sha }}"
+            echo "image_tag=sha-${SHORT_SHA:0:7}" >> "$GITHUB_OUTPUT"
+            echo "environment=staging" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger swiftdrop-infra CD
         if: env.GH_TOKEN != ''
         env:
           GH_TOKEN: ${{ secrets.INFRA_DISPATCH_TOKEN }}
-          SHORT_SHA: ${{ github.sha }}
         run: |
-          TAG="sha-${SHORT_SHA:0:7}"
+          TAG="${{ steps.tag.outputs.image_tag }}"
+          ENV="${{ steps.tag.outputs.environment }}"
           curl --fail --silent --show-error -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/SwiftDrop-Group09/swiftdrop-infra/dispatches" \
-            -d "{\"event_type\":\"backend-images-published\",\"client_payload\":{\"image_tag\":\"${TAG}\"}}"
+            -d "{\"event_type\":\"backend-images-published\",\"client_payload\":{\"image_tag\":\"${TAG}\",\"environment\":\"${ENV}\"}}"
 
