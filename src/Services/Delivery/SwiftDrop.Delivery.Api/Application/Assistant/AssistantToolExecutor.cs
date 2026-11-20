@@ -51,6 +51,7 @@ public sealed class AssistantToolExecutor(
             AssistantToolNames.TrackParcel => await ExecuteTrackParcelAsync(arguments, cancellationToken),
             AssistantToolNames.ListMyParcels => await ExecuteListMyParcelsAsync(arguments, cancellationToken),
             AssistantToolNames.EstimateDeliveryFee => await ExecuteEstimateFeeAsync(arguments, cancellationToken),
+            AssistantToolNames.EstimateDeliveryTime => await ExecuteEstimateDeliveryTimeAsync(arguments, cancellationToken),
             AssistantToolNames.ListServiceZones => await ExecuteListServiceZonesAsync(arguments, cancellationToken),
 
             // Courier Tools
@@ -449,6 +450,190 @@ public sealed class AssistantToolExecutor(
     }
 
     // -------------------------------------------------------------
+    // Tool: estimate_delivery_time
+    // -------------------------------------------------------------
+    private async Task<ToolExecutionResult> ExecuteEstimateDeliveryTimeAsync(
+        JsonElement? arguments,
+        CancellationToken cancellationToken)
+    {
+        var input = Deserialize<EstimateDeliveryTimeInput>(arguments) ?? new EstimateDeliveryTimeInput();
+
+        if (string.IsNullOrWhiteSpace(input.PickupCity) && string.IsNullOrWhiteSpace(input.DeliveryCity))
+        {
+            return new ToolExecutionResult(
+                AssistantToolNames.EstimateDeliveryTime,
+                false,
+                null,
+                "Please specify both the starting position (pickup city) and destination (delivery city) in Sri Lanka to estimate delivery transit time.",
+                "missing_cities");
+        }
+
+        if (string.IsNullOrWhiteSpace(input.PickupCity))
+        {
+            var dest = !string.IsNullOrWhiteSpace(input.DeliveryCity) ? $" to {input.DeliveryCity.Trim()}" : "";
+            return new ToolExecutionResult(
+                AssistantToolNames.EstimateDeliveryTime,
+                false,
+                null,
+                $"Where will the parcel be picked up from? Please provide your starting position (pickup city) to estimate the delivery transit duration{dest}.",
+                "missing_pickup_city");
+        }
+
+        if (string.IsNullOrWhiteSpace(input.DeliveryCity))
+        {
+            return new ToolExecutionResult(
+                AssistantToolNames.EstimateDeliveryTime,
+                false,
+                null,
+                $"Where is the parcel heading to? Please provide the destination city in Sri Lanka to estimate the delivery transit duration from {input.PickupCity.Trim()}.",
+                "missing_delivery_city");
+        }
+
+        var activeZones = await zoneCatalog.ReadActiveAsync(cancellationToken);
+        if (activeZones.Count == 0)
+        {
+            return new ToolExecutionResult(
+                AssistantToolNames.EstimateDeliveryTime,
+                false,
+                null,
+                "No delivery service zones are currently active.",
+                "no_active_zones");
+        }
+
+        var pickupZone = ResolveZone(null, input.PickupCity, activeZones, isPickup: true);
+        var deliveryZone = ResolveZone(null, input.DeliveryCity, activeZones, isPickup: false);
+
+        if (pickupZone is null || deliveryZone is null)
+        {
+            var supported = string.Join(", ", activeZones.Select(z => z.Name));
+            var missing = pickupZone is null ? input.PickupCity : input.DeliveryCity;
+            return new ToolExecutionResult(
+                AssistantToolNames.EstimateDeliveryTime,
+                false,
+                null,
+                $"Unable to resolve service zone for '{missing}'. Active zones: {supported}.",
+                "unsupported_zone");
+        }
+
+        var isExpress = !string.IsNullOrWhiteSpace(input.ServiceSpeed)
+            && input.ServiceSpeed.Equals("Express", StringComparison.OrdinalIgnoreCase);
+
+        var (minHours, maxHours, durationText, routeType) = CalculateTransitSla(pickupZone.Name, deliveryZone.Name, isExpress);
+
+        // Calculate Estimated Delivery Date in Sri Lanka Time (UTC+5:30)
+        var colomboOffset = TimeSpan.FromHours(5.5);
+        var nowSl = DateTimeOffset.UtcNow.ToOffset(colomboOffset);
+
+        // Daily dispatch cutoff is 2:00 PM (14:00)
+        var dispatchedSameDay = nowSl.Hour < 14;
+        var startDay = dispatchedSameDay ? nowSl.Date : nowSl.Date.AddDays(1);
+
+        if (startDay.DayOfWeek == DayOfWeek.Sunday) startDay = startDay.AddDays(1);
+
+        var daysToAdd = (int)Math.Ceiling(maxHours / 24.0);
+        if (minHours < 24 && dispatchedSameDay)
+        {
+            daysToAdd = 0;
+        }
+        else if (daysToAdd == 0)
+        {
+            daysToAdd = 1;
+        }
+
+        var arrivalDate = startDay;
+        while (daysToAdd > 0)
+        {
+            arrivalDate = arrivalDate.AddDays(1);
+            if (arrivalDate.DayOfWeek != DayOfWeek.Sunday)
+            {
+                daysToAdd--;
+            }
+        }
+
+        var arrivalDateFormatted = arrivalDate.ToString("dddd, MMM d, yyyy");
+        if (minHours < 12 && dispatchedSameDay)
+        {
+            arrivalDateFormatted = $"Today ({nowSl:MMM d}) by 6:00 PM";
+        }
+        else if (minHours <= 24 && dispatchedSameDay)
+        {
+            arrivalDateFormatted = $"Tomorrow ({arrivalDate:MMM d}) by 2:00 PM";
+        }
+
+        var speedLabel = isExpress ? "Express" : "Standard";
+        var cutoffNote = "Orders booked before 2:00 PM are dispatched on the same day.";
+
+        var summaryText = $"Deliveries from **{pickupZone.Name}** to **{deliveryZone.Name}** typically take **{durationText}** via **{speedLabel}** delivery.\n\n" +
+                          $"- **Service Tier**: {speedLabel}\n" +
+                          $"- **Estimated Arrival**: {arrivalDateFormatted}\n" +
+                          $"- **Route Type**: {routeType}\n" +
+                          $"- **Daily Cutoff**: {cutoffNote}\n\n" +
+                          (isExpress ? "Express priority handling guarantees rapid transit." : "Need it sooner? SwiftDrop Express delivery is available for eligible routes.");
+
+        var card = new DeliveryTimeEstimateCardData(
+            pickupZone.Name,
+            deliveryZone.Name,
+            durationText,
+            arrivalDateFormatted,
+            speedLabel,
+            cutoffNote,
+            minHours,
+            maxHours,
+            routeType,
+            summaryText);
+
+        return new ToolExecutionResult(
+            AssistantToolNames.EstimateDeliveryTime,
+            true,
+            card,
+            summaryText,
+            null);
+    }
+
+    private static (int MinHours, int MaxHours, string DurationText, string RouteType) CalculateTransitSla(
+        string pickupZoneName,
+        string deliveryZoneName,
+        bool isExpress)
+    {
+        if (pickupZoneName.Equals(deliveryZoneName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (isExpress)
+                return (4, 6, "4–6 hours (Same Day Express)", "Intra-Zone (Same City)");
+            return (12, 24, "12–24 hours (Same Day / Next Day)", "Intra-Zone (Same City)");
+        }
+
+        var metroZones = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Colombo", "Gampaha", "Kalutara" };
+        var isPickupMetro = metroZones.Contains(pickupZoneName);
+        var isDeliveryMetro = metroZones.Contains(deliveryZoneName);
+
+        if (isPickupMetro && isDeliveryMetro)
+        {
+            if (isExpress)
+                return (6, 12, "6–12 hours (Same Day Priority)", "Western Metro Route");
+            return (18, 24, "18–24 hours (Next Day Delivery)", "Western Metro Route");
+        }
+
+        var remoteZones = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Jaffna", "Kilinochchi", "Mannar", "Mullaitivu", "Vavuniya",
+            "Trincomalee", "Batticaloa", "Ampara", "Badulla", "Monaragala"
+        };
+        var isPickupRemote = remoteZones.Contains(pickupZoneName);
+        var isDeliveryRemote = remoteZones.Contains(deliveryZoneName);
+
+        if (isPickupRemote || isDeliveryRemote)
+        {
+            if (isExpress)
+                return (24, 48, "24–48 hours (1–2 business days)", "Cross-Island Regional Route");
+            return (48, 72, "48–72 hours (2–3 business days)", "Cross-Island Regional Route");
+        }
+
+        if (isExpress)
+            return (24, 24, "24 hours (Next Business Day by 2 PM)", "Inter-Province Priority Route");
+        return (24, 48, "24–48 hours (1–2 business days)", "Inter-Province Standard Route");
+    }
+
+    // -------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------
 
@@ -635,13 +820,17 @@ public sealed class AssistantToolExecutor(
         JsonElement? arguments,
         CancellationToken cancellationToken)
     {
-        if (!currentDeliveryUser.IsAuthenticated || !currentDeliveryUser.IsCourier)
+        if (!currentDeliveryUser.IsAuthenticated || !currentDeliveryUser.IsCourier || currentDeliveryUser.PrimaryRole == "Dispatcher")
         {
+            var msg = currentDeliveryUser.PrimaryRole == "Dispatcher"
+                ? "As a Dispatcher, you manage the dispatch fleet and assignments rather than delivering parcels yourself. You can view unassigned parcels waiting in the queue using list_unassigned_parcels or inspect courier capacity using get_courier_workload."
+                : "Access restricted: You must be signed in with an active Courier account to access assigned deliveries.";
+
             return new ToolExecutionResult(
                 AssistantToolNames.GetCourierAssignedDeliveries,
                 false,
                 null,
-                "Access restricted: You must be signed in with an active Courier account to access assigned deliveries.",
+                msg,
                 "forbidden");
         }
 

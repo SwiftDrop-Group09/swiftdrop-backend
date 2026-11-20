@@ -50,6 +50,20 @@ public sealed class McpServerHandler(AssistantToolExecutor toolExecutor)
                 }
             }),
         new(
+            AssistantToolNames.EstimateDeliveryTime,
+            "Estimate transit duration, estimated arrival date, and SLA cutoff time between pickup and destination cities across Sri Lanka.",
+            new
+            {
+                type = "object",
+                required = new[] { "pickupCity", "deliveryCity" },
+                properties = new
+                {
+                    pickupCity = new { type = "string", description = "Starting position / pickup city in Sri Lanka (e.g. Kandy, Colombo, Galle, Moratuwa)" },
+                    deliveryCity = new { type = "string", description = "Destination city in Sri Lanka (e.g. Moratuwa, Kandy, Galle, Colombo)" },
+                    serviceSpeed = new { type = "string", @enum = new[] { "Standard", "Express" }, description = "Service delivery speed tier" }
+                }
+            }),
+        new(
             AssistantToolNames.ListServiceZones,
             "List all active SwiftDrop delivery service zones and supported delivery coverage cities.",
             new

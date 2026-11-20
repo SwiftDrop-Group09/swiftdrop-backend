@@ -125,13 +125,29 @@ public sealed partial class AssistantOrchestrator(
         // -------------------------------------------------------------
         if (role is "Dispatcher" or "Admin")
         {
-            if (Regex.IsMatch(lower, @"\b(unassigned|waiting parcels|dispatch queue|pending assignment|unassigned queue)\b"))
+            if (Regex.IsMatch(lower, @"\b(unassigned|waiting parcels|dispatch queue|pending assignment|unassigned queue|how many.*(deliver|dispatch)|parcels to deliver|deliver today|my deliveries|what do i deliver)\b"))
             {
                 var sw = Stopwatch.StartNew();
-                var result = await toolExecutor.ExecuteAsync(AssistantToolNames.ListUnassignedParcels, null, cancellationToken);
+                var queueResult = await toolExecutor.ExecuteAsync(AssistantToolNames.ListUnassignedParcels, null, cancellationToken);
+                var workloadResult = await toolExecutor.ExecuteAsync(AssistantToolNames.GetCourierWorkload, null, cancellationToken);
                 sw.Stop();
-                toolCalls.Add(new AssistantToolCallTrace(AssistantToolNames.ListUnassignedParcels, new { }, result.Success ? "success" : "error", sw.ElapsedMilliseconds, result.TextSummary));
-                return new AssistantChatResponse(result.TextSummary, "mcp-local-agent", toolCalls, new AssistantCards(DispatcherQueue: result.Data as DispatcherQueueCardData), GetSuggestedPromptsForRole(role));
+
+                toolCalls.Add(new AssistantToolCallTrace(AssistantToolNames.ListUnassignedParcels, new { }, queueResult.Success ? "success" : "error", sw.ElapsedMilliseconds, queueResult.TextSummary));
+
+                var queueData = queueResult.Data as DispatcherQueueCardData;
+                var unassignedCount = queueData?.TotalUnassigned ?? 0;
+                var workloadData = workloadResult.Data as CourierWorkloadCardData;
+                var couriersOnDuty = workloadData?.ActiveCouriersOnDuty ?? 0;
+
+                var reply = $"As a Dispatcher, you manage the dispatch fleet and assignments rather than delivering parcels yourself.\n\n" +
+                            $"Currently, there are **{unassignedCount} unassigned parcel(s)** waiting in the dispatch queue, and **{couriersOnDuty} courier(s)** on duty today.";
+
+                return new AssistantChatResponse(
+                    Reply: reply,
+                    Mode: "mcp-local-agent",
+                    ToolCalls: toolCalls,
+                    Cards: new AssistantCards(DispatcherQueue: queueData, CourierWorkload: workloadData),
+                    SuggestedPrompts: GetSuggestedPromptsForRole(role));
             }
 
             if (Regex.IsMatch(lower, @"\b(workload|couriers|courier capacity|who is on duty|active couriers)\b"))
@@ -208,6 +224,45 @@ public sealed partial class AssistantOrchestrator(
                 toolCalls.Add(new AssistantToolCallTrace(AssistantToolNames.GetAdminSystemOverview, new { }, result.Success ? "success" : "error", sw.ElapsedMilliseconds, result.TextSummary));
                 return new AssistantChatResponse(result.TextSummary, "mcp-local-agent", toolCalls, new AssistantCards(AdminOverview: result.Data as AdminOverviewCardData), GetSuggestedPromptsForRole(role));
             }
+        }
+
+        // Delivery Time / Transit Duration Intent (e.g. "How much time will it take to go from Kandy to Moratuwa?", "How long does delivery take from Colombo to Galle?")
+        if (IsDeliveryTimeIntent(message, request.History, out var timeArgs, out var needsPickupCityForTime))
+        {
+            if (needsPickupCityForTime)
+            {
+                return new AssistantChatResponse(
+                    Reply: $"Where will the parcel be picked up from? Please provide your starting position (pickup city) to estimate the delivery transit duration to {timeArgs.DeliveryCity ?? "your destination"}.",
+                    Mode: "mcp-local-agent",
+                    ToolCalls: Array.Empty<AssistantToolCallTrace>(),
+                    Cards: null,
+                    SuggestedPrompts: null);
+            }
+
+            var sw = Stopwatch.StartNew();
+            var jsonArgs = JsonSerializer.SerializeToElement(timeArgs, JsonOptions);
+            var result = await toolExecutor.ExecuteAsync(AssistantToolNames.EstimateDeliveryTime, jsonArgs, cancellationToken);
+            sw.Stop();
+
+            toolCalls.Add(new AssistantToolCallTrace(
+                AssistantToolNames.EstimateDeliveryTime,
+                timeArgs,
+                result.Success ? "success" : "error",
+                sw.ElapsedMilliseconds,
+                result.TextSummary));
+
+            DeliveryTimeEstimateCardData? timeCard = null;
+            if (result.Success && result.Data is DeliveryTimeEstimateCardData dtc)
+            {
+                timeCard = dtc;
+            }
+
+            return new AssistantChatResponse(
+                Reply: result.TextSummary,
+                Mode: "mcp-local-agent",
+                ToolCalls: toolCalls,
+                Cards: new AssistantCards(DeliveryTime: timeCard),
+                SuggestedPrompts: GetSuggestedPromptsForRole(role));
         }
 
         // 1. Fee Estimation Intent (e.g. "How much to send 2 kg to Kandy?", "Cost of 5kg parcel from Colombo to Galle")
@@ -399,33 +454,34 @@ public sealed partial class AssistantOrchestrator(
         [
             "What are my assigned deliveries today?",
             "What is my current work summary?",
-            "What is my duty status?",
+            "How long does delivery take from Kandy to Colombo?",
             "How do I complete proof of delivery?"
         ],
         "Dispatcher" =>
         [
             "How many unassigned parcels are waiting?",
             "Show courier workload across zones",
-            "What is the zone summary for dispatch?",
-            "What delivery zones do you cover?"
+            "How much time will it take to go from Kandy to Moratuwa?",
+            "What is the zone summary for dispatch?"
         ],
         "Merchant" =>
         [
             "Show my recent merchant orders",
+            "What is the delivery time from Colombo to Galle?",
             "How do I integrate via API and webhooks?",
-            "How much to send 5 kg from Colombo to Kandy?",
-            "What delivery zones do you cover?"
+            "How much to send 5 kg from Colombo to Kandy?"
         ],
         "Admin" =>
         [
             "Show delivery system reports and KPIs",
             "What are the active pricing tiers?",
-            "How many unassigned parcels are waiting?",
-            "Show system operational overview"
+            "How much time to deliver from Kandy to Moratuwa?",
+            "How many unassigned parcels are waiting?"
         ],
         _ =>
         [
             "Where is my parcel?",
+            "How much time will it take to go from Kandy to Moratuwa?",
             "How much to send 2 kg to Kandy?",
             "What delivery zones do you cover?"
         ]
@@ -488,6 +544,103 @@ public sealed partial class AssistantOrchestrator(
 
         reason = string.Empty;
         return false;
+    }
+
+    private static bool IsDeliveryTimeIntent(
+        string text,
+        IReadOnlyList<ChatMessage>? history,
+        out EstimateDeliveryTimeInput args,
+        out bool needsPickupCity)
+    {
+        var lower = text.ToLowerInvariant();
+        var hasTimeKeyword = Regex.IsMatch(lower, @"\b(how (much )?time|how long|transit time|duration|when will it (arrive|reach|deliver)|delivery time|delivery estimate|delivery duration|travel time|time will it take|how many (hours|days).*take)\b");
+
+        if (!hasTimeKeyword)
+        {
+            args = new EstimateDeliveryTimeInput();
+            needsPickupCity = false;
+            return false;
+        }
+
+        string? pickupCity = null;
+        string? deliveryCity = null;
+
+        // Pattern 1: from [city1] to [city2]
+        var fromToMatch = Regex.Match(text, @"\bfrom\s+([A-Za-z]+)\s+to\s+([A-Za-z]+)\b", RegexOptions.IgnoreCase);
+        if (fromToMatch.Success)
+        {
+            pickupCity = fromToMatch.Groups[1].Value;
+            deliveryCity = fromToMatch.Groups[2].Value;
+        }
+        else
+        {
+            // Pattern 2: between [city1] and [city2]
+            var betweenMatch = Regex.Match(text, @"\bbetween\s+([A-Za-z]+)\s+and\s+([A-Za-z]+)\b", RegexOptions.IgnoreCase);
+            if (betweenMatch.Success)
+            {
+                pickupCity = betweenMatch.Groups[1].Value;
+                deliveryCity = betweenMatch.Groups[2].Value;
+            }
+            else
+            {
+                // Pattern 3: to [city2] from [city1]
+                var toFromMatch = Regex.Match(text, @"\bto\s+([A-Za-z]+)\s+from\s+([A-Za-z]+)\b", RegexOptions.IgnoreCase);
+                if (toFromMatch.Success)
+                {
+                    deliveryCity = toFromMatch.Groups[1].Value;
+                    pickupCity = toFromMatch.Groups[2].Value;
+                }
+                else
+                {
+                    var fromMatch = Regex.Match(text, @"\bfrom\s+([A-Za-z]+)\b", RegexOptions.IgnoreCase);
+                    if (fromMatch.Success) pickupCity = fromMatch.Groups[1].Value;
+
+                    var toMatch = Regex.Match(text, @"\bto\s+([A-Za-z]+)\b", RegexOptions.IgnoreCase);
+                    if (toMatch.Success) deliveryCity = toMatch.Groups[1].Value;
+                }
+            }
+        }
+
+        // If missing either city, check history for context
+        if (history != null && (string.IsNullOrWhiteSpace(pickupCity) || string.IsNullOrWhiteSpace(deliveryCity)))
+        {
+            for (var i = history.Count - 1; i >= 0; i--)
+            {
+                var h = history[i].Content;
+                if (string.IsNullOrWhiteSpace(pickupCity))
+                {
+                    var hFrom = Regex.Match(h, @"\bfrom\s+([A-Za-z]+)\b", RegexOptions.IgnoreCase);
+                    if (hFrom.Success) pickupCity = hFrom.Groups[1].Value;
+                }
+                if (string.IsNullOrWhiteSpace(deliveryCity))
+                {
+                    var hTo = Regex.Match(h, @"\bto\s+([A-Za-z]+)\b", RegexOptions.IgnoreCase);
+                    if (hTo.Success) deliveryCity = hTo.Groups[1].Value;
+                }
+                if (!string.IsNullOrWhiteSpace(pickupCity) && !string.IsNullOrWhiteSpace(deliveryCity)) break;
+            }
+        }
+
+        var isExpress = Regex.IsMatch(lower, @"\b(express|urgent|priority|fastest)\b");
+        var speed = isExpress ? "Express" : "Standard";
+
+        if (string.IsNullOrWhiteSpace(pickupCity) && !string.IsNullOrWhiteSpace(deliveryCity))
+        {
+            args = new EstimateDeliveryTimeInput(null, deliveryCity, speed);
+            needsPickupCity = true;
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(pickupCity) && string.IsNullOrWhiteSpace(deliveryCity))
+        {
+            args = new EstimateDeliveryTimeInput(null, null, speed);
+            needsPickupCity = false;
+            return false;
+        }
+
+        args = new EstimateDeliveryTimeInput(pickupCity, deliveryCity, speed);
+        needsPickupCity = false;
+        return true;
     }
 
     private static bool IsFeeEstimateIntent(
@@ -793,151 +946,224 @@ public sealed partial class AssistantOrchestrator(
                 new { text = $"You are the SwiftDrop AI Delivery Assistant, helping users in Sri Lanka. The authenticated user's role is: '{role}'. " +
                              "CRITICAL RULES: " +
                              "1. Role-Aware Capabilities: " +
-                             "   - Customer: personal tracking, fee quotes, service zones, personal delivery history. " +
-                             "   - Courier: assigned deliveries for today, shift work summary, duty status, and proof of delivery SOP protocol. " +
-                             "   - Dispatcher: unassigned parcel queue, courier workload and fleet capacity across zones, and zone bottleneck summaries. " +
-                             "   - Merchant: commercial order fulfillment, REST API integration, API keys, and webhook events. " +
-                             "   - Admin: system delivery performance reports, pricing tariffs, and platform operational overview. " +
-                             "   - Guest: public parcel tracking and zone fee estimates. " +
-                             "2. Conversational Context & Memory: Maintain conversation context across turns. When a user asks a follow-up query like 'How about from Kandy to Jaffna', 'What about to Galle', or 'How much for 5kg', inherit any missing details from previous turns. " +
-                             "3. Typo Resilience: Recognize common typos and phonetic variants of Sri Lankan city names (e.g. 'jafna' -> Jaffna, 'colambo' -> Colombo, 'kandi' -> Kandy, 'rathnapura' -> Ratnapura, 'trinco' -> Trincomalee). " +
-                             "4. Delivery Fee Inquiries: When a user asks for shipping fees or quotes without providing BOTH starting position (pickup city) and destination (delivery city), ask them for their starting position (pickup city) first before calculating. Never assume Colombo or any default origin if not stated or inherited. Once both are known, ALWAYS invoke estimate_delivery_fee tool. " +
-                             "5. Security: Autonomous write operations (booking, status changes, refunds, courier assignments) are strictly prohibited. Format currency as LKR. Keep answers concise, helpful, and friendly." }
+                             "   - Courier: The user delivers parcels! assigned deliveries for today, shift work summary, duty status, and proof of delivery SOP protocol. If the user asks 'how many parcels do I have to deliver today?', call 'get_courier_assigned_deliveries'. " +
+                             "   - Dispatcher: The user coordinates fleet operations and assigns deliveries. DISPATCHERS DO NOT DELIVER PARCELS! If the user asks 'how many parcels do I have to deliver today?' or asks about parcels to deliver, explain that dispatchers manage dispatches and fleet allocation rather than delivering packages personally, and call 'list_unassigned_parcels' and 'get_courier_workload' to report the queue and courier capacity. " +
+                             "   - Customer: The user books and receives deliveries. CUSTOMERS DO NOT DELIVER PARCELS! If they ask about deliveries to make, call 'list_my_parcels' to show personal packages. " +
+                             "   - Merchant: The user is a business shipper. MERCHANTS DO NOT DELIVER PARCELS! Call 'list_merchant_orders' to show commercial orders. " +
+                             "   - Admin: System administrator. Call 'get_delivery_system_reports' or 'list_unassigned_parcels'. " +
+                             "   - Guest: Public tracking and zone fee/time estimates. " +
+                             "2. Delivery Transit Time & Duration Inquiries: When a user asks about delivery time, transit duration, how long it will take to go between two cities (e.g. 'How much time will it take to go from Kandy to Moratuwa?'), ALWAYS invoke the 'estimate_delivery_time' tool with pickupCity and deliveryCity. " +
+                             "3. Conversational Context & Memory: Maintain conversation context across turns. When a user asks a follow-up query like 'How about from Kandy to Jaffna', 'What about to Galle', or 'How much for 5kg', inherit any missing details from previous turns. " +
+                             "4. Typo Resilience: Recognize common typos and phonetic variants of Sri Lankan city names (e.g. 'jafna' -> Jaffna, 'colambo' -> Colombo, 'kandi' -> Kandy, 'rathnapura' -> Ratnapura, 'trinco' -> Trincomalee, 'moratuwa' -> Moratuwa / Colombo). " +
+                             "5. Delivery Fee Inquiries: When a user asks for shipping fees or quotes without providing BOTH starting position (pickup city) and destination (delivery city), ask them for their starting position (pickup city) first before calculating. Never assume Colombo or any default origin if not stated or inherited. Once both are known, ALWAYS invoke estimate_delivery_fee tool. " +
+                             "6. Security: Autonomous write operations (booking, status changes, refunds, courier assignments) are strictly prohibited. Format currency as LKR. Keep answers concise, helpful, and friendly." }
             }
         };
+
+        var estimateFeeDecl = new
+        {
+            name = AssistantToolNames.EstimateDeliveryFee,
+            description = "Estimates delivery fee based on package weight in kg, pickup city (starting position), and delivery city (destination) in Sri Lanka. Both pickup and delivery cities are required.",
+            parameters = new
+            {
+                type = "OBJECT",
+                properties = new Dictionary<string, object>
+                {
+                    ["weightKg"] = new { type = "NUMBER", description = "Weight in kilograms (e.g. 2.0)" },
+                    ["pickupCity"] = new { type = "STRING", description = "Starting position / pickup city in Sri Lanka (e.g. Colombo, Kandy, Galle, Moratuwa, Jaffna). Required." },
+                    ["deliveryCity"] = new { type = "STRING", description = "Destination city in Sri Lanka (e.g. Kandy, Galle, Jaffna, Colombo). Required." },
+                    ["size"] = new { type = "STRING", @enum = new[] { "Small", "Medium", "Large", "ExtraLarge" }, description = "Package size tier" }
+                },
+                required = new[] { "weightKg", "pickupCity", "deliveryCity" }
+            }
+        };
+
+        var estimateTimeDecl = new
+        {
+            name = AssistantToolNames.EstimateDeliveryTime,
+            description = "Estimates delivery transit time, duration, and estimated arrival date between pickup and delivery cities in Sri Lanka (e.g. Kandy to Moratuwa, Colombo to Galle). Both pickupCity and deliveryCity are required.",
+            parameters = new
+            {
+                type = "OBJECT",
+                properties = new Dictionary<string, object>
+                {
+                    ["pickupCity"] = new { type = "STRING", description = "Starting position / pickup city in Sri Lanka (e.g. Kandy, Colombo, Galle, Moratuwa). Required." },
+                    ["deliveryCity"] = new { type = "STRING", description = "Destination city in Sri Lanka (e.g. Moratuwa, Kandy, Galle, Colombo). Required." },
+                    ["serviceSpeed"] = new { type = "STRING", @enum = new[] { "Standard", "Express" }, description = "Service delivery speed tier" }
+                },
+                required = new[] { "pickupCity", "deliveryCity" }
+            }
+        };
+
+        var trackParcelDecl = new
+        {
+            name = AssistantToolNames.TrackParcel,
+            description = "Tracks parcel delivery status, location, and milestone timeline by tracking number (e.g. TRK-..., SD-...).",
+            parameters = new
+            {
+                type = "OBJECT",
+                properties = new Dictionary<string, object>
+                {
+                    ["trackingNumber"] = new { type = "STRING", description = "Tracking number" }
+                }
+            }
+        };
+
+        var listMyParcelsDecl = new
+        {
+            name = AssistantToolNames.ListMyParcels,
+            description = "Lists active and recent parcels for the authenticated customer.",
+            parameters = new
+            {
+                type = "OBJECT",
+                properties = new Dictionary<string, object>
+                {
+                    ["limit"] = new { type = "INTEGER", description = "Max parcels to return (1-10)" }
+                }
+            }
+        };
+
+        var listZonesDecl = new
+        {
+            name = AssistantToolNames.ListServiceZones,
+            description = "Lists active bookable delivery zones, supported cities, and postal codes in Sri Lanka.",
+            parameters = new
+            {
+                type = "OBJECT",
+                properties = new Dictionary<string, object>()
+            }
+        };
+
+        var courierAssignedDecl = new
+        {
+            name = AssistantToolNames.GetCourierAssignedDeliveries,
+            description = "Retrieves today's assigned deliveries for the authenticated courier.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var courierSummaryDecl = new
+        {
+            name = AssistantToolNames.GetCourierWorkSummary,
+            description = "Retrieves shift summary and counts for the authenticated courier.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var courierDutyDecl = new
+        {
+            name = AssistantToolNames.GetCourierDutyStatus,
+            description = "Retrieves on-duty / off-duty status and vehicle capacity for the authenticated courier.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var courierProtocolDecl = new
+        {
+            name = AssistantToolNames.GetCourierDeliveryProtocol,
+            description = "Retrieves the proof of delivery procedure and guidelines for couriers.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var listUnassignedDecl = new
+        {
+            name = AssistantToolNames.ListUnassignedParcels,
+            description = "Lists unassigned parcels waiting in the dispatch queue.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var courierWorkloadDecl = new
+        {
+            name = AssistantToolNames.GetCourierWorkload,
+            description = "Retrieves courier fleet workload and capacity across zones.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var zoneDispatchDecl = new
+        {
+            name = AssistantToolNames.GetZoneDispatchSummary,
+            description = "Retrieves delivery density and courier coverage summarized by zone.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var listMerchantOrdersDecl = new
+        {
+            name = AssistantToolNames.ListMerchantOrders,
+            description = "Lists commercial parcels and fulfillment statuses for the merchant.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var merchantIntegrationDecl = new
+        {
+            name = AssistantToolNames.GetMerchantIntegrationGuide,
+            description = "Retrieves REST API endpoints, API keys, and webhook integration guide for merchants.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var adminReportsDecl = new
+        {
+            name = AssistantToolNames.GetDeliverySystemReports,
+            description = "Retrieves system-wide delivery performance reports and KPIs for administrators.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var adminTariffsDecl = new
+        {
+            name = AssistantToolNames.ListPricingTariffs,
+            description = "Lists active pricing tariffs and rates across delivery zones for administrators.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var adminOverviewDecl = new
+        {
+            name = AssistantToolNames.GetAdminSystemOverview,
+            description = "Retrieves high-level platform status and operational KPIs for administrators.",
+            parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
+        };
+
+        var scopedDeclarations = new List<object>
+        {
+            estimateFeeDecl,
+            estimateTimeDecl,
+            trackParcelDecl,
+            listZonesDecl
+        };
+
+        if (role == "Courier")
+        {
+            scopedDeclarations.Add(courierAssignedDecl);
+            scopedDeclarations.Add(courierSummaryDecl);
+            scopedDeclarations.Add(courierDutyDecl);
+            scopedDeclarations.Add(courierProtocolDecl);
+        }
+        else if (role == "Dispatcher")
+        {
+            scopedDeclarations.Add(listUnassignedDecl);
+            scopedDeclarations.Add(courierWorkloadDecl);
+            scopedDeclarations.Add(zoneDispatchDecl);
+        }
+        else if (role == "Merchant")
+        {
+            scopedDeclarations.Add(listMerchantOrdersDecl);
+            scopedDeclarations.Add(merchantIntegrationDecl);
+        }
+        else if (role == "Admin")
+        {
+            scopedDeclarations.Add(adminReportsDecl);
+            scopedDeclarations.Add(adminTariffsDecl);
+            scopedDeclarations.Add(adminOverviewDecl);
+            scopedDeclarations.Add(listUnassignedDecl);
+            scopedDeclarations.Add(courierWorkloadDecl);
+            scopedDeclarations.Add(zoneDispatchDecl);
+            scopedDeclarations.Add(listMerchantOrdersDecl);
+        }
+        else if (role == "Customer")
+        {
+            scopedDeclarations.Add(listMyParcelsDecl);
+        }
 
         var toolsDeclaration = new object[]
         {
             new
             {
-                function_declarations = new object[]
-                {
-                    new
-                    {
-                        name = AssistantToolNames.EstimateDeliveryFee,
-                        description = "Estimates delivery fee based on package weight in kg, pickup city (starting position), and delivery city (destination) in Sri Lanka. Both pickup and delivery cities are required.",
-                        parameters = new
-                        {
-                            type = "OBJECT",
-                            properties = new Dictionary<string, object>
-                            {
-                                ["weightKg"] = new { type = "NUMBER", description = "Weight in kilograms (e.g. 2.0)" },
-                                ["pickupCity"] = new { type = "STRING", description = "Starting position / pickup city in Sri Lanka (e.g. Colombo, Kandy, Galle, Moratuwa, Jaffna). Required." },
-                                ["deliveryCity"] = new { type = "STRING", description = "Destination city in Sri Lanka (e.g. Kandy, Galle, Jaffna, Colombo). Required." },
-                                ["size"] = new { type = "STRING", @enum = new[] { "Small", "Medium", "Large", "ExtraLarge" }, description = "Package size tier" }
-                            },
-                            required = new[] { "weightKg", "pickupCity", "deliveryCity" }
-                        }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.TrackParcel,
-                        description = "Tracks parcel delivery status, location, and milestone timeline by tracking number (e.g. TRK-..., SD-...).",
-                        parameters = new
-                        {
-                            type = "OBJECT",
-                            properties = new Dictionary<string, object>
-                            {
-                                ["trackingNumber"] = new { type = "STRING", description = "Tracking number" }
-                            }
-                        }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.ListMyParcels,
-                        description = "Lists active and recent parcels for the authenticated customer.",
-                        parameters = new
-                        {
-                            type = "OBJECT",
-                            properties = new Dictionary<string, object>
-                            {
-                                ["limit"] = new { type = "INTEGER", description = "Max parcels to return (1-10)" }
-                            }
-                        }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.ListServiceZones,
-                        description = "Lists active bookable delivery zones, supported cities, and postal codes in Sri Lanka.",
-                        parameters = new
-                        {
-                            type = "OBJECT",
-                            properties = new Dictionary<string, object>()
-                        }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.GetCourierAssignedDeliveries,
-                        description = "Retrieves today's assigned deliveries for the authenticated courier.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.GetCourierWorkSummary,
-                        description = "Retrieves shift summary and counts for the authenticated courier.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.GetCourierDutyStatus,
-                        description = "Retrieves on-duty / off-duty status and vehicle capacity for the authenticated courier.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.GetCourierDeliveryProtocol,
-                        description = "Retrieves the proof of delivery procedure and guidelines for couriers.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.ListUnassignedParcels,
-                        description = "Lists unassigned parcels waiting in the dispatch queue.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.GetCourierWorkload,
-                        description = "Retrieves courier fleet workload and capacity across zones.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.GetZoneDispatchSummary,
-                        description = "Retrieves delivery density and courier coverage summarized by zone.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.ListMerchantOrders,
-                        description = "Lists commercial parcels and fulfillment statuses for the merchant.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.GetMerchantIntegrationGuide,
-                        description = "Retrieves REST API endpoints, API keys, and webhook integration guide for merchants.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.GetDeliverySystemReports,
-                        description = "Retrieves system-wide delivery performance reports and KPIs for administrators.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.ListPricingTariffs,
-                        description = "Lists active pricing tariffs and rates across delivery zones for administrators.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    },
-                    new
-                    {
-                        name = AssistantToolNames.GetAdminSystemOverview,
-                        description = "Retrieves high-level platform status and operational KPIs for administrators.",
-                        parameters = new { type = "OBJECT", properties = new Dictionary<string, object>() }
-                    }
-                }
+                function_declarations = scopedDeclarations.ToArray()
             }
         };
 
@@ -1030,6 +1256,7 @@ public sealed partial class AssistantOrchestrator(
                 if (result.Success && result.Data is not null)
                 {
                     if (result.Data is QuoteCardData qc) cards = cards with { Quote = qc };
+                    else if (result.Data is DeliveryTimeEstimateCardData dtc) cards = cards with { DeliveryTime = dtc };
                     else if (result.Data is TrackingCardData tc) cards = cards with { Tracking = tc };
                     else if (result.Data is ParcelListCardData plc) cards = cards with { ParcelList = plc };
                     else if (result.Data is ZonesCardData zc) cards = cards with { Zones = zc };

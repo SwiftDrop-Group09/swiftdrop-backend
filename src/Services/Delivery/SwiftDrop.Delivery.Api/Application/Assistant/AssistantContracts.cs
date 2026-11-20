@@ -9,6 +9,7 @@ public static class AssistantToolNames
     public const string TrackParcel = "track_parcel";
     public const string ListMyParcels = "list_my_parcels";
     public const string EstimateDeliveryFee = "estimate_delivery_fee";
+    public const string EstimateDeliveryTime = "estimate_delivery_time";
     public const string ListServiceZones = "list_service_zones";
 
     // Courier Tools
@@ -36,6 +37,7 @@ public static class AssistantToolNames
         TrackParcel,
         ListMyParcels,
         EstimateDeliveryFee,
+        EstimateDeliveryTime,
         ListServiceZones,
         GetCourierAssignedDeliveries,
         GetCourierWorkSummary,
@@ -72,6 +74,11 @@ public sealed record EstimateFeeInput(
     string? PickupZoneId = null,
     string? DeliveryCity = null,
     string? DeliveryZoneId = null,
+    string? ServiceSpeed = null);
+
+public sealed record EstimateDeliveryTimeInput(
+    string? PickupCity = null,
+    string? DeliveryCity = null,
     string? ServiceSpeed = null);
 
 public sealed record ListServiceZonesInput();
@@ -143,6 +150,18 @@ public sealed record ZoneCoverageItem(
 public sealed record ZonesCardData(
     IReadOnlyList<ZoneCoverageItem> Zones,
     IReadOnlyList<string> SupportedCities);
+
+public sealed record DeliveryTimeEstimateCardData(
+    string PickupCity,
+    string DeliveryCity,
+    string EstimatedDuration,
+    string EstimatedDeliveryDate,
+    string ServiceSpeed,
+    string CutoffTime,
+    int MinHours,
+    int MaxHours,
+    string RouteType,
+    string Summary);
 
 // -------------------------------------------------------------
 // Role-Specific Response Cards
@@ -289,6 +308,7 @@ public sealed record AssistantCards(
     ParcelListCardData? ParcelList = null,
     QuoteCardData? Quote = null,
     ZonesCardData? Zones = null,
+    DeliveryTimeEstimateCardData? DeliveryTime = null,
     CourierAssignmentsCardData? CourierAssignments = null,
     CourierWorkSummaryCardData? CourierWorkSummary = null,
     CourierDutyCardData? CourierDuty = null,
