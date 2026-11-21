@@ -8,6 +8,30 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Admin;
 
 public sealed class PostgresPricingAdministrationStore(Func<DeliveryDbContext> database) : IPricingAdministrationStore
 {
+    public async Task<PricingOverviewPage> ListOverviewAsync(int page, int pageSize, Guid? zoneId, CancellationToken cancellationToken)
+    {
+        await using var db = database();
+        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
+        var query = db.Zones.AsNoTracking().AsQueryable();
+        if (zoneId.HasValue) query = query.Where(zone => zone.Id == zoneId.Value);
+        var total = await query.LongCountAsync(cancellationToken);
+        var zones = await query.OrderBy(zone => zone.Name).ThenBy(zone => zone.Id)
+            .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
+        var ids = zones.Select(zone => zone.Id).ToArray();
+        var counts = await db.PricingTiers.AsNoTracking().Where(tier => ids.Contains(tier.ZoneId))
+            .GroupBy(tier => tier.ZoneId).Select(group => new { ZoneId = group.Key, Count = group.Count() })
+            .ToDictionaryAsync(group => group.ZoneId, group => group.Count, cancellationToken);
+        var active = await db.PricingTiers.AsNoTracking().Where(tier => ids.Contains(tier.ZoneId) && tier.IsActive)
+            .OrderBy(tier => tier.Size).Select(tier => new { Tier = tier, Version = EF.Property<uint>(tier, "xmin") })
+            .ToListAsync(cancellationToken);
+        var rows = zones.Select(zone => new PricingZoneOverview(zone.Id, zone.Name, zone.IsActive,
+            counts.GetValueOrDefault(zone.Id), active.Where(row => row.Tier.ZoneId == zone.Id).Select(row =>
+                new PricingTierDto(row.Tier.Id, zone.Id, zone.Name, row.Tier.Size.ToString(), row.Tier.PricingVersion,
+                    row.Tier.BaseRate, row.Tier.PerKgRate, row.Tier.Currency, row.Tier.IsActive, row.Version)).ToList())).ToList();
+        await transaction.CommitAsync(cancellationToken);
+        return new(rows, total, page, pageSize);
+    }
+
     public async Task<PricingPage> ListPricingAsync(int page, int pageSize, Guid? zoneId, CancellationToken cancellationToken)
     {
         await using var db = database();

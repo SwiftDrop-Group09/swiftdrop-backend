@@ -8,6 +8,12 @@
     <ProjectReference Include="../../../BuildingBlocks/SwiftDrop.Auditing/SwiftDrop.Auditing.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.33.0" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.76.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
       <PrivateAssets>all</PrivateAssets>
@@ -16,5 +22,8 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.9" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.9" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <Protobuf Include="../../../BuildingBlocks/SwiftDrop.Contracts/Grpc/V1/delivery.proto" GrpcServices="Client" Link="Protos/delivery.proto" />
   </ItemGroup>
 </Project>

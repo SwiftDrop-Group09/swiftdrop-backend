@@ -84,13 +84,39 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("active");
 
+                    b.Property<long>("BusinessNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("business_number");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("BusinessNumber"));
+
                     b.Property<int>("Capacity")
                         .HasColumnType("integer")
                         .HasColumnName("capacity");
 
+                    b.Property<decimal>("MaxWeightKg")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)")
+                        .HasDefaultValue(30.00m)
+                        .HasColumnName("max_weight_kg");
+
                     b.Property<bool>("OnDuty")
                         .HasColumnType("boolean")
                         .HasColumnName("on_duty");
+
+                    b.Property<string>("VehicleNumber")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("vehicle_number");
+
+                    b.Property<string>("VehicleType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("Motorcycle")
+                        .HasColumnName("vehicle_type");
 
                     b.Property<long>("Version")
                         .IsConcurrencyToken()
@@ -99,11 +125,18 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BusinessNumber")
+                        .IsUnique();
+
                     b.ToTable("couriers", null, t =>
                         {
                             t.HasCheckConstraint("ck_couriers_capacity", "capacity >= 1");
 
                             t.HasCheckConstraint("ck_couriers_id", "id <> '00000000-0000-0000-0000-000000000000'::uuid");
+
+                            t.HasCheckConstraint("ck_couriers_max_weight", "max_weight_kg > 0");
+
+                            t.HasCheckConstraint("ck_couriers_vehicle_type", "vehicle_type IN ('Bicycle','Motorcycle','Car','Van','Truck')");
 
                             t.HasCheckConstraint("ck_couriers_version", "version >= 1");
                         });
@@ -328,12 +361,49 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
 
                     b.ToTable("idempotency_keys", null, t =>
                         {
-                            t.HasCheckConstraint("ck_idempotency_completion", "((parcel_id IS NULL AND stored_response IS NULL) OR (parcel_id IS NOT NULL AND stored_response IS NOT NULL AND jsonb_typeof(stored_response) = 'object' AND stored_response ?& ARRAY['statusCode','body','location'] AND (stored_response->'statusCode' = '201'::jsonb OR (operation IN ('UpdateDeliveryStatus','CompleteDeliveryWithProof') AND stored_response->'statusCode' = '200'::jsonb)) AND jsonb_typeof(stored_response->'body') = 'string' AND jsonb_typeof(stored_response->'location') = 'string')) IS TRUE");
+                            t.HasCheckConstraint("ck_idempotency_completion", "((parcel_id IS NULL AND stored_response IS NULL) OR (parcel_id IS NOT NULL AND stored_response IS NOT NULL AND jsonb_typeof(stored_response) = 'object' AND stored_response ?& ARRAY['statusCode','body','location'] AND (stored_response->'statusCode' = '201'::jsonb OR (operation IN ('UpdateDeliveryStatus','CompleteDeliveryWithProof','AssignCourier','UnassignCourier') AND stored_response->'statusCode' = '200'::jsonb)) AND jsonb_typeof(stored_response->'body') = 'string' AND jsonb_typeof(stored_response->'location') = 'string')) IS TRUE");
 
                             t.HasCheckConstraint("ck_idempotency_expiry", "expires_at = created_at + INTERVAL '720 hours'");
 
                             t.HasCheckConstraint("ck_idempotency_scope", "btrim(principal_id) <> '' AND btrim(operation) <> '' AND btrim(key) <> '' AND btrim(request_fingerprint) <> ''");
                         });
+                });
+
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.MerchantBookingIdentity", b =>
+                {
+                    b.Property<Guid>("MerchantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("merchant_id");
+
+                    b.Property<string>("ExternalOrderId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("external_order_id");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("fingerprint");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parcel_id");
+
+                    b.HasKey("MerchantId", "ExternalOrderId");
+
+                    b.HasIndex("ParcelId");
+
+                    b.HasIndex("MerchantId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("merchant_booking_identities", (string)null);
                 });
 
             modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.OutboxMessage", b =>
@@ -791,6 +861,15 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("ParcelId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.MerchantBookingIdentity", b =>
+                {
+                    b.HasOne("SwiftDrop.Delivery.Api.Domain.Parcel", null)
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SwiftDrop.Delivery.Api.Domain.Parcel", b =>

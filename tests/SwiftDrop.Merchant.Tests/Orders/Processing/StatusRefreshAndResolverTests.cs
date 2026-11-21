@@ -3,10 +3,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SwiftDrop.Merchant.Api.Application.Orders.Ports;
 using SwiftDrop.Merchant.Api.Application.Orders.Processing;
+using SwiftDrop.Merchant.Api.Application.Webhooks.Handlers;
 using SwiftDrop.Merchant.Api.Domain.Orders;
+using SwiftDrop.Merchant.Api.Domain.Webhooks;
 using SwiftDrop.Merchant.Api.Infrastructure.Orders;
 using SwiftDrop.Merchant.Api.Infrastructure.Orders.Persistence;
 using SwiftDrop.Merchant.Api.Infrastructure.Persistence;
+using SwiftDrop.Merchant.Tests.Webhooks.TestDoubles;
 using static SwiftDrop.Merchant.Tests.Orders.Processing.ProcessingTestData;
 
 namespace SwiftDrop.Merchant.Tests.Orders.Processing;
@@ -94,6 +97,41 @@ public sealed class StatusRefreshAndResolverTests : IDisposable
         await Handler(delivery).RefreshBatchAsync(CancellationToken.None);
 
         Assert.Equal(1, delivery.LookupCalls);
+    }
+
+    [Fact]
+    public async Task StatusChange_DispatchesWebhookEvent()
+    {
+        var subscriptionStore = new InMemoryWebhookSubscriptionStore();
+        var dispatchStore = new InMemoryWebhookDispatchStore();
+        var orderResolver = new InboxJobWebhookOrderResolver(_database);
+        var webhookClock = new FakeWebhookClock(Now);
+        var dispatchHandler = new AcceptStatusChangedDispatchHandler(subscriptionStore, dispatchStore, orderResolver, webhookClock);
+
+        var subscription = WebhookSubscription.Create(
+            _businessId,
+            "https://merchant.example.com/webhooks",
+            [WebhookEvents.DeliveryInTransit],
+            secretCiphertext: [1, 2, 3],
+            secretNonce: new byte[12],
+            secretTag: new byte[16],
+            keyVersion: 1,
+            Now);
+        await subscriptionStore.AddAsync(subscription, CancellationToken.None);
+
+        var job = await SeedAsync(CreatedJob(_businessId, "ORD-WEBHOOK", Now.AddHours(-1), ParcelStatuses.Assigned, 2,
+            refreshedAt: Now.AddMinutes(-10)));
+        var delivery = new ScriptedDeliveryBookingClient().LookupReturns(Found(ParcelStatuses.InTransit, version: 4));
+
+        var handler = new RefreshOrderStatusesHandler(
+            new EfInboxJobQueue(_database), delivery, _clock, Options.Create(Settings()),
+            NullLogger<RefreshOrderStatusesHandler>.Instance, dispatchHandler);
+
+        var count = await handler.RefreshBatchAsync(CancellationToken.None);
+
+        Assert.Equal(1, count);
+        var dueJobs = await dispatchStore.ClaimDueJobsAsync(10, TimeSpan.FromMinutes(1), Guid.NewGuid(), Now, CancellationToken.None);
+        Assert.Single(dueJobs);
     }
 
     // ── Webhook order resolver ─────────────────────────────────────────────

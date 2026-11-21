@@ -1,5 +1,6 @@
 syntax = "proto3";
 package swiftdrop.delivery.v1;
+option csharp_namespace = "SwiftDrop.Delivery.Grpc.V1";
 
 service DeliveryService {
   rpc CreateBooking(CreateBookingRequest) returns (BookingResult);
@@ -40,4 +41,6 @@ message BookingResult {
   string last_status_changed_at = 8;
   optional string terminal_at = 9;
   string created_at = 10;
+  // Safe canonical category only. Private Courier notes are never returned.
+  optional string failure_reason = 11;
 }

@@ -41,6 +41,32 @@ internal sealed class IdentityAccessTokens : IIdentityAccessTokens, IDisposable
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
+    internal string IssueDevelopmentWorkloadToken(string audience, DateTimeOffset now)
+    {
+        var scope = audience switch
+        {
+            "delivery-internal" => "notifications:resolve",
+            "merchant-internal" => "webhooks:dispatch",
+            _ => throw new InvalidOperationException("Only the configured local Notification Worker audiences may be provisioned.")
+        };
+        var ring = keys.Value;
+        var issuedAt = now.ToUnixTimeSeconds();
+        var payload = new JwtPayload
+        {
+            [JwtRegisteredClaimNames.Iss] = ring.Issuer,
+            [JwtRegisteredClaimNames.Aud] = audience,
+            [JwtRegisteredClaimNames.Sub] = "notification-worker",
+            [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString("N"),
+            [JwtRegisteredClaimNames.Iat] = issuedAt,
+            [JwtRegisteredClaimNames.Nbf] = issuedAt,
+            [JwtRegisteredClaimNames.Exp] = issuedAt + 240,
+            ["scope"] = scope
+        };
+        var token = new JwtSecurityToken(
+            new JwtHeader(new SigningCredentials(ring.SigningKey, SecurityAlgorithms.RsaSha256)), payload);
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
     public object PublicKeys() => new
     {
         keys = keys.Value.VerificationKeys.Select(key =>

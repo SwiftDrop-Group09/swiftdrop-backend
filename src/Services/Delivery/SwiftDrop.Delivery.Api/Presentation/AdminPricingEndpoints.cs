@@ -8,6 +8,28 @@ public static class AdminPricingEndpoints
 {
     public static void MapAdminPricing(this WebApplication app)
     {
+        app.MapGet("/api/v1/pricing-tiers/overview", async (HttpContext context, PricingAdministrationHandler handler,
+            CancellationToken cancellationToken) =>
+        {
+            var query = context.Request.Query;
+            var allowed = new[] { "page", "pageSize", "zoneId" };
+            if (query.Keys.Any(key => !allowed.Contains(key, StringComparer.Ordinal)) || query.Any(pair => pair.Value.Count != 1))
+                return AdminProblems.PricingFailureResult(context, PricingFailure.InvalidInput);
+            var page = 1; var pageSize = 20; Guid? zoneId = null;
+            if ((query.ContainsKey("page") && !int.TryParse(query["page"], out page))
+                || (query.ContainsKey("pageSize") && !int.TryParse(query["pageSize"], out pageSize)))
+                return AdminProblems.PricingFailureResult(context, PricingFailure.InvalidInput);
+            if (query.ContainsKey("zoneId"))
+            {
+                if (!Guid.TryParse(query["zoneId"], out var parsed)) return AdminProblems.PricingFailureResult(context, PricingFailure.InvalidInput);
+                zoneId = parsed;
+            }
+            var result = await handler.OverviewAsync(page, pageSize, zoneId, cancellationToken);
+            return result.Response is { } response ? Results.Ok(response)
+                : AdminProblems.PricingFailureResult(context, result.Failure!.Value, result.Errors);
+        }).RequireAuthorization(policy => policy.RequireRole("Admin")).WithName("PricingOverview").WithMetadata(new AdminPricingEndpointMetadata())
+            .Produces<PricingOverviewPage>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403);
+
         app.MapGet("/api/v1/pricing-tiers", async (HttpContext context, PricingAdministrationHandler handler,
             CancellationToken cancellationToken) =>
         {

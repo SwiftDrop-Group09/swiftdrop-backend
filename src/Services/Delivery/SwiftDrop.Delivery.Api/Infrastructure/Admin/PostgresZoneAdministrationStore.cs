@@ -8,10 +8,23 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Admin;
 
 public sealed class PostgresZoneAdministrationStore(Func<DeliveryDbContext> database) : IZoneAdministrationStore
 {
-    public async Task<ZonePage> ListZonesAsync(int page, int pageSize, CancellationToken cancellationToken)
+    public async Task<ZonePage> ListZonesAsync(int page, int pageSize, CancellationToken cancellationToken, ZoneQuery? filters = null)
     {
         await using var db = database();
-        var query = db.Zones.AsNoTracking().OrderBy(z => z.Name).ThenBy(z => z.Id);
+        filters ??= new();
+        var search = filters.Search?.Trim() ?? ""; var city = filters.City?.Trim() ?? "";
+        var notCity = filters.NotCity?.Trim() ?? ""; var status = filters.Status ?? "";
+        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
+        var query = db.Zones.FromSqlInterpolated($"""
+            SELECT z.*,z.xmin FROM delivery_zones z
+            WHERE ({search}='' OR strpos(lower(z.name),lower({search}))>0
+              OR strpos(lower(COALESCE(z.boundaries->>'city','')),lower({search}))>0
+              OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(z.boundaries->'servicePostalCodes')='array' THEN z.boundaries->'servicePostalCodes' ELSE '[]'::jsonb END) code
+                  WHERE strpos(lower(code),lower({search}))>0))
+              AND ({city}='' OR lower(COALESCE(z.boundaries->>'city',''))=lower({city}))
+              AND ({notCity}='' OR lower(COALESCE(z.boundaries->>'city',''))<>lower({notCity}))
+              AND ({status}='' OR z.is_active=({status}='active'))
+            """).AsNoTracking().OrderBy(z => z.Name).ThenBy(z => z.Id);
         var total = await query.LongCountAsync(cancellationToken);
         var rows = await query.Skip((page - 1) * pageSize).Take(pageSize)
             .Select(zone => new { Zone = zone, Version = EF.Property<uint>(zone, "xmin") }).ToListAsync(cancellationToken);
@@ -23,7 +36,12 @@ public sealed class PostgresZoneAdministrationStore(Func<DeliveryDbContext> data
             return new ZoneDto(z.Id, z.Name, city, postalCodes, z.IsActive, row.Version);
         }).ToList();
 
-        return new ZonePage(dtos, total, page, pageSize);
+        var cities = await db.Database.SqlQueryRaw<string>("""
+            SELECT DISTINCT btrim(boundaries->>'city') AS "Value" FROM delivery_zones
+            WHERE NULLIF(btrim(boundaries->>'city'),'') IS NOT NULL ORDER BY "Value"
+            """).ToListAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new ZonePage(dtos, total, page, pageSize, cities);
     }
 
     public async Task<ZoneDto?> GetZoneByIdAsync(Guid id, CancellationToken cancellationToken)

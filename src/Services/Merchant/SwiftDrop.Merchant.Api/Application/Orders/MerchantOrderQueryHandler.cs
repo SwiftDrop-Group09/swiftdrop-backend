@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Merchant.Api.Application.Orders.Ports;
+using SwiftDrop.Merchant.Api.Application.Orders.Processing;
+using SwiftDrop.Merchant.Api.Domain.Orders;
 using SwiftDrop.Merchant.Api.Infrastructure.Persistence;
 
 namespace SwiftDrop.Merchant.Api.Application.Orders;
@@ -9,7 +11,11 @@ namespace SwiftDrop.Merchant.Api.Application.Orders;
 /// caller's business; another business's order is indistinguishable from a
 /// missing one (404).
 /// </summary>
-public sealed class MerchantOrderQueryHandler(MerchantDbContext database, ICurrentOrderCaller currentCaller)
+public sealed class MerchantOrderQueryHandler(
+    MerchantDbContext database,
+    ICurrentOrderCaller currentCaller,
+    RefreshOrderStatusesHandler? refreshHandler = null,
+    TimeProvider? clock = null)
 {
     public async Task<OrderResult<OrderJobPage>> ListAsync(OrderListQuery query, CancellationToken cancellationToken)
     {
@@ -25,13 +31,14 @@ public sealed class MerchantOrderQueryHandler(MerchantDbContext database, ICurre
             return OrderResult<OrderJobPage>.Fail(OrderFailure.InvalidInput, paging.Errors);
         }
 
-        var (page, pageSize, state) = paging.Value!;
+        var (page, pageSize, state, parcelStatus) = paging.Value!;
         var jobs = database.InboxJobs.AsNoTracking().Where(job => job.BusinessId == businessId);
         if (state is { } wanted)
         {
             jobs = jobs.Where(job => job.State == wanted);
         }
 
+        if (parcelStatus is not null) jobs = jobs.Where(job => job.ParcelStatus == parcelStatus);
         var totalCount = await jobs.CountAsync(cancellationToken);
 
         // Pages beyond the data (including absurdly large page numbers) are simply empty.
@@ -57,11 +64,26 @@ public sealed class MerchantOrderQueryHandler(MerchantDbContext database, ICurre
             return OrderResult<OrderJobResponse>.Fail(OrderFailure.Forbidden);
         }
 
-        var job = await database.InboxJobs.AsNoTracking()
+        var job = await database.InboxJobs
             .FirstOrDefaultAsync(candidate => candidate.Id == id && candidate.BusinessId == businessId, cancellationToken);
 
-        return job is null
-            ? OrderResult<OrderJobResponse>.Fail(OrderFailure.NotFound)
-            : OrderResult<OrderJobResponse>.Ok(OrderJobMapper.ToResponse(job));
+        if (job is null)
+        {
+            return OrderResult<OrderJobResponse>.Fail(OrderFailure.NotFound);
+        }
+
+        if (refreshHandler is not null &&
+            job.State == InboxJobState.Created &&
+            job.ParcelStatus is not null &&
+            !ParcelStatuses.Terminal.Contains(job.ParcelStatus))
+        {
+            var now = (clock ?? TimeProvider.System).GetUtcNow();
+            if (job.LastRefreshedAt is null || now - job.LastRefreshedAt > TimeSpan.FromSeconds(2))
+            {
+                await refreshHandler.RefreshJobAsync(job, cancellationToken);
+            }
+        }
+
+        return OrderResult<OrderJobResponse>.Ok(OrderJobMapper.ToResponse(job));
     }
 }

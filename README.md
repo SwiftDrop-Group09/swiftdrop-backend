@@ -7,8 +7,14 @@ management are implemented. Delivery provides fee estimates, owner-bound quotes 
 Customer booking confirmation with atomic PostgreSQL persistence. Delivery now
 verifies Identity access tokens through its public JWKS endpoint; missing or
 unsafe verifier configuration fails closed. Cross-service tests exercise real
-Identity login/JWKS output through that verifier. Messaging relay and remaining
-domain integrations are separate work. See the
+Identity login/JWKS output through that verifier. The Notification Worker now
+consumes durable status events, resolves recipient context through Delivery,
+requests webhook dispatch from Merchant and records in-app/mock-SMS jobs and
+provider attempts. The Delivery outbox publisher/relay and private workload
+credential provisioning have now been implemented for local development: a
+separate relay publishes the existing status contract, and a Development-only
+Identity CLI process renews narrowly scoped Worker JWT files. Production workload
+credential provisioning and live broker acceptance remain separate work. See the
 [Delivery login-loop fix](docs/delivery-identity-jwt-integration.md) for the current
 JWT configuration, validation and service boundaries. Courier Phase 1 adds operational profiles, zone memberships,
 retained assignments with one active owner per parcel, private proof metadata
@@ -23,10 +29,10 @@ status/history/outbox/replay persistence. It guards the documented pickup/transi
 out-for-delivery and reason-required Failed transitions; direct Delivered writes
 are rejected. Courier Phase 4 adds the documented multipart
 `POST /api/v1/deliveries/{id}/pod`: photo or signature (both accepted), decoded
-JPEG/PNG validation, encrypted private S3/MinIO staging and guarded atomic Delivered
+JPEG/PNG validation, private PostgreSQL staging and guarded atomic Delivered
 completion. Reference-aware daily cleanup removes old orphan uploads. Production
-writes require verified Identity tokens; proof storage also requires
-explicit private configuration. Phase 5 verifies failed-delivery acceptance through
+writes require verified Identity tokens; proof reads and writes share the Delivery
+database. The legacy S3 adapter is not selected by current composition. Phase 5 verifies failed-delivery acceptance through
 the existing status operation: a required reason, optional private notes, atomic
 terminal assignment/history/outbox/replay and no automatic reassignment. Phase 6
 adds `GET /api/v1/couriers/me/history` for the caller's historical Delivered/Failed
@@ -82,13 +88,13 @@ tariff zone and Neon deployment, while other design decisions remain Proposed.
 | SwiftDrop.Identity.Api | src/Services/Identity/SwiftDrop.Identity.Api | Identity / swiftdrop_identity |
 | SwiftDrop.Delivery.Api | src/Services/Delivery/SwiftDrop.Delivery.Api | Delivery operations, GraphQL, SSE, internal gRPC / swiftdrop_delivery |
 | SwiftDrop.Merchant.Api | src/Services/Merchant/SwiftDrop.Merchant.Api | Merchant integration and webhook HTTP attempts / swiftdrop_merchant |
-| SwiftDrop.Notification.Worker | src/Workers/SwiftDrop.Notification.Worker | Future consumers/provider jobs; private health host only today / swiftdrop_notifications |
+| SwiftDrop.Notification.Worker | src/Workers/SwiftDrop.Notification.Worker | StatusChanged consumer, durable notification/provider and webhook-dispatch jobs / swiftdrop_notifications |
 | SwiftDrop.Contracts | src/BuildingBlocks/SwiftDrop.Contracts | Dependency-free, versioned integration contract assets |
 | SwiftDrop.Identity.Tests | tests/SwiftDrop.Identity.Tests | Identity host foundation |
 | SwiftDrop.Delivery.Tests | tests/SwiftDrop.Delivery.Tests | Delivery domain, quotes, confirmation, PostgreSQL persistence and host foundation |
 | SwiftDrop.Delivery.Harness | tests/SwiftDrop.Delivery.Harness | Test-only loopback runner; fixed fixture actors and disposable database |
 | SwiftDrop.Merchant.Tests | tests/SwiftDrop.Merchant.Tests | Merchant host foundation |
-| SwiftDrop.Notification.Tests | tests/SwiftDrop.Notification.Tests | Worker host foundation |
+| SwiftDrop.Notification.Tests | tests/SwiftDrop.Notification.Tests | Worker event, ordering, persistence and provider workflow |
 | SwiftDrop.Gateway.Tests | tests/SwiftDrop.Gateway.Tests | Documented route ownership and internal-path isolation |
 
 Each API has Domain, Application and Infrastructure folders. Namespaces follow
@@ -224,7 +230,9 @@ For the shared containerized development environment, follow the
 Delivery consumes its database setting when persistence is requested or the
 explicit `--migrate` task runs. Normal startup applies no migrations and health
 remains process liveness only. Broker integration remains later work; the
-private proof object-store adapter requires explicit Delivery-only configuration.
+private proof images use Delivery's PostgreSQL database. See the
+[Customer summary and private document contract](docs/customer-delivery-summary.md)
+for dashboard totals, storage integrity and scoped proof reads.
 
 The infra development Compose file sets explicit container Kestrel endpoints
 and Production configuration so YARP uses private service DNS. API/Worker HTTP
@@ -238,9 +246,19 @@ The current private inputs are `RABBITMQ_DEFAULT_PASS`,
 `IDENTITY_MIGRATION_CONNECTION_STRING`. The shared runner/Compose maps each
 database secret only to its owning process. Delivery also accepts its named
 secret directly, with `ConnectionStrings:Database` taking precedence when set.
-RabbitMQ's default password belongs only to the broker; application messaging
-credentials remain separate future integration work. Merchant's
-`Delivery__GrpcAddress` is a nonsecret internal endpoint.
+RabbitMQ's default password belongs only to the broker; the Notification Worker
+requires its separate `WORKER_BROKER_USERNAME` and `WORKER_BROKER_PASSWORD`
+credentials plus `NOTIFICATIONS_DATABASE_CONNECTION_STRING`. Its
+`notification-status` queue consumes the durable
+`SwiftDrop.Contracts.V1:StatusChanged` fanout exchange, records an inbox row and
+durable jobs before acknowledging, and routes invalid/exhausted messages to
+MassTransit's queue error handling. Same-parcel versions are serialized in
+PostgreSQL; stale versions are retained in the inbox without side effects.
+Provider attempts persist outcomes and retry at 5 seconds, 30 seconds, and 2
+minutes before terminal failure. Delivery recipient resolution and Merchant
+dispatch require short-lived service JWT files mounted under the Worker token
+directory; see the infrastructure README for provisioning instructions.
+Merchant's `Delivery__GrpcAddress` is a nonsecret internal endpoint.
 
 Neon is the selected PostgreSQL deployment: four privately owned logical
 databases with separate connection secrets, never a shared schema or cross-service
@@ -249,8 +267,13 @@ start a second shared PostgreSQL stack. Disposable PostgreSQL remains test-only.
 Delivery uses EF Core/Npgsql with the initial Booking migration, additive Courier
 profile/proof/assignment migrations and the status replay-constraint migration;
 Identity retains its independent SQL migrations. Merchant has its separate
-EF Core persistence/migration slice; see [Merchant alignment](docs/merchant-dev-alignment.md). RabbitMQ/MassTransit, GraphQL, gRPC and SSE
-adapters, generated clients, publishers and consumers remain future work.
+EF Core persistence/migration slice; see [Merchant alignment](docs/merchant-dev-alignment.md). Delivery's
+status outbox relay now runs as a separate backend worker and publishes the
+existing Delivery-owned outbox contract to RabbitMQ. The Notification Worker
+consumes those events and routes durable effects. This development wiring has
+not yet been verified against a live broker or provisioned runtime databases.
+GraphQL, gRPC and SSE
+adapters and generated clients remain future work.
 Docker packaging exists for the development containers. Delivery's quote and
 booking handlers are implemented; dependency-aware readiness remains later work.
 
@@ -265,3 +288,6 @@ Delivery's former unconfigured authentication scheme is no longer registered.
 See [Delivery Identity JWT integration](docs/delivery-identity-jwt-integration.md)
 for current host/Docker configuration and login-loop regression evidence. Older
 phase checkpoints describe their historical baselines.
+
+The linked Sri Lankan development records, preservation checks and remaining
+integration limits are recorded in [Operational development data](docs/development-data.md).

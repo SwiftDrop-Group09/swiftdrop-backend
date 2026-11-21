@@ -13,11 +13,18 @@ internal static class CourierEntityConfigurations
             table.HasCheckConstraint("ck_couriers_id", "id <> '00000000-0000-0000-0000-000000000000'::uuid");
             table.HasCheckConstraint("ck_couriers_capacity", "capacity >= 1");
             table.HasCheckConstraint("ck_couriers_version", "version >= 1");
+            table.HasCheckConstraint("ck_couriers_max_weight", "max_weight_kg > 0");
+            table.HasCheckConstraint("ck_couriers_vehicle_type", "vehicle_type IN ('Bicycle','Motorcycle','Car','Van','Truck')");
         });
         couriers.HasKey(x => x.Id);
         // Identity owns this ID; EF must not generate a different operational identity.
         couriers.Property(x => x.Id).ValueGeneratedNever();
+        couriers.Property(x => x.BusinessNumber).UseIdentityAlwaysColumn();
+        couriers.HasIndex(x => x.BusinessNumber).IsUnique();
         couriers.Property(x => x.Version).IsConcurrencyToken();
+        couriers.Property(x => x.VehicleType).HasConversion<string>().HasDefaultValue(VehicleType.Motorcycle);
+        couriers.Property(x => x.VehicleNumber).HasMaxLength(32);
+        couriers.Property(x => x.MaxWeightKg).HasPrecision(6, 2).HasDefaultValue(30.00m);
 
         var zones = model.Entity<CourierZone>();
         zones.ToTable("courier_zones");

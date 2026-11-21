@@ -5,6 +5,7 @@ namespace SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 
 public sealed class DeliveryDbContext(DbContextOptions<DeliveryDbContext> options) : DbContext(options)
 {
+    public DbSet<MerchantBookingIdentity> MerchantBookingIdentities => Set<MerchantBookingIdentity>();
     public DbSet<DeliveryZone> Zones => Set<DeliveryZone>();
     public DbSet<PricingTier> PricingTiers => Set<PricingTier>();
     public DbSet<Quote> Quotes => Set<Quote>();
@@ -19,8 +20,20 @@ public sealed class DeliveryDbContext(DbContextOptions<DeliveryDbContext> option
     public DbSet<ProofMetadata> ProofMetadata => Set<ProofMetadata>();
     public DbSet<DeliveryConfigAudit> ConfigAuditLogs => Set<DeliveryConfigAudit>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
         DeliveryEntityConfigurations.Configure(modelBuilder);
+        var identity = modelBuilder.Entity<MerchantBookingIdentity>();
+        identity.ToTable("merchant_booking_identities");
+        identity.HasKey(row => new { row.MerchantId, row.ExternalOrderId });
+        identity.Property(row => row.MerchantId).HasColumnName("merchant_id");
+        identity.Property(row => row.ExternalOrderId).HasColumnName("external_order_id").HasMaxLength(128);
+        identity.Property(row => row.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(128);
+        identity.Property(row => row.Fingerprint).HasColumnName("fingerprint").HasMaxLength(64);
+        identity.Property(row => row.ParcelId).HasColumnName("parcel_id");
+        identity.HasIndex(row => new { row.MerchantId, row.IdempotencyKey }).IsUnique();
+        identity.HasOne<Parcel>().WithMany().HasForeignKey(row => row.ParcelId).OnDelete(DeleteBehavior.Restrict);
+    }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {

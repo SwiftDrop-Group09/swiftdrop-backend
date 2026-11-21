@@ -11,13 +11,45 @@ public static class DeliveryReadEndpoints
 
     public static void MapDeliveryReads(this WebApplication app)
     {
+        app.MapGet("/api/v1/parcels/summary", async (HttpContext context, CustomerTrackingHandler handler,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await handler.GetSummaryAsync(context.Request.Query.Count != 0, cancellationToken);
+            return result.Response is { } response ? Results.Ok(response)
+                : DeliveryReadProblems.Failure(context, result.Failure!.Value, result.Errors);
+        }).RequireAuthorization().WithName("CustomerDeliverySummary").WithMetadata(new DeliveryReadEndpointMetadata())
+            .Produces<CustomerDeliverySummary>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403).ProducesProblem(503);
+
+        app.MapGet("/api/v1/couriers/me/summary", async (HttpContext context, CourierSummaryHandler handler,
+            CancellationToken cancellationToken) =>
+        {
+            var query = context.Request.Query;
+            var invalid = query.Any(pair => pair.Value.Count != 1
+                || pair.Key is not ("date" or "includeOverdue" or "overdueOnly" or "search"));
+            string? Value(string name) => query.TryGetValue(name, out var values) && values.Count == 1 ? values[0] : null;
+            var result = await handler.ExecuteAsync(new(Value("date"), Value("includeOverdue"), Value("overdueOnly"), Value("search"), invalid), cancellationToken);
+            return result.Response is { } response ? Results.Ok(response)
+                : DeliveryReadProblems.Failure(context, result.Failure!.Value, result.Errors);
+        }).RequireAuthorization().WithName("CourierWorkSummary").WithMetadata(new DeliveryReadEndpointMetadata())
+            .Produces<CourierWorkSummary>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403).ProducesProblem(503);
+
+        app.MapGet("/api/v1/couriers/me/history/{id}", async (string id, HttpContext context, CourierHistoryDetailHandler handler,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await handler.ExecuteAsync(id, context.Request.Query.Count != 0, cancellationToken);
+            return result.Response is { } response ? Results.Ok(response)
+                : DeliveryReadProblems.Failure(context, result.Failure!.Value, result.Errors);
+        }).RequireAuthorization().WithName("CourierHistoryDetail").WithMetadata(new DeliveryReadEndpointMetadata())
+            .Produces<CourierHistoryDetailResponse>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403)
+            .ProducesProblem(404).ProducesProblem(503);
+
         app.MapGet("/api/v1/couriers/me/history", async (HttpContext context, CourierHistoryHandler handler,
             CancellationToken cancellationToken) =>
         {
             var query = context.Request.Query;
-            var invalid = query.Any(pair => pair.Value.Count != 1 || pair.Key is not ("page" or "pageSize"));
+            var invalid = query.Any(pair => pair.Value.Count != 1 || pair.Key is not ("page" or "pageSize" or "status" or "date" or "search"));
             string? Value(string name) => query.TryGetValue(name, out var values) && values.Count == 1 ? values[0] : null;
-            var result = await handler.ExecuteAsync(new(Value("page"), Value("pageSize"), invalid), cancellationToken);
+            var result = await handler.ExecuteAsync(new(Value("page"), Value("pageSize"), invalid, Value("status"), Value("date"), Value("search")), cancellationToken);
             return result.Response is { } response ? Results.Ok(response)
                 : DeliveryReadProblems.Failure(context, result.Failure!.Value, result.Errors);
         }).RequireAuthorization().WithName("CourierHistory").WithMetadata(new DeliveryReadEndpointMetadata())
@@ -27,10 +59,10 @@ public static class DeliveryReadEndpoints
             CancellationToken cancellationToken) =>
         {
             var query = context.Request.Query;
-            var invalid = query.Any(pair => pair.Value.Count != 1 || pair.Key is not ("date" or "includeOverdue" or "page" or "pageSize"));
+            var invalid = query.Any(pair => pair.Value.Count != 1 || pair.Key is not ("date" or "includeOverdue" or "page" or "pageSize" or "status" or "search" or "overdueOnly"));
             string? Value(string name) => query.TryGetValue(name, out var values) && values.Count == 1 ? values[0] : null;
             var result = await handler.GetAssignmentsAsync(new AssignmentQueryInput(Value("date"), Value("includeOverdue"),
-                Value("page"), Value("pageSize"), invalid), cancellationToken);
+                Value("page"), Value("pageSize"), invalid, Value("status"), Value("search"), Value("overdueOnly")), cancellationToken);
             return result.Response is { } response ? Results.Ok(response)
                 : DeliveryReadProblems.Failure(context, result.Failure!.Value, result.Errors);
         }).RequireAuthorization().WithName("CourierAssignments").WithMetadata(new DeliveryReadEndpointMetadata())
@@ -50,11 +82,11 @@ public static class DeliveryReadEndpoints
         {
             var query = context.Request.Query;
             var invalid = query.Any(pair => pair.Value.Count != 1
-                || pair.Key is not ("status" or "from" or "to" or "search" or "page" or "pageSize"));
+                || pair.Key is not ("status" or "from" or "to" or "search" or "page" or "pageSize" or "zoneId"));
             string? Value(string name) => query.TryGetValue(name, out var values) && values.Count == 1 ? values[0] : null;
             var result = await handler.ListParcelsAsync(new CustomerParcelQueryInput(
                 Value("status"), Value("from"), Value("to"), Value("search"),
-                Value("page"), Value("pageSize"), invalid), cancellationToken);
+                Value("page"), Value("pageSize"), invalid, ZoneId: Value("zoneId")), cancellationToken);
             return result.Response is { } response ? Results.Ok(response)
                 : DeliveryReadProblems.Failure(context, result.Failure!.Value, result.Errors);
         }).RequireAuthorization().WithName("ListParcels").WithMetadata(new DeliveryReadEndpointMetadata())

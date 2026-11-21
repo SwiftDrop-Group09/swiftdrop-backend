@@ -11,7 +11,7 @@ using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 namespace SwiftDrop.Delivery.Api.Infrastructure.DeliveryReads;
 
 public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFactory)
-    : IDeliveryReadStore, ICourierHistoryStore, ICustomerDeliveryReadStore
+    : IDeliveryReadStore, ICourierHistoryStore, ICustomerDeliveryReadStore, ICourierSummaryStore, ICourierHistoryDetailStore
 {
     private static readonly ParcelStatus[] ActiveStatuses =
         [ParcelStatus.Assigned, ParcelStatus.PickedUp, ParcelStatus.InTransit, ParcelStatus.OutForDelivery];
@@ -32,6 +32,15 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
                 && database.Assignments.Any(assignment => assignment.ParcelId == parcel.Id
                     && assignment.CourierId == courierId && assignment.Status == AssignmentStatus.Active
                     && (assignment.ServiceDate == query.Date || (query.IncludeOverdue && assignment.ServiceDate < query.Date))));
+            if (query.Status is { } selectedStatus) authorized = authorized.Where(parcel => parcel.Status == selectedStatus);
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
+                var term = query.Search.ToLowerInvariant();
+                authorized = authorized.Where(parcel => parcel.TrackingNumber.ToLower().Contains(term));
+            }
+            if (query.OverdueOnly)
+                authorized = authorized.Where(parcel => database.Assignments.Any(assignment => assignment.ParcelId == parcel.Id
+                    && assignment.CourierId == courierId && assignment.Status == AssignmentStatus.Active && assignment.ServiceDate < query.Date));
             var count = await authorized.CountAsync(cancellationToken);
             var rows = await Project(database, authorized).OrderByDescending(row => row.CreatedAt).ThenByDescending(row => row.Id)
                 .Skip(checked((query.Page - 1) * query.PageSize)).Take(query.PageSize).ToArrayAsync(cancellationToken);
@@ -108,6 +117,7 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
             Currency = snapshot.Currency,
             PricingVersion = snapshot.PricingVersion,
             CreatedAt = parcel.CreatedAt,
+            UpdatedAt = parcel.UpdatedAt,
             ServiceDate = (DateOnly?)assignment.ServiceDate,
             AssignmentStatus = (AssignmentStatus?)assignment.Status,
             AssignedAt = (DateTimeOffset?)assignment.AssignedAt,
@@ -129,6 +139,17 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
                 assignment.ParcelId == parcel.Id && assignment.CourierId == courierId
                 && ((assignment.Status == AssignmentStatus.Delivered && parcel.Status == ParcelStatus.Delivered)
                     || (assignment.Status == AssignmentStatus.Failed && parcel.Status == ParcelStatus.Failed))));
+            if (query.Status is { } selectedStatus) authorized = authorized.Where(parcel => parcel.Status == selectedStatus);
+            if (query.Date is { } date)
+                authorized = authorized.Where(parcel => database.Assignments.Any(assignment => assignment.ParcelId == parcel.Id
+                    && assignment.CourierId == courierId && assignment.ServiceDate == date
+                    && ((assignment.Status == AssignmentStatus.Delivered && parcel.Status == ParcelStatus.Delivered)
+                        || (assignment.Status == AssignmentStatus.Failed && parcel.Status == ParcelStatus.Failed))));
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
+                var term = query.Search.ToLowerInvariant();
+                authorized = authorized.Where(parcel => parcel.TrackingNumber.ToLower().Contains(term));
+            }
             var count = await authorized.CountAsync(cancellationToken);
             var page = from parcel in authorized
                        join snapshot in database.PriceSnapshots.AsNoTracking() on parcel.Id equals snapshot.ParcelId
@@ -148,6 +169,120 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
         { throw new DeliveryReadUnavailableException("Courier history is unavailable.", exception); }
     }
 
+    public async Task<CourierHistoryDetailResponse?> GetHistoryDetailAsync(Guid courierId, Guid parcelId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var database = contextFactory();
+            // Historical terminal ownership is in the same predicate as the safe projection.
+            // A former/reassigned Courier never gains access to their replacement's result.
+            var row = await (from assignment in database.Assignments.AsNoTracking()
+                             join parcel in database.Parcels.AsNoTracking() on assignment.ParcelId equals parcel.Id
+                             join snapshot in database.PriceSnapshots.AsNoTracking() on parcel.Id equals snapshot.ParcelId
+                             where parcel.Id == parcelId && assignment.CourierId == courierId
+                                 && ((assignment.Status == AssignmentStatus.Delivered && parcel.Status == ParcelStatus.Delivered)
+                                     || (assignment.Status == AssignmentStatus.Failed && parcel.Status == ParcelStatus.Failed))
+                             orderby assignment.AssignedAt descending, assignment.Id descending
+                             select new { parcel.Id, parcel.TrackingNumber, parcel.Status, parcel.Version, parcel.CreatedAt,
+                                 parcel.UpdatedAt, parcel.PickupAddress, parcel.DropoffAddress, parcel.WeightKg, parcel.Size,
+                                 snapshot.Total, snapshot.Currency, snapshot.PricingVersion,
+                                 assignment.ServiceDate, assignment.AssignedAt, assignment.PickedUpAt,
+                                 HasProof = database.ProofMetadata.Any(proof => proof.ParcelId == parcel.Id),
+                                 Reason = database.BookingHistory.Where(history => history.ParcelId == parcel.Id && history.ToStatus == ParcelStatus.Failed)
+                                     .OrderByDescending(history => history.Timestamp).Select(history => history.ChangeReason).FirstOrDefault()
+                             }).FirstOrDefaultAsync(cancellationToken);
+            if (row is null) return null;
+            var reason = row.Status == ParcelStatus.Failed && row.Reason is "RecipientUnavailable" or "AddressUnreachable" or "Damaged" or "Other"
+                ? row.Reason : null;
+            return new(row.Id, row.TrackingNumber, row.Status.ToString(), row.Version,
+                new(row.Total, row.Currency, row.PricingVersion), row.CreatedAt,
+                Address(row.PickupAddress).City, Address(row.DropoffAddress).City,
+                new(row.WeightKg, row.Size.ToString()), row.ServiceDate, row.AssignedAt,
+                row.PickedUpAt, row.UpdatedAt, reason, row.HasProof);
+        }
+        catch (Exception exception) when (IsReadFailure(exception))
+        { throw new DeliveryReadUnavailableException("Courier history details are unavailable.", exception); }
+    }
+
+    public async Task<CourierWorkSummary> GetSummaryAsync(Guid courierId, AssignmentQuery query, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var database = contextFactory();
+            await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
+            await database.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
+            // Retained terminal ownership and current active ownership are deliberately separate.
+            // EXISTS counts a parcel once, including after reassignment back to the same Courier.
+            var owned = database.Parcels.AsNoTracking().Where(parcel => database.Assignments.Any(assignment =>
+                assignment.ParcelId == parcel.Id && assignment.CourierId == courierId
+                && ((assignment.Status == AssignmentStatus.Active && ActiveStatuses.Contains(parcel.Status))
+                    || (assignment.Status == AssignmentStatus.Delivered && parcel.Status == ParcelStatus.Delivered)
+                    || (assignment.Status == AssignmentStatus.Failed && parcel.Status == ParcelStatus.Failed))));
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
+                var term = query.Search.ToLowerInvariant();
+                owned = owned.Where(parcel => parcel.TrackingNumber.ToLower().Contains(term));
+            }
+            var day = owned.Where(parcel => database.Assignments.Any(assignment => assignment.ParcelId == parcel.Id
+                && assignment.CourierId == courierId && assignment.ServiceDate == query.Date
+                && ((assignment.Status == AssignmentStatus.Active && ActiveStatuses.Contains(parcel.Status))
+                    || (assignment.Status == AssignmentStatus.Delivered && parcel.Status == ParcelStatus.Delivered)
+                    || (assignment.Status == AssignmentStatus.Failed && parcel.Status == ParcelStatus.Failed))));
+            var overdue = owned.Where(parcel => ActiveStatuses.Contains(parcel.Status)
+                && database.Assignments.Any(assignment => assignment.ParcelId == parcel.Id && assignment.CourierId == courierId
+                    && assignment.Status == AssignmentStatus.Active && assignment.ServiceDate < query.Date));
+            var dayCounts = await day.GroupBy(parcel => parcel.Status)
+                .Select(group => new { Status = group.Key, Count = group.Count() }).ToArrayAsync(cancellationToken);
+            var overdueCount = await overdue.CountAsync(cancellationToken);
+            var queue = query.OverdueOnly ? (query.IncludeOverdue ? overdue : overdue.Where(_ => false))
+                : query.IncludeOverdue ? day.Union(overdue) : day;
+            var queueCounts = await queue.GroupBy(parcel => parcel.Status)
+                .Select(group => new { Status = group.Key, Count = group.Count() }).ToArrayAsync(cancellationToken);
+            CourierStageCounts Counts(Dictionary<ParcelStatus, int> counts) => new(
+                counts.GetValueOrDefault(ParcelStatus.Assigned), counts.GetValueOrDefault(ParcelStatus.PickedUp),
+                counts.GetValueOrDefault(ParcelStatus.InTransit), counts.GetValueOrDefault(ParcelStatus.OutForDelivery),
+                counts.GetValueOrDefault(ParcelStatus.Delivered), counts.GetValueOrDefault(ParcelStatus.Failed));
+            await transaction.CommitAsync(cancellationToken);
+            return new(query.Date, "Asia/Colombo", Counts(dayCounts.ToDictionary(row => row.Status, row => row.Count)),
+                Counts(queueCounts.ToDictionary(row => row.Status, row => row.Count)), overdueCount);
+        }
+        catch (Exception exception) when (IsReadFailure(exception))
+        { throw new DeliveryReadUnavailableException("Courier summary is unavailable.", exception); }
+    }
+
+    public async Task<CustomerDeliverySummary> GetCustomerSummaryAsync(Guid customerId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var database = contextFactory();
+            await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
+            await database.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
+            var owned = database.Parcels.AsNoTracking().Where(parcel => parcel.CustomerId == customerId);
+            var counts = await owned.GroupBy(parcel => parcel.Status)
+                .Select(group => new { Status = group.Key, Count = group.Count() }).ToArrayAsync(cancellationToken);
+            var terminal = new[] { ParcelStatus.Delivered, ParcelStatus.Failed, ParcelStatus.Cancelled };
+            var activeRows = await Project(database, owned.Where(parcel => !terminal.Contains(parcel.Status)))
+                .OrderByDescending(row => row.UpdatedAt).ThenByDescending(row => row.Id).Take(5).ToArrayAsync(cancellationToken);
+            var recentRows = await Project(database, owned.Where(parcel => terminal.Contains(parcel.Status)))
+                .OrderByDescending(row => row.UpdatedAt).ThenByDescending(row => row.Id).Take(5).ToArrayAsync(cancellationToken);
+            static CustomerParcelListItem Item(ParcelRow row) => new(row.Id, row.TrackingNumber, row.Status.ToString(), row.Version,
+                Price(row), row.CreatedAt, row.UpdatedAt, Address(row.PickupAddress).City, Address(row.DeliveryAddress).City,
+                Recipient(row.Recipient).Name, new(row.WeightKg, row.Size.ToString()), row.Status == ParcelStatus.Delivered);
+            int Count(ParcelStatus status) => counts.SingleOrDefault(row => row.Status == status)?.Count ?? 0;
+            var total = counts.Sum(row => row.Count);
+            var delivered = Count(ParcelStatus.Delivered);
+            var failed = Count(ParcelStatus.Failed);
+            var cancelled = Count(ParcelStatus.Cancelled);
+            await transaction.CommitAsync(cancellationToken);
+            return new(total, total - delivered - failed - cancelled, delivered, failed, cancelled,
+                activeRows.Select(Item).ToArray(), recentRows.Select(Item).ToArray());
+        }
+        catch (Exception exception) when (IsReadFailure(exception))
+        {
+            throw new DeliveryReadUnavailableException("Customer delivery summary is unavailable.", exception);
+        }
+    }
+
     public async Task<CustomerParcelPage> ListParcelsAsync(ParcelReadScope scope, CustomerParcelQuery query,
         CancellationToken cancellationToken)
     {
@@ -162,6 +297,8 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
 
             if (query.Status is { } status)
                 authorized = authorized.Where(parcel => parcel.Status == status);
+            if (query.ZoneId is { } zoneId)
+                authorized = authorized.Where(parcel => parcel.ZoneId == zoneId);
             if (query.From is { } from)
                 authorized = authorized.Where(parcel => parcel.CreatedAt >= from);
             if (query.To is { } to)
@@ -532,6 +669,7 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
         public string Currency { get; init; } = null!;
         public string PricingVersion { get; init; } = null!;
         public DateTimeOffset CreatedAt { get; init; }
+        public DateTimeOffset UpdatedAt { get; init; }
         public DateOnly? ServiceDate { get; init; }
         public AssignmentStatus? AssignmentStatus { get; init; }
         public DateTimeOffset? AssignedAt { get; init; }

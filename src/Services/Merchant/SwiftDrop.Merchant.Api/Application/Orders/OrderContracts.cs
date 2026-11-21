@@ -25,7 +25,7 @@ public sealed record OrderPackageInput(decimal? WeightKg, string? Size);
 public sealed record OrderRecipientInput(string? Name, string? PhoneNumber);
 
 /// <summary>Raw query string values; parsed and validated by <see cref="OrderInputValidator"/>.</summary>
-public sealed record OrderListQuery(string? Page, string? PageSize, string? State);
+public sealed record OrderListQuery(string? Page, string? PageSize, string? State, string? ParcelStatus = null, bool InvalidParameters = false);
 
 // ── Validated order, as stored in inbox_jobs.order_payload and replayed to Delivery ──
 
@@ -44,7 +44,7 @@ public sealed record OrderPackage(decimal WeightKg, string Size);
 
 public sealed record OrderRecipient(string Name, string PhoneNumber);
 
-public sealed record OrderPage(int Page, int PageSize, Domain.Orders.InboxJobState? State);
+public sealed record OrderPage(int Page, int PageSize, Domain.Orders.InboxJobState? State, string? ParcelStatus = null);
 
 // ── Output ──
 
@@ -66,7 +66,8 @@ public sealed record OrderJobResponse(
     DateTimeOffset? TerminalAt,
     string? ErrorCode,
     DateTimeOffset? LastRefreshedAt,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? FailureReason = null);
 
 public sealed record OrderJobPage(
     IReadOnlyList<OrderJobResponse> Items,

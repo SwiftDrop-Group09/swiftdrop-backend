@@ -23,13 +23,18 @@ public sealed class DeliveryReadHandler(ICurrentDeliveryUser currentUser, IDeliv
         var includeOverdue = true;
         if (input.IncludeOverdue is not null && !bool.TryParse(input.IncludeOverdue, out includeOverdue))
             errors["includeOverdue"] = ["Use true or false."];
+        var overdueOnly = false;
+        if (input.OverdueOnly is not null && !bool.TryParse(input.OverdueOnly, out overdueOnly))
+            errors["overdueOnly"] = ["Use true or false."];
+        var status = CourierReadValidation.Status(input.Status, false, errors);
+        var search = CourierReadValidation.Search(input.Search, errors);
         var pagination = DeliveryPagination.Parse(input.Page, input.PageSize, errors);
         if (errors.Count != 0) return new(null, DeliveryReadFailure.InvalidInput, errors);
 
         try
         {
             return new(await store.GetAssignmentsAsync(courierId,
-                new AssignmentQuery(date ?? clock.Today(), includeOverdue, pagination.Page, pagination.PageSize), cancellationToken), null);
+                new AssignmentQuery(date ?? clock.Today(), includeOverdue, pagination.Page, pagination.PageSize, status, search, overdueOnly), cancellationToken), null);
         }
         catch (DeliveryReadUnavailableException) { return new(null, DeliveryReadFailure.Unavailable); }
     }

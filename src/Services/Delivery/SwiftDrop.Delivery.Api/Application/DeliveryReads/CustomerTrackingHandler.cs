@@ -13,6 +13,26 @@ public sealed class CustomerTrackingHandler(
     IReceiptPdfRenderer pdfRenderer,
     IPrivateProofReader proofReader)
 {
+    public async Task<DeliveryReadResult<CustomerDeliverySummary>> GetSummaryAsync(
+        bool invalidParameters = false, CancellationToken cancellationToken = default)
+    {
+        if (!currentUser.IsAuthenticated || currentUser.UserId is not { } userId || userId == Guid.Empty)
+            return new(null, DeliveryReadFailure.Unauthenticated);
+        if (!currentUser.IsCustomer)
+            return new(null, DeliveryReadFailure.Forbidden);
+        if (invalidParameters)
+            return new(null, DeliveryReadFailure.InvalidInput,
+                new Dictionary<string, string[]> { ["query"] = ["This operation has no query parameters."] });
+        try
+        {
+            return new(await store.GetCustomerSummaryAsync(userId, cancellationToken), null);
+        }
+        catch (DeliveryReadUnavailableException)
+        {
+            return new(null, DeliveryReadFailure.Unavailable);
+        }
+    }
+
     public async Task<DeliveryReadResult<CustomerParcelPage>> ListParcelsAsync(
         CustomerParcelQueryInput input, CancellationToken cancellationToken = default)
     {
@@ -74,6 +94,15 @@ public sealed class CustomerTrackingHandler(
         if (search is { Length: > 128 })
             errors["search"] = ["Search text must not exceed 128 characters."];
 
+        Guid? zoneId = null;
+        if (input.ZoneId is not null)
+        {
+            if (Guid.TryParse(input.ZoneId, out var parsedZoneId) && parsedZoneId != Guid.Empty)
+                zoneId = parsedZoneId;
+            else
+                errors["zoneId"] = ["Supply a non-empty zone UUID."];
+        }
+
         var pagination = DeliveryPagination.Parse(input.Page, input.PageSize, errors);
         if (errors.Count != 0)
             return new(null, DeliveryReadFailure.InvalidInput, errors);
@@ -82,7 +111,7 @@ public sealed class CustomerTrackingHandler(
         {
             var scope = new ParcelReadScope(userId, currentUser.IsCourier, currentUser.IsCustomer, currentUser.IsOperations);
             var page = await store.ListParcelsAsync(scope,
-                new CustomerParcelQuery(status, from, to, search, pagination.Page, pagination.PageSize),
+                new CustomerParcelQuery(status, from, to, search, pagination.Page, pagination.PageSize, zoneId),
                 cancellationToken);
             return new(page, null);
         }

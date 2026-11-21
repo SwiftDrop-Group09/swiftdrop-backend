@@ -4,8 +4,10 @@ using SwiftDrop.Delivery.Api.Application.Quotes;
 namespace SwiftDrop.Delivery.Api.Application.DeliveryReads;
 
 public sealed record AssignmentQueryInput(string? Date = null, string? IncludeOverdue = null,
-    string? Page = null, string? PageSize = null, bool InvalidParameters = false);
-public sealed record AssignmentQuery(DateOnly Date, bool IncludeOverdue, int Page, int PageSize);
+    string? Page = null, string? PageSize = null, bool InvalidParameters = false,
+    string? Status = null, string? Search = null, string? OverdueOnly = null);
+public sealed record AssignmentQuery(DateOnly Date, bool IncludeOverdue, int Page, int PageSize,
+    Domain.ParcelStatus? Status = null, string? Search = null, bool OverdueOnly = false);
 public sealed record ParcelReadScope(Guid UserId, bool IsCourier, bool IsCustomer, bool IsOperations);
 public sealed record ReadPackageDetails(decimal WeightKg, string Size);
 
@@ -37,9 +39,10 @@ public interface IDeliveryReadStore
 }
 
 public sealed record CustomerParcelQueryInput(string? Status = null, string? From = null, string? To = null,
-    string? Search = null, string? Page = null, string? PageSize = null, bool InvalidParameters = false);
+    string? Search = null, string? Page = null, string? PageSize = null, bool InvalidParameters = false,
+    string? ZoneId = null);
 public sealed record CustomerParcelQuery(Domain.ParcelStatus? Status, DateTimeOffset? From, DateTimeOffset? To,
-    string? Search, int Page, int PageSize);
+    string? Search, int Page, int PageSize, Guid? ZoneId = null);
 
 public sealed record CustomerParcelListItem(Guid Id, string TrackingNumber, string Status, long Version,
     BookingPriceSnapshotResponse PriceSnapshot, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
@@ -47,6 +50,9 @@ public sealed record CustomerParcelListItem(Guid Id, string TrackingNumber, stri
     ReadPackageDetails PackageDetails, bool HasProof);
 public sealed record CustomerParcelPage(IReadOnlyList<CustomerParcelListItem> Items,
     int TotalCount, int Page, int PageSize);
+public sealed record CustomerDeliverySummary(int TotalCount, int ActiveCount, int DeliveredCount,
+    int FailedCount, int CancelledCount, IReadOnlyList<CustomerParcelListItem> ActiveDeliveries,
+    IReadOnlyList<CustomerParcelListItem> RecentDeliveries);
 
 public sealed record PublicTimelineEntry(string Status, DateTimeOffset Timestamp, string Label);
 public sealed record PublicTrackingSummary(string TrackingNumber, string Status, string OriginCity,
@@ -70,6 +76,7 @@ public sealed record ParcelProofLookup(Domain.ParcelStatus Status, string Tracki
 
 public interface ICustomerDeliveryReadStore
 {
+    Task<CustomerDeliverySummary> GetCustomerSummaryAsync(Guid customerId, CancellationToken cancellationToken);
     Task<CustomerParcelPage> ListParcelsAsync(ParcelReadScope scope, CustomerParcelQuery query, CancellationToken cancellationToken);
     Task<PublicTrackingSummary?> GetPublicTrackingAsync(string trackingNumber, CancellationToken cancellationToken);
     Task<ParcelEventsResponse?> GetParcelEventsAsync(ParcelReadScope scope, Guid parcelId, CancellationToken cancellationToken);

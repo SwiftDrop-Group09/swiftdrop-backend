@@ -6,6 +6,15 @@ public sealed class PricingAdministrationHandler(
     IPricingAdministrationStore store,
     ICurrentDeliveryUser user)
 {
+    public async Task<PricingResult<PricingOverviewPage>> OverviewAsync(int page, int pageSize, Guid? zoneId, CancellationToken cancellationToken)
+    {
+        if (!user.IsAuthenticated) return new(null, PricingFailure.Unauthenticated);
+        if (!user.IsAdmin) return new(null, PricingFailure.Forbidden);
+        if (page < 1 || pageSize is < 1 or > 100 || (long)(page - 1) * pageSize > int.MaxValue || zoneId == Guid.Empty)
+            return new(null, PricingFailure.InvalidInput);
+        return new(await store.ListOverviewAsync(page, pageSize, zoneId, cancellationToken));
+    }
+
     public async Task<PricingResult<PricingPage>> ListAsync(int? page, int? pageSize, Guid? zoneId, CancellationToken cancellationToken)
     {
         if (!user.IsAuthenticated)

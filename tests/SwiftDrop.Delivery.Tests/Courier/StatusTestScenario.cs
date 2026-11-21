@@ -32,10 +32,10 @@ internal sealed class StatusTestScenario(PostgresFixture fixture) : IAsyncDispos
 
     public static async Task<StatusTestScenario> CreateAsync(PostgresFixture fixture,
         ParcelStatus source = ParcelStatus.Assigned, bool merchant = false, Guid? courierId = null,
-        Action<IServiceCollection>? configure = null)
+        Action<IServiceCollection>? configure = null, DateOnly? serviceDate = null)
     {
         var scenario = new StatusTestScenario(fixture) { CourierId = courierId ?? Guid.NewGuid(), OtherCourierId = Guid.NewGuid() };
-        await scenario.SeedAsync(source, merchant);
+        await scenario.SeedAsync(source, merchant, serviceDate);
         scenario.Factory = scenario.CreateFactory(configure: configure);
         scenario.Client = scenario.Factory.CreateClient();
         return scenario;
@@ -94,7 +94,7 @@ internal sealed class StatusTestScenario(PostgresFixture fixture) : IAsyncDispos
         return true;
     }
 
-    private async Task SeedAsync(ParcelStatus source, bool merchant)
+    private async Task SeedAsync(ParcelStatus source, bool merchant, DateOnly? serviceDate = null)
     {
         await using var context = Context();
         await context.Database.MigrateAsync();
@@ -121,7 +121,7 @@ internal sealed class StatusTestScenario(PostgresFixture fixture) : IAsyncDispos
         context.Entry(parcel).Property(x => x.Status).CurrentValue = ParcelStatus.Assigned;
         context.Entry(parcel).Property(x => x.Version).CurrentValue = 2;
         context.Entry(parcel).Property(x => x.UpdatedAt).CurrentValue = assignedAt;
-        var assignment = new CourierAssignment(Guid.NewGuid(), ParcelId, CourierId, new(2026, 10, 28), assignedAt);
+        var assignment = new CourierAssignment(Guid.NewGuid(), ParcelId, CourierId, serviceDate ?? new(2026, 10, 28), assignedAt);
         context.Assignments.Add(assignment);
         AddDispatchAudit(context, parcel, ParcelStatus.Created, assignedAt);
         await context.SaveChangesAsync();
