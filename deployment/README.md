@@ -51,6 +51,32 @@ Use the [outbox database grants](../docs/delivery-outbox-relay-handoff.md#curren
 and scope broker configure and write permissions to the
 `SwiftDrop.Contracts.V1:StatusChanged` exchange.
 
+## Gateway request handling
+
+`/health` reports Gateway process liveness. It does not probe downstream services.
+The Gateway applies these per-client limits in each replica, configurable with
+the corresponding `Gateway__RateLimits__<setting>` environment variable.
+
+| Setting | Default |
+|---|---:|
+| `AuthenticationPerMinute` | 60 |
+| `PublicTrackingPerMinute` | 120 |
+| `AssistantPerMinute` (shared by chat and MCP) | 30 |
+| `TrackingStreamsPerClient` | 8 open tracking event streams |
+
+When deployed behind a proxy that overwrites forwarding headers, set
+`Gateway__Forwarding__KnownProxies__0` to its immediate peer IP address.
+Add numbered entries for additional proxies. The Gateway trusts one hop for
+client IP and scheme. Configure the ingress to preserve the original HTTP host.
+Without a configured trusted proxy, rate limits use the directly connected
+peer address.
+
+The Gateway forwards a single UUID in `X-Correlation-ID` and echoes it in its
+response. It accepts request bodies up to 12 MiB, including proof uploads with
+two 5 MiB parts and multipart overhead. Set any upstream ingress body limit to
+allow valid proof uploads. Backend services retain credential, ownership and
+payload validation.
+
 ## Shared configuration contract
 
 Keys below apply within each owning host, not as global workload-prefixed keys.
