@@ -1,10 +1,12 @@
+using SwiftDrop.Contracts.Http.V1;
+
 namespace SwiftDrop.Merchant.Api.Infrastructure.Authentication.ApiKeys;
 
 /// <summary>Names shared by the API key handler, the caller resolver and the policies.</summary>
 public static class ApiKeyAuthenticationDefaults
 {
     public const string SchemeName = "MerchantApiKey";
-    public const string HeaderName = "X-API-Key";
+    public const string HeaderName = MerchantOrderApi.ApiKeyHeader;
     public const string AuthenticationMethod = "api_key";
 }
 

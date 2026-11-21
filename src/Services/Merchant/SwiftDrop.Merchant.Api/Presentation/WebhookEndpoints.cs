@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SwiftDrop.Contracts.Http.V1;
 using SwiftDrop.Merchant.Api.Application.Webhooks.Contracts;
 using SwiftDrop.Merchant.Api.Application.Webhooks.Handlers;
 
@@ -17,7 +18,7 @@ public static class WebhookEndpoints
     public static void MapWebhookEndpoints(this WebApplication app)
     {
         // 1. POST /api/v1/merchant/webhooks — Approved Merchant owner
-        app.MapPost("/api/v1/merchant/webhooks", async (
+        app.MapPost(MerchantOrderApi.WebhooksPath, async (
             HttpContext context,
             CreateWebhookSubscriptionHandler handler,
             CancellationToken ct) =>

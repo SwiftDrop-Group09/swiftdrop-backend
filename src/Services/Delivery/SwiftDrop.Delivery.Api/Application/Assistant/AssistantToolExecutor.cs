@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SwiftDrop.Contracts.Http.V1;
 using SwiftDrop.Delivery.Api.Application.Admin.Pricing;
 using SwiftDrop.Delivery.Api.Application.Admin.Reports;
 using SwiftDrop.Delivery.Api.Application.Admin.Zones;
@@ -11,6 +12,7 @@ using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 using SwiftDrop.Delivery.Api.Application.Dispatch;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Domain;
+using SwiftDrop.Delivery.Api.Infrastructure.Assistant;
 using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 
 namespace SwiftDrop.Delivery.Api.Application.Assistant;
@@ -22,6 +24,8 @@ public sealed class AssistantToolExecutor(
     QuoteEstimator quoteEstimator,
     IBookingZoneCatalog zoneCatalog,
     IQuoteStore quoteStore,
+    MerchantAssistantOrderClient merchantOrders,
+    IConfiguration settings,
     IServiceProvider serviceProvider)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -66,8 +70,8 @@ public sealed class AssistantToolExecutor(
             AssistantToolNames.GetZoneDispatchSummary => await ExecuteGetZoneDispatchSummaryAsync(arguments, cancellationToken),
 
             // Merchant Tools
-            AssistantToolNames.ListMerchantOrders => await ExecuteListMerchantOrdersAsync(arguments, cancellationToken),
-            AssistantToolNames.GetMerchantIntegrationGuide => await ExecuteGetMerchantIntegrationGuideAsync(arguments, cancellationToken),
+            AssistantToolNames.ListMerchantOrders => await ExecuteListMerchantOrdersAsync(cancellationToken),
+            AssistantToolNames.GetMerchantIntegrationGuide => GetMerchantIntegrationGuide(),
 
             // Admin Tools
             AssistantToolNames.GetDeliverySystemReports => await ExecuteGetDeliverySystemReportsAsync(arguments, cancellationToken),
@@ -1203,116 +1207,85 @@ public sealed class AssistantToolExecutor(
     // Merchant Tools Execution
     // -------------------------------------------------------------
 
-    private async Task<ToolExecutionResult> ExecuteListMerchantOrdersAsync(
-        JsonElement? arguments,
-        CancellationToken cancellationToken)
+    private async Task<ToolExecutionResult> ExecuteListMerchantOrdersAsync(CancellationToken ct)
     {
-        if (!currentDeliveryUser.IsAuthenticated || (!currentDeliveryUser.IsMerchant && !currentDeliveryUser.IsAdmin))
+        if (!currentDeliveryUser.IsAuthenticated || currentDeliveryUser.UserId is null ||
+            (!currentDeliveryUser.IsMerchant && !currentDeliveryUser.IsAdmin))
         {
-            return new ToolExecutionResult(
-                AssistantToolNames.ListMerchantOrders,
-                false,
-                null,
-                "Access restricted: You must be signed in with a Merchant business account to inspect merchant orders.",
-                "forbidden");
+            return MerchantOrderFailure("forbidden", "Sign in as a Merchant owner to inspect merchant orders.");
         }
 
-        var dbAccessor = serviceProvider.GetService<Func<DeliveryDbContext>>();
-        if (dbAccessor == null)
+        if (currentDeliveryUser.IsAdmin)
         {
-            return new ToolExecutionResult(
-                AssistantToolNames.ListMerchantOrders,
-                true,
-                new MerchantOrdersCardData(0, Array.Empty<MerchantOrderItem>()),
-                "No merchant orders found.",
-                null);
+            return await ExecuteAdminMerchantParcelsAsync(ct);
+        }
+
+        var (page, forbidden) = await merchantOrders.ReadAsync(ct);
+        if (forbidden)
+        {
+            return MerchantOrderFailure("forbidden", "Merchant orders require an approved business owned by your account.");
+        }
+        if (page is null)
+        {
+            return MerchantOrderFailure("merchant_unavailable", "Merchant orders are temporarily unavailable.");
+        }
+
+        var items = page.Items.Select(order => new MerchantOrderItem(
+            order.TrackingNumber ?? "", order.ExternalOrderId,
+            order.ParcelStatus is null ? order.State : ToFriendlyStatus(order.ParcelStatus),
+            order.RecipientCity, order.WeightKg, order.PriceLkr, order.CreatedAt)).ToArray();
+        var text = page.TotalCount == 0
+            ? "Your business has no merchant orders."
+            : $"Your business has **{page.TotalCount} merchant orders**.\\n" +
+              string.Join("\\n", items.Take(5).Select(order => $"- **{order.ExternalOrderId}**: {order.Status}"));
+        return new(AssistantToolNames.ListMerchantOrders, true, new MerchantOrdersCardData(page.TotalCount, items), text, null);
+    }
+
+    private async Task<ToolExecutionResult> ExecuteAdminMerchantParcelsAsync(CancellationToken ct)
+    {
+        var database = serviceProvider.GetService<Func<DeliveryDbContext>>();
+        if (database is null)
+        {
+            return MerchantOrderFailure("delivery_unavailable", "Merchant parcels are temporarily unavailable.");
         }
 
         try
         {
-            var db = dbAccessor();
-            var query = db.Parcels.AsNoTracking();
-            if (currentDeliveryUser.IsMerchant && currentDeliveryUser.UserId is { } merchantId)
-            {
-                query = query.Where(p => p.MerchantId == merchantId);
-            }
-            else
-            {
-                query = query.Where(p => p.MerchantId != null);
-            }
-
-            var totalCount = await query.CountAsync(cancellationToken);
-            var orders = await query
-                .OrderByDescending(p => p.CreatedAt)
-                .Take(10)
-                .ToListAsync(cancellationToken);
-
-            var items = orders.Select(o => new MerchantOrderItem(
-                o.TrackingNumber,
-                o.ExternalOrderId,
-                ToFriendlyStatus(o.Status.ToString()),
-                ParseCity(o.DropoffAddress),
-                o.WeightKg,
-                null,
-                o.CreatedAt)).ToList();
-
-            var cardData = new MerchantOrdersCardData(totalCount, items);
-            var text = totalCount == 0
-                ? "You have not placed any commercial merchant orders yet. Use our REST API to automate order booking."
-                : $"You have **{totalCount} merchant orders** registered.\n" +
-                  string.Join("\n", items.Take(5).Select(o => $"• **{o.TrackingNumber}** (Ref: {o.ExternalOrderId ?? "None"}) → {o.RecipientCity} ({o.Status})"));
-
-            return new ToolExecutionResult(AssistantToolNames.ListMerchantOrders, true, cardData, text, null);
+            var query = database().Parcels.AsNoTracking().Where(parcel => parcel.MerchantId != null);
+            var count = await query.CountAsync(ct);
+            var parcels = await query.OrderByDescending(parcel => parcel.CreatedAt).ThenByDescending(parcel => parcel.Id)
+                .Take(MerchantOrderApi.AssistantPageSize).ToListAsync(ct);
+            var items = parcels.Select(parcel => new MerchantOrderItem(parcel.TrackingNumber, parcel.ExternalOrderId,
+                ToFriendlyStatus(parcel.Status.ToString()), ParseCity(parcel.DropoffAddress), parcel.WeightKg, null, parcel.CreatedAt)).ToArray();
+            return new(AssistantToolNames.ListMerchantOrders, true, new MerchantOrdersCardData(count, items),
+                $"Delivery has **{count} parcels from merchants**.", null);
         }
-        catch
+        catch (Exception) when (!ct.IsCancellationRequested)
         {
-            return new ToolExecutionResult(
-                AssistantToolNames.ListMerchantOrders,
-                true,
-                new MerchantOrdersCardData(0, Array.Empty<MerchantOrderItem>()),
-                "No merchant orders currently logged.",
-                null);
+            return MerchantOrderFailure("delivery_unavailable", "Merchant parcels are temporarily unavailable.");
         }
     }
 
-    private Task<ToolExecutionResult> ExecuteGetMerchantIntegrationGuideAsync(
-        JsonElement? arguments,
-        CancellationToken cancellationToken)
+    private static ToolExecutionResult MerchantOrderFailure(string code, string message) =>
+        new(AssistantToolNames.ListMerchantOrders, false, null, message, code);
+
+    private ToolExecutionResult GetMerchantIntegrationGuide()
     {
-        var webhookEvents = new[]
-        {
-            "parcel.created - Emitted upon successful parcel registration",
-            "parcel.assigned - Courier assigned to order",
-            "parcel.picked_up - Parcel collected from merchant hub",
-            "parcel.in_transit - Parcel moving between regional facilities",
-            "parcel.out_for_delivery - Courier out for doorstep delivery",
-            "parcel.delivered - Successful customer handover with proof",
-            "parcel.failed - Delivery attempt unsuccessful with reason"
-        };
-
-        var cardData = new MerchantIntegrationCardData(
-            "https://api.swiftdrop.lk/api/v1",
-            "POST /api/v1/deliveries",
-            webhookEvents,
+        var card = new MerchantIntegrationCardData(
+            settings["AI:PublicGatewayOrigin"] ?? "(your configured Gateway origin)",
+            $"POST {MerchantOrderApi.OrdersPath}", MerchantWebhookEventNames.All,
             "HMAC-SHA256 (X-SwiftDrop-Signature)",
-            "https://docs.swiftdrop.lk/merchant/integration");
-
-        var text = "### SwiftDrop Merchant API & Webhook Integration Guide\n\n" +
-            "**1. REST API Authentication**:\n" +
-            "Include your API token in the `Authorization: Bearer <API_KEY>` header. Manage keys in the Merchant Portal.\n\n" +
-            "**2. Parcel Creation Endpoint**:\n" +
-            "`POST /api/v1/deliveries` with externalOrderId, pickupAddress, dropoffAddress, and package weight/dimensions.\n\n" +
-            "**3. Supported Webhook Events**:\n" +
-            string.Join("\n", webhookEvents.Select(e => $"• `{e}`")) + "\n\n" +
-            "**4. Webhook Security**:\n" +
-            "Verify the `X-SwiftDrop-Signature` HMAC-SHA256 signature using your webhook secret to prevent replay attacks.";
-
-        return Task.FromResult(new ToolExecutionResult(
-            AssistantToolNames.GetMerchantIntegrationGuide,
-            true,
-            cardData,
-            text,
-            null));
+            settings["AI:MerchantDocumentationUrl"] ??
+                "https://github.com/SwiftDrop-Group09/swiftdrop-backend/blob/dev/docs/merchant-orders.md");
+        var text = $"Submit orders with `{card.Endpoint}` to {card.ApiBaseUrl}. Send an " +
+            $"active `{MerchantOrderApi.ApiKeyHeader}` with `orders:write` and one `{MerchantOrderApi.IdempotencyKeyHeader}`. " +
+            "Supply externalOrderId, pickupAddress, deliveryAddress, packageDetails, recipient and acceptedPriceVersion. " +
+            "A 202 returns a job; follow Location with an orders:read key for the same business.\\n\\n" +
+            $"Configure webhooks with an approved Merchant bearer JWT at `POST {MerchantOrderApi.WebhooksPath}` using " +
+            "url or endpointUrl and a list of delivery.* events. Available events are " +
+            string.Join(", ", card.WebhookEvents) + ". Verify X-SwiftDrop-Signature using HMAC-SHA256 over " +
+            "the timestamp, a period and the raw body. Reject stale timestamps and deduplicate by event ID.";
+        return new(AssistantToolNames.GetMerchantIntegrationGuide, true, card, text, null);
     }
 
     // -------------------------------------------------------------

@@ -17,6 +17,7 @@ using SwiftDrop.Delivery.Api.Application.Dispatch;
 using SwiftDrop.Delivery.Api.Application.Notifications;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Infrastructure.Admin;
+using SwiftDrop.Delivery.Api.Infrastructure.Assistant;
 using SwiftDrop.Delivery.Api.Infrastructure.Authentication;
 using SwiftDrop.Delivery.Api.Infrastructure.Bookings;
 using SwiftDrop.Delivery.Api.Infrastructure.CourierStatus;
@@ -118,6 +119,16 @@ public partial class Program
         builder.Services.AddScoped<CourierDutyHandler>();
         builder.Services.AddScoped<AdminCourierHandler>();
         builder.Services.AddScoped<AssistantToolExecutor>();
+        builder.Services.AddHttpClient<MerchantAssistantOrderClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(3);
+            client.MaxResponseContentBufferSize = 64 * 1024;
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = false,
+            UseProxy = false
+        });
         builder.Services.AddScoped<McpServerHandler>();
         builder.Services.AddScoped<AssistantOrchestrator>();
         builder.Services.AddHttpClient("MerchantInternal");

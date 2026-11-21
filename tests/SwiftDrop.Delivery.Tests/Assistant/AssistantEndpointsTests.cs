@@ -1,15 +1,19 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using SwiftDrop.Contracts.Http.V1;
 using SwiftDrop.Delivery.Api.Application;
 using SwiftDrop.Delivery.Api.Application.Assistant;
 using SwiftDrop.Delivery.Api.Application.Bookings;
 using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Domain;
+using SwiftDrop.Delivery.Api.Infrastructure.Assistant;
 using SwiftDrop.Delivery.Tests.Quotes;
 
 namespace SwiftDrop.Delivery.Tests.Assistant;
@@ -565,7 +569,57 @@ public sealed class AssistantEndpointsTests
         Assert.Single(chatResult!.ToolCalls);
         Assert.Equal(AssistantToolNames.GetMerchantIntegrationGuide, chatResult.ToolCalls[0].ToolName);
         Assert.NotNull(chatResult.Cards?.MerchantIntegration);
-        Assert.Contains("parcel.created", chatResult.Cards!.MerchantIntegration!.WebhookEvents[0]);
+        Assert.Equal($"POST {MerchantOrderApi.OrdersPath}", chatResult.Cards!.MerchantIntegration!.Endpoint);
+        Assert.Equal(MerchantWebhookEventNames.All, chatResult.Cards.MerchantIntegration.WebhookEvents);
+        Assert.Contains(MerchantOrderApi.ApiKeyHeader, chatResult.Reply);
+        Assert.Contains(MerchantOrderApi.IdempotencyKeyHeader, chatResult.Reply);
+        Assert.Contains("acceptedPriceVersion", chatResult.Reply);
+        Assert.Contains("deliveryAddress", chatResult.Reply);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.OK, "success")]
+    [InlineData(HttpStatusCode.Forbidden, "error")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "error")]
+    public async Task MerchantOrderToolForwardsTheOwnerCredentialAndDistinguishesFailures(HttpStatusCode status, string outcome)
+    {
+        using var factory = CreateFactory(QuoteApiFactory.Principal(Guid.NewGuid().ToString(), "Merchant"))
+            .WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+                services.AddHttpClient<MerchantAssistantOrderClient>().ConfigurePrimaryHttpMessageHandler(
+                    () => new MerchantOrderProbe(status))));
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-owner");
+        using var response = await client.PostAsJsonAsync("/api/v1/assistant/chat", new AssistantChatRequest("Show my orders"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = Assert.IsType<AssistantChatResponse>(await response.Content.ReadFromJsonAsync<AssistantChatResponse>());
+        Assert.Equal(outcome, Assert.Single(result.ToolCalls).Status);
+        if (status == HttpStatusCode.OK)
+        {
+            var order = Assert.Single(result.Cards!.MerchantOrders!.Orders);
+            Assert.Equal("pending-example", order.ExternalOrderId);
+            Assert.Equal("Accepted", order.Status);
+            Assert.Empty(order.TrackingNumber);
+        }
+        else
+        {
+            Assert.Null(result.Cards?.MerchantOrders);
+            Assert.Contains(status == HttpStatusCode.Forbidden ? "approved business" : "temporarily unavailable", result.Reply);
+        }
+    }
+
+    private sealed class MerchantOrderProbe(HttpStatusCode status) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal(MerchantOrderApi.AssistantOrdersPath, request.RequestUri?.PathAndQuery);
+            Assert.Equal("Bearer test-owner", request.Headers.Authorization?.ToString());
+            return Task.FromResult(new HttpResponseMessage(status)
+            {
+                Content = JsonContent.Create(new MerchantAssistantOrderPage(1,
+                    [new("pending-example", "Accepted", null, null, "Test city", 2.5m, null, DateTimeOffset.UnixEpoch)]))
+            });
+        }
     }
 
     [Fact]

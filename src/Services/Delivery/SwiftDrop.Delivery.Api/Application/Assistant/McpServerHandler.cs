@@ -135,7 +135,7 @@ public sealed class McpServerHandler(AssistantToolExecutor toolExecutor)
         // Merchant Tools
         new(
             AssistantToolNames.ListMerchantOrders,
-            "List recent commercial merchant parcels, external order references, and live fulfillment statuses.",
+            "List recent merchant orders and their fulfillment status, including pending jobs for an approved owner.",
             new
             {
                 type = "object",

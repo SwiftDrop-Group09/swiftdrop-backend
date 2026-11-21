@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using SwiftDrop.Contracts.Http.V1;
 using SwiftDrop.Merchant.Api.Application.Orders;
 using SwiftDrop.Merchant.Api.Application.Webhooks.Contracts;
 using SwiftDrop.Merchant.Api.Domain;
@@ -16,6 +17,49 @@ namespace SwiftDrop.Merchant.Tests.Orders;
 
 public sealed class MerchantContractTests
 {
+    [Theory]
+    [InlineData(BusinessStatus.Approved, HttpStatusCode.OK)]
+    [InlineData(BusinessStatus.Pending, HttpStatusCode.Forbidden)]
+    public async Task AssistantOrdersResolveOwnerToTheCorrectBusiness(BusinessStatus status, HttpStatusCode expected)
+    {
+        var ownerId = Guid.NewGuid();
+        using var host = new OrderAuthTestHost(MerchantApiFactory.Principal(ownerId, "Merchant"));
+        var ownerBusiness = await host.SeedBusinessAsync(status, ownerId);
+        var otherBusiness = await host.SeedBusinessAsync(BusinessStatus.Approved);
+        Assert.NotEqual(ownerId, ownerBusiness.Id);
+        Assert.NotEqual(ownerBusiness.Id, otherBusiness.Id);
+        using var client = host.CreateClient();
+
+        var example = Read("order.example.json");
+        var otherOrder = JsonNode.Parse(example)!.AsObject();
+        otherOrder["externalOrderId"] = "other-merchant-order";
+        var otherKey = await host.SeedKeyAsync(otherBusiness.Id, scopes: [ApiKeyScopes.OrdersWrite]);
+        using var other = await Submit(client, otherOrder.ToJsonString(), otherKey);
+        Assert.Equal(HttpStatusCode.Accepted, other.StatusCode);
+        if (status == BusinessStatus.Approved)
+        {
+            var ownKey = await host.SeedKeyAsync(ownerBusiness.Id, scopes: [ApiKeyScopes.OrdersWrite]);
+            using var own = await Submit(client, example, ownKey);
+            Assert.Equal(HttpStatusCode.Accepted, own.StatusCode);
+        }
+
+        using var response = await client.GetAsync(MerchantOrderApi.AssistantOrdersPath);
+        Assert.Equal(expected, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("other-merchant-order", body);
+        if (status == BusinessStatus.Approved)
+        {
+            var page = JsonSerializer.Deserialize<MerchantAssistantOrderPage>(body, JsonSerializerOptions.Web);
+            Assert.NotNull(page);
+            Assert.Equal(1, page.TotalCount);
+            var pending = Assert.Single(page.Items);
+            Assert.Equal("example-order-001", pending.ExternalOrderId);
+            Assert.Equal("Accepted", pending.State);
+            Assert.Null(pending.TrackingNumber);
+            Assert.Equal(2.5m, pending.WeightKg);
+        }
+    }
+
     [Fact]
     public async Task DocumentedOrderExampleAndResponseSchemasMatchTheApi()
     {

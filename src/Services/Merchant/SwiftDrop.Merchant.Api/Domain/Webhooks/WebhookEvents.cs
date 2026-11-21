@@ -1,27 +1,19 @@
+using SwiftDrop.Contracts.Http.V1;
+
 namespace SwiftDrop.Merchant.Api.Domain.Webhooks;
 
 public static class WebhookEvents
 {
-    public const string DeliveryCreated = "delivery.created";
-    public const string DeliveryAssigned = "delivery.assigned";
-    public const string DeliveryPickedUp = "delivery.picked_up";
-    public const string DeliveryInTransit = "delivery.in_transit";
-    public const string DeliveryOutForDelivery = "delivery.out_for_delivery";
-    public const string DeliveryDelivered = "delivery.delivered";
-    public const string DeliveryFailed = "delivery.failed";
-    public const string DeliveryCancelled = "delivery.cancelled";
+    public const string DeliveryCreated = MerchantWebhookEventNames.Created;
+    public const string DeliveryAssigned = MerchantWebhookEventNames.Assigned;
+    public const string DeliveryPickedUp = MerchantWebhookEventNames.PickedUp;
+    public const string DeliveryInTransit = MerchantWebhookEventNames.InTransit;
+    public const string DeliveryOutForDelivery = MerchantWebhookEventNames.OutForDelivery;
+    public const string DeliveryDelivered = MerchantWebhookEventNames.Delivered;
+    public const string DeliveryFailed = MerchantWebhookEventNames.Failed;
+    public const string DeliveryCancelled = MerchantWebhookEventNames.Cancelled;
 
-    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
-    {
-        DeliveryCreated,
-        DeliveryAssigned,
-        DeliveryPickedUp,
-        DeliveryInTransit,
-        DeliveryOutForDelivery,
-        DeliveryDelivered,
-        DeliveryFailed,
-        DeliveryCancelled
-    };
+    public static readonly IReadOnlySet<string> All = MerchantWebhookEventNames.All.ToHashSet(StringComparer.Ordinal);
 
     public static IReadOnlySet<string> ValidateAndNormalize(IEnumerable<string> requestedEvents)
     {

@@ -80,6 +80,12 @@ payload validation.
 The Gateway has no `/graphql` route. Existing ingress rules forwarding that
 path to Gateway receive 404 and may be removed from deployments.
 
+The Delivery assistant reads an approved owner's Merchant orders through
+the private Merchant service origin configured by `AI__MerchantApiOrigin`.
+Merchant validates the forwarded Identity bearer token and scopes the query
+to the caller's business. Set `AI__PublicGatewayOrigin` to show the deployment
+origin in the integration guide.
+
 ## Shared configuration contract
 
 Keys below apply within each owning host, not as global workload-prefixed keys.
