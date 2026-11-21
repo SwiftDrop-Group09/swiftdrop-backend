@@ -68,12 +68,22 @@ public sealed class InMemoryWebhookDispatchStore : IWebhookDispatchStore
         return Task.FromResult(_jobs.FirstOrDefault(j => j.Id == jobId));
     }
 
-    public Task<WebhookDeliveryJob?> GetJobBySubscriptionAndEventAsync(Guid subscriptionId, Guid eventId, int replayGeneration, CancellationToken ct)
+    public Task<int> AddAutomaticJobsAsync(IReadOnlyList<WebhookDeliveryJob> jobs, CancellationToken ct)
     {
-        return Task.FromResult(_jobs.FirstOrDefault(j =>
-            j.SubscriptionId == subscriptionId &&
-            j.EventId == eventId &&
-            j.ReplayGeneration == replayGeneration));
+        var created = 0;
+        foreach (var job in jobs)
+        {
+            if (_jobs.Any(existing => existing.SubscriptionId == job.SubscriptionId &&
+                existing.EventId == job.EventId && existing.ReplayGeneration == job.ReplayGeneration))
+            {
+                continue;
+            }
+
+            _jobs.Add(job);
+            created++;
+        }
+
+        return Task.FromResult(created);
     }
 
     public Task<WebhookDeliveryJob?> GetLatestJobByEventAsync(Guid subscriptionId, Guid eventId, CancellationToken ct)
@@ -82,16 +92,6 @@ public sealed class InMemoryWebhookDispatchStore : IWebhookDispatchStore
             .Where(j => j.SubscriptionId == subscriptionId && j.EventId == eventId)
             .OrderByDescending(j => j.ReplayGeneration)
             .FirstOrDefault());
-    }
-
-    public Task UpdateJobAsync(WebhookDeliveryJob job, CancellationToken ct)
-    {
-        var index = _jobs.FindIndex(j => j.Id == job.Id);
-        if (index >= 0)
-        {
-            _jobs[index] = job;
-        }
-        return Task.CompletedTask;
     }
 
     public Task CancelUnsentJobsBySubscriptionAsync(Guid subscriptionId, DateTimeOffset now, CancellationToken ct)
@@ -106,7 +106,8 @@ public sealed class InMemoryWebhookDispatchStore : IWebhookDispatchStore
     public Task<IReadOnlyList<WebhookDeliveryJob>> ClaimDueJobsAsync(int batchSize, TimeSpan leaseDuration, Guid leaseToken, DateTimeOffset now, CancellationToken ct)
     {
         var dueJobs = _jobs
-            .Where(j => j.Status == WebhookStatus.Pending && j.DueAt <= now && (j.LeasedUntil == null || j.LeasedUntil < now))
+            .Where(j => (j.LeasedUntil == null || j.LeasedUntil <= now) &&
+                ((j.Status == WebhookStatus.Pending && j.DueAt <= now) || j.Status == WebhookStatus.Processing))
             .Take(batchSize)
             .ToList();
 
@@ -118,10 +119,14 @@ public sealed class InMemoryWebhookDispatchStore : IWebhookDispatchStore
         return Task.FromResult<IReadOnlyList<WebhookDeliveryJob>>(dueJobs);
     }
 
-    public Task RecordAttemptAsync(WebhookAttempt attempt, CancellationToken ct)
+    public Task<bool> CompleteClaimAsync(WebhookDeliveryJob job, WebhookAttempt? attempt, CancellationToken ct)
     {
-        _attempts.Add(attempt);
-        return Task.CompletedTask;
+        if (attempt is not null)
+        {
+            _attempts.Add(attempt);
+        }
+
+        return Task.FromResult(true);
     }
 
     public Task<IReadOnlyList<WebhookAttempt>> ListAttemptsByJobAsync(Guid jobId, int skip, int take, CancellationToken ct)

@@ -15,7 +15,6 @@ public sealed class WebhookDispatchBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var workerToken = Guid.NewGuid();
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -23,7 +22,7 @@ public sealed class WebhookDispatchBackgroundService(
             {
                 using var scope = scopeFactory.CreateScope();
                 var handler = scope.ServiceProvider.GetRequiredService<ProcessDueWebhookJobsHandler>();
-                var processed = await handler.ProcessBatchAsync(BatchSize, LeaseDuration, workerToken, stoppingToken);
+                var processed = await handler.ProcessBatchAsync(BatchSize, LeaseDuration, Guid.NewGuid(), stoppingToken);
 
                 if (processed == 0)
                 {

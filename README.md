@@ -260,6 +260,19 @@ dispatch require short-lived service JWT files mounted under the Worker token
 directory; see the infrastructure README for provisioning instructions.
 Merchant's `Delivery__GrpcAddress` is a nonsecret internal endpoint.
 
+Merchant webhooks use at-least-once delivery within a bounded retry policy.
+Each automatic event creates one job per matching subscription. If a worker
+stops after sending but before recording the response, a later worker can
+send the same event again after the lease expires. Receivers should verify
+the signature against the raw body and deduplicate by
+`X-SwiftDrop-Event-Id` within their subscription. Retries and manual replays
+preserve that event ID.
+
+Merchant retries network failures, timeouts, HTTP 408, HTTP 429 and HTTP 5xx
+after 1, 5, 15, 30 and 60 minutes. A longer `Retry-After` can extend a retry
+delay up to 24 hours. Other HTTP failures end the job immediately. Approved
+merchants can inspect recorded attempts and manually replay failed jobs.
+
 Neon is the selected PostgreSQL deployment: four privately owned logical
 databases with separate connection secrets, never a shared schema or cross-service
 query. Use the actual provisioned Neon endpoints/roles and TLS settings; do not

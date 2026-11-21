@@ -144,6 +144,10 @@ public sealed class ResilientWebhookSender : IWebhookSender, IDisposable
                 FailureReason: "Request timed out after 10 seconds.",
                 CanRetry: true);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             stopwatch.Stop();
