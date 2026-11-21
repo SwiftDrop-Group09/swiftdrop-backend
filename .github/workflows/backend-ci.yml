@@ -52,6 +52,8 @@ jobs:
             project: src/Services/Merchant/SwiftDrop.Merchant.Api/SwiftDrop.Merchant.Api.csproj
           - service: notification-worker
             project: src/Workers/SwiftDrop.Notification.Worker/SwiftDrop.Notification.Worker.csproj
+          - service: delivery-outbox-relay
+            project: src/Workers/SwiftDrop.Delivery.OutboxRelay/SwiftDrop.Delivery.OutboxRelay.csproj
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,6 +66,12 @@ jobs:
         with:
           context: .
           push: false
+          load: ${{ matrix.service == 'delivery-outbox-relay' }}
+          tags: swiftdrop-ci/${{ matrix.service }}:test
           build-args: PROJECT_FILE=${{ matrix.project }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Verify relay startup, publish confirmation and broker recovery
+        if: matrix.service == 'delivery-outbox-relay'
+        run: bash scripts/verify-delivery-outbox-relay.sh swiftdrop-ci/delivery-outbox-relay:test
