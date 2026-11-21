@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
+using SwiftDrop.Delivery.Api.Application.Assistant;
 using SwiftDrop.Delivery.Api.Domain;
 using SwiftDrop.Delivery.Tests.Courier;
 using SwiftDrop.Delivery.Tests.Persistence;
@@ -14,6 +16,32 @@ namespace SwiftDrop.Delivery.Tests.DeliveryReads;
 [Collection("Postgres")]
 public sealed class TrackingSseTests(PostgresFixture fixture, ITestOutputHelper output)
 {
+    [Fact]
+    public async Task McpParcelIdTrackingChecksTheSameOwnerScopeAsDeliveryReads()
+    {
+        await using var scenario = await StatusTestScenario.CreateAsync(fixture, ParcelStatus.PickedUp);
+        var parcel = (await scenario.GraphAsync()).Parcel;
+        var parameters = JsonSerializer.SerializeToElement(new
+        {
+            name = AssistantToolNames.TrackParcel,
+            arguments = new { parcelId = parcel.Id }
+        });
+        var request = new McpRequest("2.0", "test", "tools/call", parameters);
+        using var foreignHost = scenario.CreateFactory(Guid.NewGuid(), "Customer");
+        using var foreign = foreignHost.CreateClient();
+        using var denied = await foreign.PostAsJsonAsync("/api/v1/mcp", request);
+        using var failed = JsonDocument.Parse(await denied.Content.ReadAsStringAsync());
+        Assert.True(failed.RootElement.GetProperty("result").GetProperty("isError").GetBoolean());
+        Assert.DoesNotContain(parcel.TrackingNumber, failed.RootElement.GetRawText());
+
+        using var ownerHost = scenario.CreateFactory(parcel.CustomerId!.Value, "Customer");
+        using var owner = ownerHost.CreateClient();
+        using var accepted = await owner.PostAsJsonAsync("/api/v1/mcp", request);
+        using var success = JsonDocument.Parse(await accepted.Content.ReadAsStringAsync());
+        Assert.False(success.RootElement.GetProperty("result").GetProperty("isError").GetBoolean());
+        Assert.Contains(parcel.TrackingNumber, success.RootElement.GetRawText());
+    }
+
     [Fact]
     public async Task AuthenticatedStreamReportsCommittedStatusToItsOwner()
     {

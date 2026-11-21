@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SwiftDrop.Contracts.Http.V1;
 using SwiftDrop.Delivery.Api.Application.Admin.Pricing;
 using SwiftDrop.Delivery.Api.Application.Admin.Reports;
@@ -18,14 +19,13 @@ using SwiftDrop.Delivery.Api.Infrastructure.Persistence;
 namespace SwiftDrop.Delivery.Api.Application.Assistant;
 
 public sealed class AssistantToolExecutor(
-    ICurrentCustomer currentCustomer,
     ICurrentDeliveryUser currentDeliveryUser,
     CustomerTrackingHandler trackingHandler,
-    QuoteEstimator quoteEstimator,
     IBookingZoneCatalog zoneCatalog,
     IQuoteStore quoteStore,
     MerchantAssistantOrderClient merchantOrders,
     IConfiguration settings,
+    IOptions<AssistantLimits> limits,
     IServiceProvider serviceProvider)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -50,6 +50,15 @@ public sealed class AssistantToolExecutor(
         JsonElement? arguments,
         CancellationToken cancellationToken = default)
     {
+        if (!AssistantToolNames.All.Contains(toolName))
+            return new(toolName, false, null, "Unknown tool.", "unknown_tool");
+        if (!AssistantToolPolicy.CanUse(currentDeliveryUser, toolName))
+            return currentDeliveryUser.IsAuthenticated
+                ? new(toolName, false, null, "This tool is unavailable for your role.", "forbidden")
+                : new(toolName, false, null, "Authentication required to use this tool.", "unauthenticated");
+        if (!AssistantToolPolicy.ValidArguments(toolName, arguments, limits.Value.ToolArgumentCharacters))
+            return new(toolName, false, null, "Supply valid arguments for this tool.", "invalid_arguments");
+
         return toolName switch
         {
             AssistantToolNames.TrackParcel => await ExecuteTrackParcelAsync(arguments, cancellationToken),
@@ -92,6 +101,19 @@ public sealed class AssistantToolExecutor(
         var input = Deserialize<TrackParcelInput>(arguments) ?? new TrackParcelInput();
         var trackingNumber = input.TrackingNumber?.Trim();
 
+        if (input.ParcelId is { } parcelId)
+        {
+            if (!currentDeliveryUser.IsAuthenticated)
+                return new(AssistantToolNames.TrackParcel, false, null, "Provide a public tracking number.", "forbidden");
+            if (!string.IsNullOrEmpty(trackingNumber) || !Guid.TryParse(parcelId, out var id) || id == Guid.Empty)
+                return new(AssistantToolNames.TrackParcel, false, null, "Provide one valid parcel identifier.", "invalid_arguments");
+
+            var authorized = await trackingHandler.GetParcelEventsAsync(id.ToString("D"), cancellationToken: cancellationToken);
+            if (authorized.Response is not { } parcel)
+                return new(AssistantToolNames.TrackParcel, false, null, "This parcel is unavailable.", "parcel_unavailable");
+            trackingNumber = parcel.TrackingNumber;
+        }
+
         // If no tracking number supplied, check if caller is an authenticated Customer with parcels
         if (string.IsNullOrWhiteSpace(trackingNumber))
         {
@@ -128,10 +150,9 @@ public sealed class AssistantToolExecutor(
             var customerListResult = await trackingHandler.ListParcelsAsync(
                 new CustomerParcelQueryInput(Search: trackingNumber, PageSize: "1"), cancellationToken);
 
-            if (customerListResult.Response is { } customerPage && customerPage.Items.Count > 0)
+            if (customerListResult.Response?.Items.FirstOrDefault(parcel =>
+                string.Equals(parcel.TrackingNumber, trackingNumber, StringComparison.OrdinalIgnoreCase)) is { } parcel)
             {
-                var parcel = customerPage.Items[0];
-                var eventsResult = await trackingHandler.GetParcelEventsAsync(parcel.Id.ToString(), false, cancellationToken);
                 var publicResult = await trackingHandler.GetPublicTrackingAsync(trackingNumber, false, cancellationToken);
 
                 var steps = BuildMilestones(parcel.Status, publicResult.Response?.Timeline);
@@ -337,52 +358,6 @@ public sealed class AssistantToolExecutor(
         var pickupCity = pickupZone.Name;
         var deliveryCity = deliveryZone.Name;
 
-        // If authenticated Customer, calculate and persist an owner-bound quote via QuoteEstimator
-        if (currentCustomer.IsAuthenticated && currentCustomer.IsCustomer)
-        {
-            var quoteInput = new QuoteInput(
-                PickupAddress: new AddressInput("Main St", pickupCity, "10100", pickupZone.Id.ToString()),
-                DeliveryAddress: new AddressInput("Cross St", deliveryCity, "20000", deliveryZone.Id.ToString()),
-                PackageDetails: new PackageDetailsInput(weight, resolvedSize),
-                Recipient: new RecipientInput("Recipient", "+94771234567"));
-
-            var estimateResult = await quoteEstimator.ExecuteAsync(quoteInput, cancellationToken);
-            if (estimateResult.Quote is { } quote)
-            {
-                var deepLink = $"/customer/book?quoteId={quote.QuoteId}&pickupCity={Uri.EscapeDataString(pickupCity)}&deliveryCity={Uri.EscapeDataString(deliveryCity)}&weight={weight}&size={resolvedSize}";
-
-                var card = new QuoteCardData(
-                    quote.QuoteId,
-                    quote.Total,
-                    quote.Currency,
-                    quote.PricingVersion,
-                    quote.ExpiresAt,
-                    weight,
-                    resolvedSize,
-                    pickupCity,
-                    deliveryCity,
-                    deepLink);
-
-                var expiryText = quote.ExpiresAt.ToString("h:mm tt");
-                var summaryText = $"Sending a **{weight} kg ({resolvedSize})** parcel from **{pickupCity}** to **{deliveryCity}** costs **{quote.Currency} {quote.Total:N2}**. This quote is locked until {expiryText}—you can proceed to book directly below.";
-
-                return new ToolExecutionResult(
-                    AssistantToolNames.EstimateDeliveryFee,
-                    true,
-                    card,
-                    summaryText,
-                    null);
-            }
-
-            return new ToolExecutionResult(
-                AssistantToolNames.EstimateDeliveryFee,
-                false,
-                null,
-                $"Pricing calculation failed: {estimateResult.Failure?.ToString() ?? "pricing_unavailable"}",
-                estimateResult.Failure?.ToString() ?? "pricing_unavailable");
-        }
-
-        // Guest / Public rate preview
         if (!Enum.TryParse<ParcelSize>(resolvedSize, true, out var parsedSizeEnum))
         {
             parsedSizeEnum = ParcelSize.Small;
@@ -408,7 +383,7 @@ public sealed class AssistantToolExecutor(
                     deliveryCity,
                     deepLink);
 
-                var summaryText = $"Estimated delivery fee for a **{weight} kg ({resolvedSize})** parcel from **{pickupCity}** to **{deliveryCity}** is approximately **{tier.Currency} {calculated.Total:N2}**. Sign in to lock an official quote.";
+                var summaryText = $"Estimated delivery fee for a **{weight} kg ({resolvedSize})** parcel from **{pickupCity}** to **{deliveryCity}** is approximately **{tier.Currency} {calculated.Total:N2}**. Open booking to request an official quote.";
 
                 return new ToolExecutionResult(
                     AssistantToolNames.EstimateDeliveryFee,

@@ -1,5 +1,6 @@
 using SwiftDrop.Auditing;
 using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Contracts.Events.V1;
 using SwiftDrop.Delivery.Api.Application;
@@ -37,6 +38,8 @@ public partial class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddHealthChecks();
+        builder.Services.AddOptions<AssistantLimits>().BindConfiguration("AI:Limits")
+            .ValidateDataAnnotations().ValidateOnStart();
         builder.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -47,6 +50,17 @@ public partial class Program
                 limiter.PermitLimit = builder.Configuration.GetValue("Tracking:PublicStreamLimit", 64);
                 limiter.QueueLimit = 0;
             });
+            var anonymousBudget = builder.Configuration.GetValue("AI:Limits:AnonymousRequestsPerMinute", 120);
+            options.AddPolicy(AssistantEndpoints.AnonymousRequestPolicy, context =>
+                context.User.Identity?.IsAuthenticated == true
+                    ? RateLimitPartition.GetNoLimiter("authenticated")
+                    : RateLimitPartition.GetFixedWindowLimiter("anonymous", _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = anonymousBudget,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0,
+                        AutoReplenishment = true
+                    }));
         });
         builder.Services.AddGrpc(options => options.MaxReceiveMessageSize = 16 * 1024);
         builder.Services.AddScoped<MerchantDeliveryGrpcService>();
@@ -119,6 +133,8 @@ public partial class Program
         builder.Services.AddScoped<CourierDutyHandler>();
         builder.Services.AddScoped<AdminCourierHandler>();
         builder.Services.AddScoped<AssistantToolExecutor>();
+        builder.Services.AddHttpClient<AssistantGeminiClient>(client => client.MaxResponseContentBufferSize = 128 * 1024)
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
         builder.Services.AddHttpClient<MerchantAssistantOrderClient>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(3);

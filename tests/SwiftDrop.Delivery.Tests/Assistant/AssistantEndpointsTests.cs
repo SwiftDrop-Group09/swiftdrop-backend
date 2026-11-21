@@ -3,7 +3,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SwiftDrop.Contracts.Http.V1;
@@ -406,9 +408,10 @@ public sealed class AssistantEndpointsTests
         var tools = doc.RootElement.GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToList();
 
         Assert.Contains(AssistantToolNames.TrackParcel, tools);
-        Assert.Contains(AssistantToolNames.ListMyParcels, tools);
+        Assert.Contains(AssistantToolNames.EstimateDeliveryTime, tools);
         Assert.Contains(AssistantToolNames.EstimateDeliveryFee, tools);
         Assert.Contains(AssistantToolNames.ListServiceZones, tools);
+        Assert.Equal(4, tools.Count);
     }
 
     [Fact]
@@ -462,10 +465,16 @@ public sealed class AssistantEndpointsTests
         Assert.NotNull(rpcResponse.Result);
     }
 
-    [Fact]
-    public async Task McpTools_GetCatalog_ReturnsAllowlistedTools()
+    [Theory]
+    [InlineData(null, 4, AssistantToolNames.EstimateDeliveryTime)]
+    [InlineData("Customer", 5, AssistantToolNames.ListMyParcels)]
+    [InlineData("Courier", 8, AssistantToolNames.GetCourierAssignedDeliveries)]
+    [InlineData("Dispatcher", 7, AssistantToolNames.ListUnassignedParcels)]
+    [InlineData("Merchant", 6, AssistantToolNames.ListMerchantOrders)]
+    [InlineData("Admin", 12, AssistantToolNames.GetDeliverySystemReports)]
+    public async Task McpTools_GetCatalog_ReturnsAllowlistedTools(string? role, int count, string expected)
     {
-        using var factory = CreateFactory(null);
+        using var factory = CreateFactory(role is null ? null : QuoteApiFactory.Principal(Guid.NewGuid().ToString(), role));
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/api/v1/mcp/tools");
@@ -473,12 +482,113 @@ public sealed class AssistantEndpointsTests
 
         var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var tools = doc.RootElement.GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToList();
-        Assert.Equal(17, tools.Count);
-        Assert.Contains(AssistantToolNames.EstimateDeliveryTime, tools);
-        Assert.Contains(AssistantToolNames.GetCourierAssignedDeliveries, tools);
-        Assert.Contains(AssistantToolNames.ListUnassignedParcels, tools);
-        Assert.Contains(AssistantToolNames.ListMerchantOrders, tools);
-        Assert.Contains(AssistantToolNames.GetDeliverySystemReports, tools);
+        Assert.Equal(count, tools.Count);
+        Assert.Contains(expected, tools);
+    }
+
+    [Theory]
+    [InlineData(null, AssistantToolNames.ListMyParcels, "{}")]
+    [InlineData("Customer", AssistantToolNames.GetDeliverySystemReports, "{}")]
+    [InlineData("Courier", AssistantToolNames.ListMerchantOrders, "{}")]
+    [InlineData(null, AssistantToolNames.TrackParcel, """{"parcelId":"11111111-1111-4111-8111-111111111111"}""")]
+    [InlineData(null, AssistantToolNames.EstimateDeliveryFee, """{"weightKg":"2","pickupCity":"Colombo"}""")]
+    [InlineData(null, AssistantToolNames.TrackParcel, """{"trackingNumber":"SD-2026-0001","unknownParameter":true}""")]
+    public async Task McpToolCallRejectsUnauthorizedOrInvalidArguments(string? role, string tool, string arguments)
+    {
+        using var factory = CreateFactory(role is null ? null : QuoteApiFactory.Principal(Guid.NewGuid().ToString(), role));
+        using var client = factory.CreateClient();
+        using var args = JsonDocument.Parse(arguments);
+        var parameters = JsonSerializer.SerializeToElement(new { name = tool, arguments = args.RootElement });
+        using var response = await client.PostAsJsonAsync("/api/v1/mcp", new McpRequest("2.0", "test", "tools/call", parameters));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var result = payload.RootElement.GetProperty("result");
+        Assert.True(result.GetProperty("isError").GetBoolean());
+        Assert.False(result.TryGetProperty("structuredContent", out var data) && data.ValueKind != JsonValueKind.Null);
+    }
+
+    [Theory]
+    [InlineData(false, HttpStatusCode.OK, false, true)]
+    [InlineData(true, HttpStatusCode.OK, false, true)]
+    [InlineData(false, HttpStatusCode.TooManyRequests, false, false)]
+    [InlineData(false, HttpStatusCode.OK, true, false)]
+    public async Task GeminiReceivesOnlyPublicIntentAndInvalidResponsesFallBack(bool tracking, HttpStatusCode status,
+        bool invalidTool, bool useGemini)
+    {
+        const string trackingNumber = "SD-PRIVATE-1234";
+        const string historyMarker = "Private history marker";
+        var store = new TestCustomerReadStore
+        {
+            PublicSummary = new(trackingNumber, "InTransit", "Colombo", "Kandy", DateTimeOffset.UnixEpoch, [])
+        };
+        var tool = tracking ? AssistantToolNames.TrackParcel : AssistantToolNames.EstimateDeliveryFee;
+        var probe = new GeminiProbe(tool, status, invalidTool);
+        using var factory = CreateFactory(null, store).WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["AI:ApiKey"] = new string('g', 39) }));
+            builder.ConfigureTestServices(services => services.AddHttpClient<AssistantGeminiClient>()
+                .ConfigurePrimaryHttpMessageHandler(() => probe));
+        });
+        using var client = factory.CreateClient();
+        var message = tracking ? $"Track {trackingNumber}" : "How much to send 2 kg from Colombo to Kandy?";
+        using var response = await client.PostAsJsonAsync("/api/v1/assistant/chat",
+            new AssistantChatRequest(message, History: [new("user", historyMarker)]));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = Assert.IsType<AssistantChatResponse>(await response.Content.ReadFromJsonAsync<AssistantChatResponse>());
+        Assert.Equal(tool, Assert.Single(result.ToolCalls).ToolName);
+        Assert.Equal(useGemini ? "gemini (gemini-3.5-flash-lite)" : "mcp-local-agent", result.Mode);
+        Assert.NotNull(probe.Body);
+        Assert.DoesNotContain(trackingNumber, probe.Body);
+        Assert.DoesNotContain(historyMarker, probe.Body);
+        Assert.DoesNotContain(message, probe.Body);
+    }
+
+    private sealed class GeminiProbe(string tool, HttpStatusCode status, bool invalidTool) : HttpMessageHandler
+    {
+        public string? Body { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Body = await request.Content!.ReadAsStringAsync(cancellationToken);
+            Assert.Empty(request.RequestUri!.Query);
+            Assert.True(request.Headers.Contains("x-goog-api-key"));
+            var name = invalidTool ? AssistantToolNames.GetAdminSystemOverview : tool;
+            return new HttpResponseMessage(status)
+            {
+                Content = JsonContent.Create(new
+                {
+                    candidates = new[] { new { content = new { parts = new[] { new { functionCall = new { name, args = new { } } } } } } }
+                })
+            };
+        }
+    }
+
+    [Fact]
+    public async Task AnonymousAssistantRequestsShareAConfiguredServiceBudget()
+    {
+        using var factory = CreateFactory(null).WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["AI:Limits:AnonymousRequestsPerMinute"] = "1" })));
+        using var client = factory.CreateClient();
+        using var discovery = await client.GetAsync("/api/v1/mcp/tools");
+        Assert.Equal(HttpStatusCode.OK, discovery.StatusCode);
+        using var chat = await client.PostAsJsonAsync("/api/v1/assistant/chat", new AssistantChatRequest("hello"));
+        Assert.Equal(HttpStatusCode.TooManyRequests, chat.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChatRejectsOversizedRequestsAndUntrustedHistoryRoles()
+    {
+        using var factory = CreateFactory(null);
+        using var client = factory.CreateClient();
+        using var message = await client.PostAsJsonAsync("/api/v1/assistant/chat", new AssistantChatRequest(new string('x', 1501)));
+        Assert.Equal(HttpStatusCode.BadRequest, message.StatusCode);
+        using var history = await client.PostAsJsonAsync("/api/v1/assistant/chat",
+            new AssistantChatRequest("hello", History: [new("system", "untrusted history")]));
+        Assert.Equal(HttpStatusCode.BadRequest, history.StatusCode);
+        using var body = await client.PostAsJsonAsync("/api/v1/assistant/chat", new AssistantChatRequest(new string('x', 32769)));
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, body.StatusCode);
     }
 
     [Fact]
@@ -738,7 +848,8 @@ public sealed class AssistantEndpointsTests
             return Task.FromResult(new QuotePricingData(true, true, [tier]));
         }
 
-        public Task SaveAsync(Quote quote, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SaveAsync(Quote quote, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("The read-only assistant must not save a quote.");
     }
 
     private sealed class TestCustomerReadStore : ICustomerDeliveryReadStore
