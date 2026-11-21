@@ -18,5 +18,6 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="../SwiftDrop.Delivery.Tests/Persistence/PostgresFixture.cs" Link="Persistence/PostgresFixture.cs" />
   </ItemGroup>
 </Project>

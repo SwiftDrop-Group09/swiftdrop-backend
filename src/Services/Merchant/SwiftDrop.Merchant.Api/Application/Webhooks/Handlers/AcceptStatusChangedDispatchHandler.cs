@@ -59,12 +59,6 @@ public sealed class AcceptStatusChangedDispatchHandler(
 
         foreach (var subscription in subscriptions)
         {
-            var existing = await dispatchStore.GetJobBySubscriptionAndEventAsync(subscription.Id, payload.EventId, replayGeneration: 0, ct);
-            if (existing is not null)
-            {
-                continue;
-            }
-
             var job = WebhookDeliveryJob.CreateAutomatic(
                 payload.EventId,
                 subscription.Id,
@@ -76,11 +70,7 @@ public sealed class AcceptStatusChangedDispatchHandler(
             jobsToCreate.Add(job);
         }
 
-        if (jobsToCreate.Count > 0)
-        {
-            await dispatchStore.AddJobsAsync(jobsToCreate, ct);
-        }
-
-        return (new InternalDispatchResponse(payload.EventId, subscriptions.Count, jobsToCreate.Count, "accepted"), null);
+        var created = await dispatchStore.AddAutomaticJobsAsync(jobsToCreate, ct);
+        return (new InternalDispatchResponse(payload.EventId, subscriptions.Count, created, "accepted"), null);
     }
 }

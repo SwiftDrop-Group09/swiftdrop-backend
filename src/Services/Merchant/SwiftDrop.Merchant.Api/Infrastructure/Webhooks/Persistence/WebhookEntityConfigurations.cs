@@ -78,7 +78,7 @@ public static class WebhookEntityConfigurations
         jobs.Property(x => x.AttemptCount).IsRequired();
         jobs.Property(x => x.DueAt).IsRequired();
         jobs.Property(x => x.LeasedUntil);
-        jobs.Property(x => x.LeaseToken);
+        jobs.Property(x => x.LeaseToken).IsConcurrencyToken();
         jobs.Property(x => x.SafeErrorCode).HasMaxLength(64);
         jobs.Property(x => x.CreatedAt).IsRequired();
         jobs.Property(x => x.UpdatedAt).IsRequired();

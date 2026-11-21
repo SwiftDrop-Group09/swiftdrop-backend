@@ -75,11 +75,13 @@ public sealed class WebhookDeliveryJob
 
     public void Claim(DateTimeOffset leaseUntil, Guid leaseToken, DateTimeOffset now)
     {
-        if (Status != WebhookStatus.Pending)
+        if (Status != WebhookStatus.Pending &&
+            (Status != WebhookStatus.Processing || LeasedUntil > now))
         {
-            throw new InvalidOperationException($"Cannot claim webhook job in status '{Status}'. Only Pending jobs can be claimed.");
+            throw new InvalidOperationException("Only pending jobs and jobs with expired processing leases can be claimed.");
         }
 
+        WebhookGuard.Id(leaseToken, nameof(leaseToken));
         Status = WebhookStatus.Processing;
         LeasedUntil = leaseUntil.ToUniversalTime();
         LeaseToken = leaseToken;
@@ -99,7 +101,7 @@ public sealed class WebhookDeliveryJob
             Status = WebhookStatus.Delivered;
             SafeErrorCode = null;
         }
-        else if (nextRetryAt.HasValue && AttemptCount < 6)
+        else if (nextRetryAt.HasValue && AttemptCount < WebhookRetryPolicy.MaxAttempts)
         {
             Status = WebhookStatus.Pending;
             DueAt = nextRetryAt.Value.ToUniversalTime();
