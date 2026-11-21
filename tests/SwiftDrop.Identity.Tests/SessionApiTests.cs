@@ -92,17 +92,20 @@ public sealed class SessionApiTests(IdentityPostgresFixture database)
     {
         using var factory = new IdentityApiFactory(database);
         using var client = factory.Client();
+        var email = NewEmail();
         using var response = await client.PostAsJsonAsync("/api/v1/auth/register", new
         {
-            email = NewEmail(),
+            email,
             password = Password,
             fullName = "Customer",
             roles = new[] { "Admin", "Courier", "Merchant" },
             isActive = true
         });
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var profile = await response.Content.ReadFromJsonAsync<RegisteredProfile>();
-        Assert.NotNull(profile);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0L, await ScalarAsync<long>("SELECT COUNT(*) FROM public.users WHERE normalized_email=@email",
+            ("email", email.ToUpperInvariant())));
+
+        var profile = await RegisterAsync(client, email);
         Assert.Equal(["Customer"], profile.Roles);
         Assert.Equal(1L, await ScalarAsync<long>("SELECT COUNT(*) FROM public.user_roles WHERE user_id=@id", ("id", profile.Id)));
         Assert.Equal("Customer", await ScalarAsync<string>("SELECT role_name FROM public.user_roles WHERE user_id=@id", ("id", profile.Id)));
