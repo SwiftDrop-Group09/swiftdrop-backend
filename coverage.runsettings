@@ -1,0 +1,19 @@
+<RunSettings>
+  <RunConfiguration>
+    <!-- Match test.runsettings, including the explicit audit-test opt-in. -->
+    <EnvironmentVariables><Audit__Enabled>false</Audit__Enabled></EnvironmentVariables>
+  </RunConfiguration>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura,opencover</Format>
+          <Include>[SwiftDrop.*]*</Include>
+          <Exclude>[*.Tests]*,[*.Harness]*</Exclude>
+          <ExcludeByAttribute>GeneratedCodeAttribute</ExcludeByAttribute>
+          <ExcludeByFile>**/obj/**,**/*.g.cs,**/*.g.i.cs,**/Migrations/*.Designer.cs,**/Migrations/*ModelSnapshot.cs,**/SwiftDrop.Gateway/Program.cs</ExcludeByFile>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

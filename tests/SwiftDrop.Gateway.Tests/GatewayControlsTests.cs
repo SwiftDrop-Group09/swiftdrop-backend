@@ -138,7 +138,7 @@ public sealed class GatewayControlsTests
         Assert.Equal("data: first", await reader.ReadLineAsync(cancellationToken));
         Assert.Equal("", await reader.ReadLineAsync(cancellationToken));
 
-        using var busy = await client.GetAsync("/api/v1/parcels/another/events", cancellationToken);
+        using var busy = await client.GetAsync("/api/v1/parcels/track/another/events", cancellationToken);
         Assert.Equal(HttpStatusCode.TooManyRequests, busy.StatusCode);
         using var tracking = await client.GetAsync("/api/v1/parcels/track/sample", cancellationToken);
         Assert.Equal(HttpStatusCode.OK, tracking.StatusCode);
@@ -148,7 +148,7 @@ public sealed class GatewayControlsTests
         Assert.Equal("data: second", await reader.ReadLineAsync(cancellationToken));
         Assert.Equal("", await reader.ReadLineAsync(cancellationToken));
         Assert.Null(await reader.ReadLineAsync(cancellationToken));
-        using var after = await client.GetAsync("/api/v1/parcels/another/events", cancellationToken);
+        using var after = await client.GetAsync("/api/v1/parcels/track/another/events", cancellationToken);
         Assert.Equal(HttpStatusCode.OK, after.StatusCode);
     }
 

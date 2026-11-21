@@ -176,16 +176,25 @@ public sealed class OrderApiTests
         await AssertProblemAsync(response, HttpStatusCode.BadRequest, "validation");
     }
 
-    [Fact]
-    public async Task Submit_KeyWithoutWriteScope_Returns403()
+    [Theory]
+    [InlineData(false, HttpStatusCode.Forbidden)]
+    [InlineData(true, HttpStatusCode.Unauthorized)]
+    public async Task Submit_DeniedKeyDoesNotCreateAnOrderOrConsumeIdempotency(bool revoked, HttpStatusCode status)
     {
         using var host = new OrderAuthTestHost();
-        var key = await ApprovedKeyAsync(host, [ApiKeyScopes.OrdersRead]);
+        var business = await host.SeedBusinessAsync(BusinessStatus.Approved);
+        var denied = await host.SeedKeyAsync(business.Id, revoked,
+            revoked ? ReadWrite : [ApiKeyScopes.OrdersRead]);
+        var allowed = await host.SeedKeyAsync(business.Id, scopes: ReadWrite);
         using var client = host.CreateClient();
 
-        using var response = await SubmitAsync(client, key, "idem-1", Order("ORD-1001"));
+        using var response = await SubmitAsync(client, denied, "idem-1", Order("ORD-1001"));
+        Assert.Equal(status, response.StatusCode);
+        Assert.Equal(0, (await ListAsync(client, allowed, "")).TotalCount);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        using var accepted = await SubmitAsync(client, allowed, "idem-1", Order("ORD-1001"));
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        Assert.Equal(1, (await ListAsync(client, allowed, "")).TotalCount);
     }
 
     [Fact]

@@ -121,8 +121,17 @@ public sealed class CustomerTrackingHandler(
         }
     }
 
-    public async Task<DeliveryReadResult<PublicTrackingSummary>> GetPublicTrackingAsync(
-        string trackingNumber, bool invalidParameters = false, CancellationToken cancellationToken = default)
+    public Task<DeliveryReadResult<PublicTrackingSummary>> GetPublicTrackingAsync(
+        string trackingNumber, bool invalidParameters = false, CancellationToken cancellationToken = default) =>
+        ReadPublicTrackingAsync(trackingNumber, invalidParameters, store.GetPublicTrackingAsync, cancellationToken);
+
+    public Task<DeliveryReadResult<PublicTrackingEventSnapshot>> GetPublicTrackingSnapshotAsync(
+        string trackingNumber, bool invalidParameters = false, CancellationToken cancellationToken = default) =>
+        ReadPublicTrackingAsync(trackingNumber, invalidParameters, store.GetPublicTrackingSnapshotAsync, cancellationToken);
+
+    private static async Task<DeliveryReadResult<T>> ReadPublicTrackingAsync<T>(
+        string trackingNumber, bool invalidParameters, Func<string, CancellationToken, Task<T?>> read,
+        CancellationToken cancellationToken) where T : class
     {
         if (invalidParameters)
             return new(null, DeliveryReadFailure.InvalidInput,
@@ -134,8 +143,8 @@ public sealed class CustomerTrackingHandler(
 
         try
         {
-            var summary = await store.GetPublicTrackingAsync(trimmed, cancellationToken);
-            return summary is null ? new(null, DeliveryReadFailure.NotFound) : new(summary, null);
+            var result = await read(trimmed, cancellationToken);
+            return result is null ? new(null, DeliveryReadFailure.NotFound) : new(result, null);
         }
         catch (DeliveryReadUnavailableException)
         {

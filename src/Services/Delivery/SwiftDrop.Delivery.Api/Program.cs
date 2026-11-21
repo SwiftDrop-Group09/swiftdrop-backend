@@ -1,4 +1,6 @@
 using SwiftDrop.Auditing;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Contracts.Events.V1;
 using SwiftDrop.Delivery.Api.Application;
@@ -16,6 +18,7 @@ using SwiftDrop.Delivery.Api.Application.Dispatch;
 using SwiftDrop.Delivery.Api.Application.Notifications;
 using SwiftDrop.Delivery.Api.Application.Quotes;
 using SwiftDrop.Delivery.Api.Infrastructure.Admin;
+using SwiftDrop.Delivery.Api.Infrastructure.Assistant;
 using SwiftDrop.Delivery.Api.Infrastructure.Authentication;
 using SwiftDrop.Delivery.Api.Infrastructure.Bookings;
 using SwiftDrop.Delivery.Api.Infrastructure.CourierStatus;
@@ -35,6 +38,30 @@ public partial class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddHealthChecks();
+        builder.Services.AddOptions<AssistantLimits>().BindConfiguration("AI:Limits")
+            .ValidateDataAnnotations().ValidateOnStart();
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.OnRejected = async (context, ct) =>
+                await context.HttpContext.Response.WriteAsJsonAsync(new { code = "rate_limit_exceeded" }, ct);
+            options.AddConcurrencyLimiter(DeliveryReadEndpoints.PublicTrackingStreamsPolicy, limiter =>
+            {
+                limiter.PermitLimit = builder.Configuration.GetValue("Tracking:PublicStreamLimit", 64);
+                limiter.QueueLimit = 0;
+            });
+            var anonymousBudget = builder.Configuration.GetValue("AI:Limits:AnonymousRequestsPerMinute", 120);
+            options.AddPolicy(AssistantEndpoints.AnonymousRequestPolicy, context =>
+                context.User.Identity?.IsAuthenticated == true
+                    ? RateLimitPartition.GetNoLimiter("authenticated")
+                    : RateLimitPartition.GetFixedWindowLimiter("anonymous", _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = anonymousBudget,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0,
+                        AutoReplenishment = true
+                    }));
+        });
         builder.Services.AddGrpc(options => options.MaxReceiveMessageSize = 16 * 1024);
         builder.Services.AddScoped<MerchantDeliveryGrpcService>();
         builder.Services.AddScoped<Func<DeliveryDbContext>>(services => () => services.GetRequiredService<DeliveryDbContext>());
@@ -106,6 +133,18 @@ public partial class Program
         builder.Services.AddScoped<CourierDutyHandler>();
         builder.Services.AddScoped<AdminCourierHandler>();
         builder.Services.AddScoped<AssistantToolExecutor>();
+        builder.Services.AddHttpClient<AssistantGeminiClient>(client => client.MaxResponseContentBufferSize = 128 * 1024)
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
+        builder.Services.AddHttpClient<MerchantAssistantOrderClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(3);
+            client.MaxResponseContentBufferSize = 64 * 1024;
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = false,
+            UseProxy = false
+        });
         builder.Services.AddScoped<McpServerHandler>();
         builder.Services.AddScoped<AssistantOrchestrator>();
         builder.Services.AddHttpClient("MerchantInternal");
@@ -192,6 +231,7 @@ public partial class Program
         app.UseAuthentication();
         app.UseActivityAudit("Delivery", "/api/v1/delivery/audit-logs");
         app.UseAuthorization();
+        app.UseRateLimiter();
 
         // Process liveness only; dependency readiness is a later milestone.
         app.MapHealthChecks("/health");

@@ -93,6 +93,9 @@ public sealed class GoogleApiTests(IdentityPostgresFixture database)
         Assert.Equal(HttpStatusCode.Conflict, collision.StatusCode);
         using var collisionBody = await Json(collision);
         Assert.Equal("account_link_required", collisionBody.RootElement.GetProperty("code").GetString());
+        Assert.False(collision.Headers.Contains("Set-Cookie"));
+        Assert.DoesNotContain(email, collisionBody.RootElement.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(providerToken, collisionBody.RootElement.GetRawText());
         Assert.Equal(beforeCollision, await Snapshot());
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await Login(client, email));

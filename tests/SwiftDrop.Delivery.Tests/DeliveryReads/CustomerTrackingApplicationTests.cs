@@ -281,6 +281,9 @@ public sealed class CustomerTrackingApplicationTests
                 [new PublicTimelineEntry("Created", DateTimeOffset.UtcNow.AddHours(-1), "Booked")]));
         }
 
+        public Task<PublicTrackingEventSnapshot?> GetPublicTrackingSnapshotAsync(string trackingNumber, CancellationToken cancellationToken) =>
+            Task.FromResult<PublicTrackingEventSnapshot?>(null);
+
         public Task<ParcelEventsResponse?> GetParcelEventsAsync(ParcelReadScope scope, Guid parcelId, CancellationToken cancellationToken)
         {
             Calls++;

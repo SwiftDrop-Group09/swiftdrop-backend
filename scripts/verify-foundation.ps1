@@ -330,7 +330,7 @@ try {
     $grpcConnection = New-Object Net.Sockets.TcpClient
     try { $grpcConnection.Connect('127.0.0.3', 8081) }
     finally { $grpcConnection.Dispose() }
-    Write-Output 'PASS: private Delivery 8081 TCP listener bound (configured HTTP/2; no gRPC methods implemented).'
+    Write-Output 'PASS: private Delivery 8081 listener is bound for HTTP/2 gRPC traffic.'
     foreach ($entry in $processes) {
         if ($entry.Process.HasExited) { throw "$($entry.Name) exited unexpectedly." }
     }

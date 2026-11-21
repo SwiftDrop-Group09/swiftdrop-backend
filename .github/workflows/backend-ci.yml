@@ -10,6 +10,25 @@ permissions:
   contents: read
 
 jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Scan tracked files for secrets
+        run: |
+          set -euo pipefail
+          scan_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$scan_dir"' EXIT
+          git archive HEAD | tar -x -C "$scan_dir"
+          docker run --rm --volume "$scan_dir:/scan:ro" \
+            ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            dir --redact=100 --verbose --no-banner /scan
+
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -29,11 +48,44 @@ jobs:
         run: dotnet build SwiftDrop.sln --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test SwiftDrop.sln --no-build --configuration Release --logger trx --results-directory artifacts/test-results
+        id: tests
+        run: dotnet test SwiftDrop.sln --no-build --configuration Release --settings coverage.runsettings --collect "XPlat Code Coverage" --logger "trx;LogFilePrefix=backend" --results-directory artifacts/test-results
 
       - name: Verify process startup and project boundaries
         shell: pwsh
         run: ./scripts/verify-foundation.ps1
+
+      - name: Consolidate coverage
+        if: always() && (steps.tests.outcome == 'success' || steps.tests.outcome == 'failure')
+        run: |
+          dotnet tool restore
+          dotnet reportgenerator \
+            '-reports:artifacts/test-results/*/coverage.opencover.xml' \
+            '-targetdir:artifacts/coverage' \
+            '-reporttypes:Cobertura;Html;TextSummary;MarkdownSummaryGithub'
+          cat artifacts/coverage/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+
+          coverage = ET.parse("artifacts/coverage/Cobertura.xml").getroot()
+          covered = int(coverage.attrib["lines-covered"])
+          coverable = int(coverage.attrib["lines-valid"])
+          percentage = 100 * covered / coverable
+          comparison = "meets" if percentage >= 80 else "is below"
+          print(f"\nCombined coverage of {covered:,}/{coverable:,} lines ({percentage:.2f}%) "
+                f"{comparison} the 80% reporting target. See docs/backend-coverage.md for scope.")
+          PY
+
+      - name: Upload backend test results and coverage
+        if: always() && (steps.tests.outcome == 'success' || steps.tests.outcome == 'failure')
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-verification-${{ github.sha }}
+          path: |
+            artifacts/test-results/**/*.trx
+            artifacts/test-results/*/coverage.cobertura.xml
+            artifacts/coverage/
+          if-no-files-found: error
 
   docker-validate:
     runs-on: ubuntu-latest

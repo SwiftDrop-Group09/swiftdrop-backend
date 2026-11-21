@@ -33,7 +33,7 @@ public sealed class McpServerHandler(AssistantToolExecutor toolExecutor)
             }),
         new(
             AssistantToolNames.EstimateDeliveryFee,
-            "Estimate and lock a versioned delivery fee quote between service zones based on parcel weight and package size.",
+            "Preview a delivery fee between service zones based on parcel weight and package size.",
             new
             {
                 type = "object",
@@ -135,7 +135,7 @@ public sealed class McpServerHandler(AssistantToolExecutor toolExecutor)
         // Merchant Tools
         new(
             AssistantToolNames.ListMerchantOrders,
-            "List recent commercial merchant parcels, external order references, and live fulfillment statuses.",
+            "List recent merchant orders and their fulfillment status, including pending jobs for an approved owner.",
             new
             {
                 type = "object",
@@ -178,6 +178,8 @@ public sealed class McpServerHandler(AssistantToolExecutor toolExecutor)
     ];
 
     public static IReadOnlyList<McpToolDefinition> GetCatalog() => Catalog;
+    public IReadOnlyList<McpToolDefinition> GetAllowedCatalog() =>
+        Catalog.Where(tool => AssistantToolPolicy.CanUse(toolExecutor.DeliveryUser, tool.Name)).ToArray();
 
     public async Task<McpResponse> HandleRpcAsync(McpRequest request, CancellationToken cancellationToken = default)
     {
@@ -206,13 +208,13 @@ public sealed class McpServerHandler(AssistantToolExecutor toolExecutor)
                 return new McpResponse("2.0", id, new { });
 
             case "tools/list":
-                return new McpResponse("2.0", id, new { tools = Catalog });
+                return new McpResponse("2.0", id, new { tools = GetAllowedCatalog() });
 
             case "tools/call":
                 return await HandleToolCallAsync(id, request.Params, cancellationToken);
 
             default:
-                return new McpResponse("2.0", id, null, new McpError(-32601, $"Method not found: '{request.Method}'"));
+                return new McpResponse("2.0", id, null, new McpError(-32601, "Method not found."));
         }
     }
 
@@ -235,11 +237,11 @@ public sealed class McpServerHandler(AssistantToolExecutor toolExecutor)
         var toolName = nameProp.GetString()!;
         if (!AssistantToolNames.All.Contains(toolName))
         {
-            return new McpResponse("2.0", id, null, new McpError(-32601, $"Unknown tool: '{toolName}'. Allowlisted tools: {string.Join(", ", AssistantToolNames.All)}"));
+            return new McpResponse("2.0", id, null, new McpError(-32601, "Unknown tool."));
         }
 
         JsonElement? args = null;
-        if (paramObj.TryGetProperty("arguments", out var argsProp) && argsProp.ValueKind == JsonValueKind.Object)
+        if (paramObj.TryGetProperty("arguments", out var argsProp))
         {
             args = argsProp;
         }

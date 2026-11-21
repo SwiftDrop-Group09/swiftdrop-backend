@@ -5,7 +5,7 @@ namespace SwiftDrop.Merchant.Tests.Authentication;
 public sealed class ApiKeyParserTests
 {
     private const string Id = "0123456789abcdef0123456789abcdef";
-    private const string Secret = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+    private static readonly string Secret = new('a', 64);
 
     [Fact]
     public void CurrentFormat_YieldsKeyIdAndPrefix()

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Features;
+using SwiftDrop.Contracts.Http.V1;
 using SwiftDrop.Merchant.Api.Application.Orders;
 using SwiftDrop.Merchant.Api.Infrastructure.Authentication.OrderAccess;
 
@@ -12,8 +13,8 @@ namespace SwiftDrop.Merchant.Api.Presentation;
 /// </summary>
 public static class OrderEndpoints
 {
-    public const string OrdersPath = "/api/v1/merchant/orders";
-    public const string IdempotencyKeyHeader = "Idempotency-Key";
+    public const string OrdersPath = MerchantOrderApi.OrdersPath;
+    public const string IdempotencyKeyHeader = MerchantOrderApi.IdempotencyKeyHeader;
     private const long MaxBodyBytes = 16 * 1024;
 
     private static readonly JsonSerializerOptions InputJson = new(JsonSerializerDefaults.Web)
@@ -73,6 +74,15 @@ public static class OrderEndpoints
         }).RequireAuthorization(MerchantAuthorizationPolicies.OrdersRead).WithName("GetMerchantOrder")
           .Produces<OrderJobResponse>(200)
           .ProducesProblem(401).ProducesProblem(403).ProducesProblem(404);
+
+        app.MapGet(MerchantOrderApi.AssistantOrdersPath, async (HttpContext context, MerchantOrderQueryHandler handler,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await handler.ListForAssistantAsync(cancellationToken);
+            context.Response.Headers.CacheControl = "private, no-store";
+            return result.Value is { } page ? Results.Ok(page)
+                : OrderProblems.Failure(context, result.Failure!.Value, result.Errors);
+        }).RequireAuthorization(MerchantAuthorizationPolicies.Dashboard);
     }
 
     /// <summary>Reads a strict, size-limited JSON body. Any malformed body becomes a 400 without detail leakage.</summary>

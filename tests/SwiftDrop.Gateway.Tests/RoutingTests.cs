@@ -62,13 +62,12 @@ public sealed class RoutingTests : IDisposable
     [Theory]
     [InlineData("GET")]
     [InlineData("POST")]
-    public async Task GraphQlRoutesToDelivery(string method)
+    public async Task UnimplementedGraphQlRouteIsNotForwarded(string method)
     {
         using var client = _factory.CreateClient();
         using var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), "/graphql"));
 
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-        Assert.Equal($"{method} http://delivery-service:8080/graphql", await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Theory]

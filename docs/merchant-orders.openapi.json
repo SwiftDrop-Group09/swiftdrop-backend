@@ -1,0 +1,712 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SwiftDrop Merchant Orders",
+    "version": "1.0.0",
+    "description": "Merchant order intake and owner-scoped job reads. Use your configured SwiftDrop Gateway origin."
+  },
+  "paths": {
+    "/api/v1/merchant/orders": {
+      "post": {
+        "operationId": "SubmitMerchantOrder",
+        "summary": "Accept an order for asynchronous processing",
+        "security": [
+          {
+            "merchantApiKey": []
+          }
+        ],
+        "x-merchant-api-key-scope": "orders:write",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Exactly one value. Retry the same order and body with the same key.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "A JSON object up to 16 KiB. Property names are case-sensitive. Unknown and duplicate properties are rejected.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantOrderInput"
+              },
+              "examples": {
+                "order": {
+                  "externalValue": "../examples/merchant/order.example.json"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Job accepted or previously accepted job returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderJobResponse"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Relative URL for the job status resource.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing key, malformed JSON or invalid input.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required or the credential is invalid or revoked.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential is authenticated but lacks the required permission or business approval.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The external order ID or idempotency key conflicts with a previous submission.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "ListMerchantOrders",
+        "summary": "List order jobs in the caller's business",
+        "security": [
+          {
+            "merchantApiKey": []
+          },
+          {
+            "merchantBearer": []
+          }
+        ],
+        "x-merchant-api-key-scope": "orders:read",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Accepted",
+                "Retrying",
+                "Created",
+                "Failed"
+              ]
+            }
+          },
+          {
+            "name": "parcelStatus",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Created",
+                "Assigned",
+                "PickedUp",
+                "InTransit",
+                "OutForDelivery",
+                "Delivered",
+                "Failed",
+                "Cancelled"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of jobs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderJobPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or duplicate query parameter.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required or the credential is invalid or revoked.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential is authenticated but lacks the required permission or business approval.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/merchant/orders/{id}": {
+      "get": {
+        "operationId": "GetMerchantOrder",
+        "summary": "Read one order job",
+        "security": [
+          {
+            "merchantApiKey": []
+          },
+          {
+            "merchantBearer": []
+          }
+        ],
+        "x-merchant-api-key-scope": "orders:read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A job in the caller's business.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderJobResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required or the credential is invalid or revoked.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential is authenticated but lacks the required permission or business approval.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The job is missing or belongs to another business.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "merchantApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Active API key for an approved business with the operation's required scope."
+      },
+      "merchantBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Approved Merchant owner access token. Send one credential only."
+      }
+    },
+    "schemas": {
+      "MerchantOrderInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "externalOrderId",
+          "pickupAddress",
+          "deliveryAddress",
+          "packageDetails",
+          "recipient",
+          "acceptedPriceVersion"
+        ],
+        "properties": {
+          "externalOrderId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "pickupAddress": {
+            "$ref": "#/components/schemas/OrderAddressInput"
+          },
+          "deliveryAddress": {
+            "$ref": "#/components/schemas/OrderAddressInput"
+          },
+          "packageDetails": {
+            "$ref": "#/components/schemas/OrderPackageInput"
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/OrderRecipientInput"
+          },
+          "acceptedPriceVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      },
+      "OrderAddressInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "street",
+          "city",
+          "postalCode",
+          "zoneId"
+        ],
+        "properties": {
+          "street": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "city": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "postalCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20
+          },
+          "zoneId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A configured nonempty zone UUID."
+          }
+        }
+      },
+      "OrderPackageInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "weightKg",
+          "size"
+        ],
+        "properties": {
+          "weightKg": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 30
+          },
+          "size": {
+            "type": "string",
+            "enum": [
+              "Small",
+              "Medium",
+              "Large"
+            ]
+          }
+        }
+      },
+      "OrderRecipientInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "phoneNumber"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "phoneNumber": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          }
+        }
+      },
+      "OrderJobResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "externalOrderId",
+          "state",
+          "attempts",
+          "nextRetryAt",
+          "parcelId",
+          "trackingNumber",
+          "parcelStatus",
+          "parcelVersion",
+          "lastStatusChangedAt",
+          "terminalAt",
+          "errorCode",
+          "lastRefreshedAt",
+          "createdAt",
+          "failureReason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "externalOrderId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "Accepted",
+              "Retrying",
+              "Created",
+              "Failed"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nextRetryAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parcelId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trackingNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parcelStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Created",
+                  "Assigned",
+                  "PickedUp",
+                  "InTransit",
+                  "OutForDelivery",
+                  "Delivered",
+                  "Failed",
+                  "Cancelled"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parcelVersion": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastStatusChangedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "terminalAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastRefreshedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "failureReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "OrderJobPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "totalCount",
+          "page",
+          "pageSize"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderJobResponse"
+            }
+          },
+          "totalCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "ExternalWebhookPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventId",
+          "eventType",
+          "schemaVersion",
+          "occurredAt",
+          "parcelId",
+          "parcelVersion",
+          "trackingNumber",
+          "status"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "delivery.created",
+              "delivery.assigned",
+              "delivery.picked_up",
+              "delivery.in_transit",
+              "delivery.out_for_delivery",
+              "delivery.delivered",
+              "delivery.failed",
+              "delivery.cancelled"
+            ]
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "parcelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parcelVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "trackingNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Created",
+              "Assigned",
+              "PickedUp",
+              "InTransit",
+              "OutForDelivery",
+              "Delivered",
+              "Failed",
+              "Cancelled"
+            ]
+          }
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

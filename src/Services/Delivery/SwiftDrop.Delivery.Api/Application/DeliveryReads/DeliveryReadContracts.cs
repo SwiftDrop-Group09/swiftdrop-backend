@@ -57,6 +57,8 @@ public sealed record CustomerDeliverySummary(int TotalCount, int ActiveCount, in
 public sealed record PublicTimelineEntry(string Status, DateTimeOffset Timestamp, string Label);
 public sealed record PublicTrackingSummary(string TrackingNumber, string Status, string OriginCity,
     string DestinationCity, DateTimeOffset LastUpdatedAt, IReadOnlyList<PublicTimelineEntry> Timeline);
+public sealed record PublicTrackingEvent(string TrackingNumber, string Status, DateTimeOffset LastUpdatedAt);
+public sealed record PublicTrackingEventSnapshot(PublicTrackingEvent State, long Version, bool IsTerminal);
 
 public sealed record ParcelEventSnapshot(Guid Id, string Status, long Version, DateTimeOffset LastUpdatedAt);
 public sealed record ParcelEventsResponse(Guid Id, string TrackingNumber, string Status, long Version,
@@ -79,6 +81,7 @@ public interface ICustomerDeliveryReadStore
     Task<CustomerDeliverySummary> GetCustomerSummaryAsync(Guid customerId, CancellationToken cancellationToken);
     Task<CustomerParcelPage> ListParcelsAsync(ParcelReadScope scope, CustomerParcelQuery query, CancellationToken cancellationToken);
     Task<PublicTrackingSummary?> GetPublicTrackingAsync(string trackingNumber, CancellationToken cancellationToken);
+    Task<PublicTrackingEventSnapshot?> GetPublicTrackingSnapshotAsync(string trackingNumber, CancellationToken cancellationToken);
     Task<ParcelEventsResponse?> GetParcelEventsAsync(ParcelReadScope scope, Guid parcelId, CancellationToken cancellationToken);
     Task<ParcelEventSnapshot?> GetParcelSnapshotAsync(ParcelReadScope scope, Guid parcelId, CancellationToken cancellationToken);
     Task<ParcelReceiptLookup?> GetReceiptAsync(ParcelReadScope scope, Guid parcelId, CancellationToken cancellationToken);
