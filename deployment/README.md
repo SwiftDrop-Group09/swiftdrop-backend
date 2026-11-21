@@ -9,14 +9,14 @@ settings described below.
 deployments using these canonical service names. Merge it after the Compose
 file that defines the services. It is not needed with `./development/run.sh`.
 
-## Required Compose override
+## Optional Compose override
 
 The override supplies explicit Kestrel endpoint environment variables for all
-five backend hosts:
+six backend hosts:
 
 | Hosts | Environment key | Container value |
 |---|---|---|
-| Gateway, Identity, Delivery, Merchant, Worker | Kestrel__Endpoints__Http__Url | http://0.0.0.0:8080 |
+| Gateway, Identity, Delivery, Merchant, Notification Worker, Delivery Outbox Relay | Kestrel__Endpoints__Http__Url | http://0.0.0.0:8080 |
 | Delivery only | Kestrel__Endpoints__Grpc__Url | http://0.0.0.0:8081 |
 
 It selects Production configuration so Gateway uses container service DNS
@@ -34,8 +34,22 @@ The shared local workflow validates Compose from `swiftdrop-infra`:
 ./development/run.sh config
 ```
 
-The override adds no images, services, networks, ports, or credentials. The
-infra development Compose file already includes the needed container settings.
+The override includes the `delivery-outbox-relay` service. Set
+`DELIVERY_OUTBOX_RELAY_IMAGE` to
+`ghcr.io/swiftdrop-group09/swiftdrop-delivery-outbox-relay:sha-<commit>`
+using the same published tag as the other backend images. Run Delivery's
+migrations and provision the broker publisher before starting the relay. For
+deployments with custom networks, connect the relay to the broker's network
+in the base Compose file.
+
+Supply `DELIVERY_OUTBOX_DATABASE_CONNECTION_STRING` and
+`DELIVERY_BROKER_PASSWORD` through the deployment's private environment.
+The relay defaults to the `delivery_bus` publisher on `rabbitmq` in vhost
+`/`. Set `DELIVERY_BROKER_HOST`, `DELIVERY_BROKER_USERNAME` or
+`DELIVERY_BROKER_VIRTUAL_HOST` when the deployment uses different values.
+Use the [outbox database grants](../docs/delivery-outbox-relay-handoff.md#current-relay-behavior)
+and scope broker configure and write permissions to the
+`SwiftDrop.Contracts.V1:StatusChanged` exchange.
 
 ## Shared configuration contract
 
@@ -47,6 +61,7 @@ The Identity/Delivery/Merchant/Notification groups in
 |---|---|---|---|
 | Identity runtime | swiftdrop_identity | IDENTITY_DATABASE_CONNECTION_STRING | ConnectionStrings__Database |
 | Delivery runtime/migration | swiftdrop_delivery | DELIVERY_DATABASE_CONNECTION_STRING | ConnectionStrings__Database |
+| Delivery Outbox Relay | swiftdrop_delivery | DELIVERY_OUTBOX_DATABASE_CONNECTION_STRING | ConnectionStrings__DeliveryDatabase |
 | Merchant runtime | swiftdrop_merchant | MERCHANT_DATABASE_CONNECTION_STRING | ConnectionStrings__Database |
 | Notification Worker | swiftdrop_notifications | NOTIFICATIONS_DATABASE_CONNECTION_STRING | ConnectionStrings__Database |
 | Explicit Identity migration | swiftdrop_identity | IDENTITY_MIGRATION_CONNECTION_STRING | ConnectionStrings__MigrationDatabase |

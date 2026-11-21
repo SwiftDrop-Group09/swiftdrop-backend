@@ -20,6 +20,20 @@ services:
       Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
       Kestrel__Endpoints__Grpc__Url: http://0.0.0.0:8081
 
+  delivery-outbox-relay:
+    image: ${DELIVERY_OUTBOX_RELAY_IMAGE:?Set the published relay image including its version or SHA tag}
+    command: ["SwiftDrop.Delivery.OutboxRelay.dll"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      DOTNET_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
+      ConnectionStrings__DeliveryDatabase: ${DELIVERY_OUTBOX_DATABASE_CONNECTION_STRING:?Set the dedicated Delivery outbox connection}
+      OutboxRelay__Broker__Host: ${DELIVERY_BROKER_HOST:-rabbitmq}
+      OutboxRelay__Broker__Username: ${DELIVERY_BROKER_USERNAME:-delivery_bus}
+      OutboxRelay__Broker__Password: ${DELIVERY_BROKER_PASSWORD:?Set the restricted Delivery publisher password}
+      OutboxRelay__Broker__VirtualHost: ${DELIVERY_BROKER_VIRTUAL_HOST:-/}
+    restart: unless-stopped
+
   merchant-service:
     environment:
       ASPNETCORE_ENVIRONMENT: Production

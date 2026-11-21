@@ -41,6 +41,9 @@ jobs:
           - service: notification-worker
             image: swiftdrop-notification-worker
             project: src/Workers/SwiftDrop.Notification.Worker/SwiftDrop.Notification.Worker.csproj
+          - service: delivery-outbox-relay
+            image: swiftdrop-delivery-outbox-relay
+            project: src/Workers/SwiftDrop.Delivery.OutboxRelay/SwiftDrop.Delivery.OutboxRelay.csproj
 
     steps:
       - name: Checkout
