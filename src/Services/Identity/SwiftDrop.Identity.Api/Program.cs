@@ -1,5 +1,6 @@
 using SwiftDrop.Auditing;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Npgsql;
@@ -295,5 +296,6 @@ public partial class Program
         }
     }
 
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
     private sealed record RegisterRequest(string Email, string Password, string FullName);
 }

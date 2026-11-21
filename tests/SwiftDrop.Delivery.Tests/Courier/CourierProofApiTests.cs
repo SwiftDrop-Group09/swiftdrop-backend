@@ -5,6 +5,7 @@ using SwiftDrop.Delivery.Api.Application.CourierProof;
 using SwiftDrop.Delivery.Api.Domain;
 using SwiftDrop.Delivery.Tests.Bookings.Reliability;
 using SwiftDrop.Delivery.Tests.Persistence;
+using SwiftDrop.Delivery.Tests.Quotes;
 
 namespace SwiftDrop.Delivery.Tests.Courier;
 
@@ -75,6 +76,51 @@ public sealed class CourierProofApiTests(PostgresFixture fixture)
         Assert.Equal(HttpStatusCode.NotFound, detail.StatusCode);
         using var direct = await scenario.Client.GetAsync($"/proofs/{scenario.ParcelId:N}");
         Assert.Equal(HttpStatusCode.NotFound, direct.StatusCode);
+    }
+
+    [Fact]
+    public async Task PublicTrackingKeepsDeliveredProofPrivateFromUnrelatedCallers()
+    {
+        await using var scenario = await StatusTestScenario.CreateAsync(fixture, ParcelStatus.OutForDelivery);
+        using var completed = await ProofTestSupport.Send(scenario.Client, scenario.ParcelId, ProofTestSupport.Form());
+        Assert.Equal(HttpStatusCode.OK, completed.StatusCode);
+        var parcel = (await scenario.GraphAsync()).Parcel;
+        var proofPath = $"/api/v1/parcels/{parcel.Id:D}/pod";
+
+        using var anonymousHost = new QuoteApiFactory(fixture.ConnectionString);
+        using var anonymous = anonymousHost.CreateClient();
+        using var tracked = await anonymous.GetAsync($"/api/v1/parcels/track/{parcel.TrackingNumber}");
+        Assert.Equal(HttpStatusCode.OK, tracked.StatusCode);
+        using var publicBody = JsonDocument.Parse(await tracked.Content.ReadAsStringAsync());
+        var summary = publicBody.RootElement;
+        Assert.Equal("Delivered", summary.GetProperty("status").GetString());
+        Assert.Equal(
+            new[] { "destinationCity", "lastUpdatedAt", "originCity", "status", "timeline", "trackingNumber" },
+            summary.EnumerateObject().Select(field => field.Name).Order());
+        Assert.All(summary.GetProperty("timeline").EnumerateArray(), entry =>
+            Assert.Equal(new[] { "label", "status", "timestamp" }, entry.EnumerateObject().Select(field => field.Name).Order()));
+
+        using var foreignHost = scenario.CreateFactory(Guid.NewGuid(), "Customer");
+        using var foreign = foreignHost.CreateClient();
+        foreach (var format in new[] { "json", "image" })
+        {
+            var path = $"{proofPath}?format={format}";
+            using var challenged = await anonymous.GetAsync(path);
+            using var unauthorized = await foreign.GetAsync(path);
+            using var courier = await scenario.Client.GetAsync(path);
+            Assert.Equal(HttpStatusCode.Unauthorized, challenged.StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, unauthorized.StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, courier.StatusCode);
+            Assert.DoesNotContain("Private recipient", await unauthorized.Content.ReadAsStringAsync());
+        }
+
+        using var ownerHost = scenario.CreateFactory(parcel.CustomerId!.Value, "Customer");
+        using var owner = ownerHost.CreateClient();
+        using var photo = await owner.GetAsync(proofPath + "?format=image");
+        Assert.Equal(HttpStatusCode.OK, photo.StatusCode);
+        Assert.Equal("image/png", photo.Content.Headers.ContentType?.MediaType);
+        Assert.True(photo.Headers.CacheControl?.NoStore);
+        Assert.NotEmpty(await photo.Content.ReadAsByteArrayAsync());
     }
 
     [Theory]

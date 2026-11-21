@@ -2,7 +2,7 @@
 
 `GET /api/v1/pricing-tiers/overview` is Admin-only. Page defaults to 1;
 pageSize defaults to 20 and permits 1-100. An optional zoneId scopes the read
-to a single zone. Unknown/repeated query keys, empty/invalid zone IDs and
+to a single zone. Unknown or repeated parameters, empty or invalid zone IDs and
 invalid/overflowing pagination fail with 400.
 
 The response counts and pages delivery zones by name then ID, including zones

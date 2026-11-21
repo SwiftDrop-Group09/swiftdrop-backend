@@ -14,6 +14,8 @@ issuance. Identity/Delivery token validation rejects zero/multiple roles;
 Merchant human JWTs require one named role. Service API-key scopes are unchanged.
 The last-active-Admin guard and transactional audit remain authoritative. The
 Admin provisioner creates Admin only; normal registration creates Customer only.
+Public registration accepts email, password and full name. It rejects role
+fields and other unrecognized inputs before creating a user.
 
 ## Forward migration 005_single_user_role
 

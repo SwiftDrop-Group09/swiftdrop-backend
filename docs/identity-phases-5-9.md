@@ -22,7 +22,7 @@ production Identity JWT verifier has been activated. Docs remain clean at
 `d97fff4`; infra at `075a8b4`. React main `c062b11` and Flutter main `e9778c1`
 and their separate teammate booking branches were inspected before client work.
 
-Authoritative REST, authorization/authentication, SRS/traceability/use cases,
+Authoritative REST, authentication and authorization, SRS, traceability, use cases,
 logical ER, deployment and test documents remain Proposed. Their approval has
 not been inferred. Current Npgsql/embedded SQL and application ports were
 extended; no competing Identity framework, direct downstream SQL access or new

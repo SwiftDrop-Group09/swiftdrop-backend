@@ -16,7 +16,7 @@ internal static class InboxJobTestData
         InboxJob.Accept(
             businessId ?? Guid.NewGuid(),
             externalOrderId,
-            idempotencyKey: "idem-fictional-1001",
+            idempotencyKey: "test-key",
             requestFingerprint: Fingerprint,
             orderPayload: Payload,
             now: Now);

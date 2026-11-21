@@ -71,6 +71,30 @@ public sealed class RegistrationTests
         Assert.False(store.WasCalled);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PublicRegistrationRejectsRoleClaimsWithoutCallingTheStore(bool multiple)
+    {
+        var store = new TestRegistrationStore();
+        using var factory = CreateFactory(store);
+        using var client = factory.CreateClient();
+        var payload = new Dictionary<string, object>
+        {
+            ["email"] = "registration@example.invalid",
+            ["password"] = "Correct Horse Battery 7!",
+            ["fullName"] = "Customer One"
+        };
+        if (multiple)
+            payload["roles"] = new[] { "Courier", "Admin" };
+        else
+            payload["role"] = "Admin";
+
+        using var response = await client.PostAsJsonAsync("/api/v1/auth/register", payload);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.False(store.WasCalled);
+    }
+
     [Fact]
     public async Task RegistrationLimitIgnoresUntrustedForwardedAddresses()
     {
