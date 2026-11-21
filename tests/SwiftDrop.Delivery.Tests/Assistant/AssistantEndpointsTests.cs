@@ -701,6 +701,9 @@ public sealed class AssistantEndpointsTests
         public Task<PublicTrackingSummary?> GetPublicTrackingAsync(string trackingNumber, CancellationToken cancellationToken) =>
             Task.FromResult(PublicSummary);
 
+        public Task<PublicTrackingEventSnapshot?> GetPublicTrackingSnapshotAsync(string trackingNumber, CancellationToken cancellationToken) =>
+            Task.FromResult<PublicTrackingEventSnapshot?>(null);
+
         public Task<ParcelEventsResponse?> GetParcelEventsAsync(ParcelReadScope scope, Guid parcelId, CancellationToken cancellationToken) =>
             Task.FromResult<ParcelEventsResponse?>(null);
 

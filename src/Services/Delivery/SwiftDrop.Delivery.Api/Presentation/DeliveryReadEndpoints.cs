@@ -1,4 +1,3 @@
-using System.Text.Json;
 using SwiftDrop.Delivery.Api.Application.DeliveryReads;
 
 namespace SwiftDrop.Delivery.Api.Presentation;
@@ -7,7 +6,7 @@ public sealed class DeliveryReadEndpointMetadata;
 
 public static class DeliveryReadEndpoints
 {
-    private static readonly JsonSerializerOptions SseJson = new(JsonSerializerDefaults.Web);
+    internal const string PublicTrackingStreamsPolicy = "public-tracking-streams";
 
     public static void MapDeliveryReads(this WebApplication app)
     {
@@ -77,6 +76,27 @@ public static class DeliveryReadEndpoints
         }).AllowAnonymous().WithName("PublicTrack").WithMetadata(new DeliveryReadEndpointMetadata())
             .Produces<PublicTrackingSummary>().ProducesProblem(400).ProducesProblem(404).ProducesProblem(503);
 
+        app.MapGet("/api/v1/parcels/track/{trackingNumber}/events", async (string trackingNumber, HttpContext context,
+            CustomerTrackingHandler handler, CancellationToken cancellationToken) =>
+        {
+            var result = await handler.GetPublicTrackingSnapshotAsync(trackingNumber, context.Request.Query.Count != 0,
+                cancellationToken);
+            if (result.Response is not { } initial)
+                return DeliveryReadProblems.Failure(context, result.Failure!.Value, result.Errors);
+
+            static TrackingEventStream.Snapshot Snapshot(PublicTrackingEventSnapshot item) =>
+                new(item.Version, item.State, IsTerminal: item.IsTerminal);
+
+            return TrackingEventStream.Create(context, Snapshot(initial), async ct =>
+            {
+                var current = await handler.GetPublicTrackingSnapshotAsync(initial.State.TrackingNumber, cancellationToken: ct);
+                return current.Response is { } snapshot ? Snapshot(snapshot) : null;
+            }, cancellationToken);
+        }).AllowAnonymous().RequireRateLimiting(PublicTrackingStreamsPolicy).WithName("PublicTrackingEvents")
+            .WithMetadata(new DeliveryReadEndpointMetadata())
+            .Produces(200, contentType: "text/event-stream").ProducesProblem(400).ProducesProblem(404)
+            .ProducesProblem(429).ProducesProblem(503);
+
         app.MapGet("/api/v1/parcels", async (HttpContext context, CustomerTrackingHandler handler,
             CancellationToken cancellationToken) =>
         {
@@ -126,44 +146,15 @@ public static class DeliveryReadEndpoints
             if (initialResult.Response is not { } initial)
                 return DeliveryReadProblems.Failure(context, initialResult.Failure!.Value, initialResult.Errors);
 
-            return Results.Stream(async stream =>
+            static TrackingEventStream.Snapshot Snapshot(ParcelEventSnapshot item) =>
+                new(item.Version, item, $"{item.Id}:{item.Version}");
+
+            var first = new ParcelEventSnapshot(initial.Id, initial.Status, initial.Version, initial.LastUpdatedAt);
+            return TrackingEventStream.Create(context, Snapshot(first), async ct =>
             {
-                context.Response.ContentType = "text/event-stream; charset=utf-8";
-                context.Response.Headers.CacheControl = "private, no-store, no-cache, no-transform";
-                context.Response.Headers["X-Accel-Buffering"] = "no";
-
-                await using var writer = new StreamWriter(stream, leaveOpen: true);
-                var lastVersion = initial.Version;
-                await WriteSnapshotAsync(writer, new ParcelEventSnapshot(
-                    initial.Id, initial.Status, initial.Version, initial.LastUpdatedAt), cancellationToken);
-
-                var lastHeartbeat = DateTimeOffset.UtcNow;
-                var lastReconcile = DateTimeOffset.UtcNow;
-                while (!cancellationToken.IsCancellationRequested)
-                {
-                    try { await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken); }
-                    catch (OperationCanceledException) { break; }
-
-                    var now = DateTimeOffset.UtcNow;
-                    var snapshotResult = await handler.GetParcelSnapshotAsync(initial.Id, cancellationToken);
-                    if (snapshotResult.Response is not { } current)
-                        break;
-
-                    if (current.Version > lastVersion || now - lastReconcile >= TimeSpan.FromSeconds(30))
-                    {
-                        lastVersion = Math.Max(lastVersion, current.Version);
-                        lastReconcile = now;
-                        lastHeartbeat = now;
-                        await WriteSnapshotAsync(writer, current, cancellationToken);
-                    }
-                    else if (now - lastHeartbeat >= TimeSpan.FromSeconds(15))
-                    {
-                        lastHeartbeat = now;
-                        await writer.WriteAsync(": heartbeat\n\n");
-                        await writer.FlushAsync(cancellationToken);
-                    }
-                }
-            }, "text/event-stream");
+                var current = await handler.GetParcelSnapshotAsync(initial.Id, ct);
+                return current.Response is { } snapshot ? Snapshot(snapshot) : null;
+            }, cancellationToken);
         }).RequireAuthorization().WithName("ParcelEvents").WithMetadata(new DeliveryReadEndpointMetadata())
             .Produces<ParcelEventsResponse>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403)
             .ProducesProblem(404).ProducesProblem(503);
@@ -226,13 +217,5 @@ public static class DeliveryReadEndpoints
         var accept = context.Request.Headers.Accept.ToString();
         return accept.Contains("application/json", StringComparison.OrdinalIgnoreCase)
             && !accept.Contains(primaryMediaPrefix, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static async Task WriteSnapshotAsync(StreamWriter writer, ParcelEventSnapshot snapshot,
-        CancellationToken cancellationToken)
-    {
-        var payload = JsonSerializer.Serialize(snapshot, SseJson);
-        await writer.WriteAsync($"event: snapshot\nid: {snapshot.Id}:{snapshot.Version}\ndata: {payload}\n\n");
-        await writer.FlushAsync(cancellationToken);
     }
 }

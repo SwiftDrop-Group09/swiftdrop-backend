@@ -43,3 +43,25 @@ workflow tests remain required.
 
 Validation on 15 November 2026: all 1,188 Delivery tests passed against disposable
 PostgreSQL; the full solution Release build completed with zero warnings/errors.
+## Public tracking event stream
+
+`GET /api/v1/parcels/track/{trackingNumber}/events` streams anonymous
+`snapshot` events with `trackingNumber`, `status` and `lastUpdatedAt`.
+Connect or reconnect to receive the latest committed state. The
+stream sends a heartbeat after 15 seconds without a frame and reconciles its
+snapshot every 30 seconds. On `Delivered`, `Failed` or `Cancelled`, it
+sends the terminal snapshot and closes. Clients should close their
+EventSource after a terminal snapshot to avoid reconnecting.
+
+Gateway applies its per-client tracking-stream budget. Delivery limits
+public streams to 64 per replica by default, configurable with
+`Tracking__PublicStreamLimit`. Streams release their permit on disconnect.
+The authenticated parcel events route still checks owner and role on
+each read. Both streams sample one database snapshot per second. Each poll
+uses one scoped SELECT.
+
+The local PostgreSQL integration tests measured from status-update request
+start through receipt of the new SSE frame. The authenticated stream took
+2,048 ms before the change and 1,047 ms after it. The public stream took
+1,043 ms. Both updated samples met the two-second target in the Delivery
+test host.

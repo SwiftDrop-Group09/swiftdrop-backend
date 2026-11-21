@@ -1,4 +1,5 @@
 using SwiftDrop.Auditing;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SwiftDrop.Contracts.Events.V1;
 using SwiftDrop.Delivery.Api.Application;
@@ -35,6 +36,17 @@ public partial class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddHealthChecks();
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.OnRejected = async (context, ct) =>
+                await context.HttpContext.Response.WriteAsJsonAsync(new { code = "rate_limit_exceeded" }, ct);
+            options.AddConcurrencyLimiter(DeliveryReadEndpoints.PublicTrackingStreamsPolicy, limiter =>
+            {
+                limiter.PermitLimit = builder.Configuration.GetValue("Tracking:PublicStreamLimit", 64);
+                limiter.QueueLimit = 0;
+            });
+        });
         builder.Services.AddGrpc(options => options.MaxReceiveMessageSize = 16 * 1024);
         builder.Services.AddScoped<MerchantDeliveryGrpcService>();
         builder.Services.AddScoped<Func<DeliveryDbContext>>(services => () => services.GetRequiredService<DeliveryDbContext>());
@@ -192,6 +204,7 @@ public partial class Program
         app.UseAuthentication();
         app.UseActivityAudit("Delivery", "/api/v1/delivery/audit-logs");
         app.UseAuthorization();
+        app.UseRateLimiter();
 
         // Process liveness only; dependency readiness is a later milestone.
         app.MapHealthChecks("/health");

@@ -419,6 +419,25 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
         }
     }
 
+    public async Task<PublicTrackingEventSnapshot?> GetPublicTrackingSnapshotAsync(string trackingNumber,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var parcel = await contextFactory().Parcels.AsNoTracking()
+                .Where(item => item.TrackingNumber == trackingNumber)
+                .Select(item => new { item.TrackingNumber, item.Status, item.Version, item.UpdatedAt })
+                .SingleOrDefaultAsync(cancellationToken);
+            return parcel is null ? null : new(
+                new PublicTrackingEvent(parcel.TrackingNumber, parcel.Status.ToString(), parcel.UpdatedAt),
+                parcel.Version, parcel.Status is ParcelStatus.Delivered or ParcelStatus.Failed or ParcelStatus.Cancelled);
+        }
+        catch (Exception exception) when (IsReadFailure(exception))
+        {
+            throw new DeliveryReadUnavailableException("Public tracking snapshot is unavailable.", exception);
+        }
+    }
+
     public async Task<ParcelEventsResponse?> GetParcelEventsAsync(ParcelReadScope scope, Guid parcelId,
         CancellationToken cancellationToken)
     {
@@ -471,14 +490,10 @@ public sealed class PostgresDeliveryReadStore(Func<DeliveryDbContext> contextFac
         try
         {
             var database = contextFactory();
-            await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
-            await database.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
-
             var parcel = await AuthorizedParcelQuery(database, scope, parcelId)
                 .Select(item => new { item.Id, item.Status, item.Version, item.UpdatedAt })
                 .SingleOrDefaultAsync(cancellationToken);
 
-            await transaction.CommitAsync(cancellationToken);
             return parcel is null
                 ? null
                 : new ParcelEventSnapshot(parcel.Id, parcel.Status.ToString(), parcel.Version, parcel.UpdatedAt);
