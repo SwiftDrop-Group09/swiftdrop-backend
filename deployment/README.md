@@ -25,8 +25,8 @@ rather than Development loopback destinations.
 Explicit Kestrel endpoints take precedence over port-only host settings.
 `ASPNETCORE_HTTP_PORTS=8080` and `Grpc__Port=8081` from the reference are
 insufficient to replace the scaffold's explicit endpoint URLs. Listener
-protocols remain HTTP/1 on 8080 and Delivery HTTP/2 on 8081. No gRPC handler
-is implemented.
+protocols remain HTTP/1 on 8080 and Delivery HTTP/2 on 8081. Merchant calls
+Delivery gRPC over the private network.
 
 The shared local workflow validates Compose from `swiftdrop-infra`:
 
@@ -76,6 +76,9 @@ response. It accepts request bodies up to 12 MiB, including proof uploads with
 two 5 MiB parts and multipart overhead. Set any upstream ingress body limit to
 allow valid proof uploads. Backend services retain credential, ownership and
 payload validation.
+
+The Gateway has no `/graphql` route. Existing ingress rules forwarding that
+path to Gateway receive 404 and may be removed from deployments.
 
 ## Shared configuration contract
 

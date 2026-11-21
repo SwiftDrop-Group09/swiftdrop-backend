@@ -201,7 +201,7 @@ Original paths, methods and queries are preserved; there is no prefix removal.
 | Owner | Public paths forwarded |
 |---|---|
 | Identity | /api/v1/auth/**, /api/v1/users/**, /api/v1/audit-logs/**, /.well-known/jwks.json |
-| Delivery | /api/v1/quotes/**, /api/v1/parcels/** (including future SSE), /api/v1/deliveries/**, /api/v1/couriers/**, /api/v1/zones/**, /api/v1/pricing-tiers/**, /api/v1/reports/deliveries, /graphql |
+| Delivery | /api/v1/quotes/**, /api/v1/parcels/**, /api/v1/deliveries/**, /api/v1/couriers/**, /api/v1/zones/**, /api/v1/pricing-tiers/**, /api/v1/reports/deliveries |
 | Merchant | /api/v1/merchants/**, /api/v1/merchant/orders/**, /api/v1/merchant/webhooks/** |
 
 No gateway route matches `/internal/**`, gRPC service paths or Worker. Delivery
