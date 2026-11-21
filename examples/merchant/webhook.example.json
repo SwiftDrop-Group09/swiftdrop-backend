@@ -1,0 +1,10 @@
+{
+  "eventId": "22222222-2222-4222-8222-222222222222",
+  "eventType": "delivery.delivered",
+  "schemaVersion": 1,
+  "occurredAt": "2026-01-01T00:00:00+00:00",
+  "parcelId": "33333333-3333-4333-8333-333333333333",
+  "parcelVersion": 6,
+  "trackingNumber": "SD-EXAMPLE",
+  "status": "Delivered"
+}

@@ -19,5 +19,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <Compile Include="../SwiftDrop.Delivery.Tests/Persistence/PostgresFixture.cs" Link="Persistence/PostgresFixture.cs" />
+    <None Include="../../docs/merchant-orders.openapi.json" Link="MerchantContract/merchant-orders.openapi.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../examples/merchant/*.example.json" Link="MerchantContract/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
