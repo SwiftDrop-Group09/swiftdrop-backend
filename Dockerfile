@@ -1,8 +1,15 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0.301 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.301 AS build
 WORKDIR /src
+ARG TARGETARCH
 ARG PROJECT_FILE
 COPY . .
-RUN dotnet publish "$PROJECT_FILE" --configuration Release --output /app/publish /p:UseAppHost=false
+RUN arch_args="" && \
+    if [ -n "$TARGETARCH" ]; then \
+        if [ "$TARGETARCH" = "amd64" ]; then arch_args="-a x64"; \
+        elif [ "$TARGETARCH" = "arm64" ]; then arch_args="-a arm64"; \
+        else arch_args="-a $TARGETARCH"; fi; \
+    fi && \
+    dotnet publish "$PROJECT_FILE" $arch_args --configuration Release --output /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 LABEL org.opencontainers.image.source=https://github.com/SwiftDrop-Group09/swiftdrop-backend
